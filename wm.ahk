@@ -1,5 +1,20 @@
-#NoEnv
+; ===============================
+; Simple suckless virtual desktop
+; ===============================
+;#####脚本由测试组张栩玮制作#####
 #SingleInstance Force
+#Persistent
+#NoEnv
+SetBatchLines, -1
+SetWorkingDir %A_ScriptDir%
+CoordMode, Mouse, Screen
+SendMode Input
+SetTitleMatchMode 2
+#WinActivateForce
+SetControlDelay 1
+SetWinDelay 0
+SetKeyDelay -1
+SetMouseDelay -1
 SetTitleMatchMode, 2
 
 global CurrentDesktop := 1
@@ -31,8 +46,8 @@ GetVisibleWindows() {
         WinGetClass, class, ahk_id %hwnd%
         if (class = "Progman" || class = "Shell_TrayWnd")
             continue
-        WinGet, style, Style, ahk_id %hwnd%
-        if (style & 0x10000000)
+        WinGet, minmax, MinMax, ahk_id %hwnd%
+        if (minmax != -1)
             windows.Push(hwnd)
     }
     return windows
@@ -48,7 +63,7 @@ RemoveWindowFromDesktop(desktop, hwnd) {
 }
 
 RemoveWindowFromAllDesktops(hwnd) {
-    global Desktops, DesktopCount
+    global DesktopCount
     Loop %DesktopCount%
         RemoveWindowFromDesktop(A_Index, hwnd)
 }
@@ -60,11 +75,11 @@ SwitchDesktop(target) {
     Desktops[CurrentDesktop] := GetVisibleWindows()
     for _, hwnd in Desktops[CurrentDesktop]
         if (!AlwaysVisible.HasKey(hwnd))
-            WinHide, ahk_id %hwnd%
+            WinMinimize, ahk_id %hwnd%
     for _, hwnd in Desktops[target]
-        WinShow, ahk_id %hwnd%
+        WinRestore, ahk_id %hwnd%
     for hwnd, _ in AlwaysVisible
-        WinShow, ahk_id %hwnd%
+        WinRestore, ahk_id %hwnd%
     if (Desktops[target].Length() > 0) {
         hwnd := Desktops[target][1]
         WinActivate, ahk_id %hwnd%
@@ -82,7 +97,7 @@ MoveWindowToDesktop(target) {
     RemoveWindowFromAllDesktops(hwnd)
     Desktops[target].Push(hwnd)
     if (target != CurrentDesktop)
-        WinHide, ahk_id %hwnd%
+        WinMinimize, ahk_id %hwnd%
 }
 
 MoveAndSwitch(target) {
@@ -96,7 +111,7 @@ GatherAllToCurrentDesktop() {
     for _, hwnd in GetAllWindows() {
         RemoveWindowFromAllDesktops(hwnd)
         Desktops[CurrentDesktop].Push(hwnd)
-        WinShow, ahk_id %hwnd%
+        WinRestore, ahk_id %hwnd%
     }
     AlwaysVisible := {}
 }
@@ -110,13 +125,13 @@ ToggleAlwaysVisible() {
         AlwaysVisible.Delete(hwnd)
     } else {
         AlwaysVisible[hwnd] := true
-        WinShow, ahk_id %hwnd%
+        WinRestore, ahk_id %hwnd%
     }
 }
 
 CleanupAndExit() {
     for _, hwnd in GetAllWindows()
-        WinShow, ahk_id %hwnd%
+        WinRestore, ahk_id %hwnd%
     ExitApp
 }
 
