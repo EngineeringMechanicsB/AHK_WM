@@ -1,4 +1,4 @@
-; ===============================
+﻿; ===============================
 ; Simple suckless virtual desktop
 ; ===============================
 ;#####脚本由测试组张栩玮制作#####
@@ -17,76 +17,115 @@ SetKeyDelay -1
 SetMouseDelay -1
 SetTitleMatchMode, 2
 
-; -------- 全局状态 --------
 global CurrentDesktop := 1
 global Desktops := {}
-
-DesktopCount := 3
+DesktopCount := 9
 
 Loop %DesktopCount%
     Desktops[A_Index] := []
 
-; -------- 获取当前可见窗口 --------
 GetVisibleWindows() {
     WinGet, winList, List
     windows := []
-
     Loop % winList {
         hwnd := winList%A_Index%
-
-        ; 跳过桌面和任务栏
         WinGetClass, class, ahk_id %hwnd%
         if (class = "Progman" || class = "Shell_TrayWnd")
             continue
-
         WinGet, style, Style, ahk_id %hwnd%
-        ; WS_VISIBLE = 0x10000000
         if (style & 0x10000000)
             windows.Push(hwnd)
     }
     return windows
 }
 
-; -------- 切换桌面 --------
 SwitchDesktop(target) {
     global CurrentDesktop, Desktops
-
     if (target = CurrentDesktop)
         return
-
-    ; 保存当前桌面窗口
     Desktops[CurrentDesktop] := GetVisibleWindows()
-
-    ; 隐藏当前桌面窗口
-    for _, hwnd in Desktops[CurrentDesktop] {
-        WinHide, ahk_id %hwnd%
-    }
-
-    ; 显示目标桌面窗口
-    for _, hwnd in Desktops[target] {
-        WinShow, ahk_id %hwnd%
-    }
-
-    ; 激活一个窗口（如果有）
+    for _, hwnd in Desktops[CurrentDesktop]
+        WinMinimize, ahk_id %hwnd%
+    for _, hwnd in Desktops[target]
+        WinRestore, ahk_id %hwnd%
     if (Desktops[target].Length() > 0) {
         hwnd := Desktops[target][1]
-        WinActivate, ahk_id %hwnd%
+        WinRestore, ahk_id %hwnd%
     }
-
     CurrentDesktop := target
 }
 
-; -------- 快捷键 --------
+RemoveWindowFromDesktop(desktop, hwnd) {
+    global Desktops
+    newList := []
+    for _, h in Desktops[desktop]
+        if (h != hwnd)
+            newList.Push(h)
+    Desktops[desktop] := newList
+}
+
+MoveWindowToDesktop(target) {
+    global CurrentDesktop, Desktops
+    hwnd := WinExist("A")
+    if (!hwnd)
+        return
+    RemoveWindowFromDesktop(CurrentDesktop, hwnd)
+    Desktops[target].Push(hwnd)
+    if (target != CurrentDesktop)
+        WinMinimize, ahk_id %hwnd%
+}
+
+
+MoveWindowAndSwitchToDesktop(target){
+    global CurrentDesktop, Desktops
+    hwnd := WinExist("A")
+    if (!hwnd)
+        return
+    RemoveWindowFromDesktop(CurrentDesktop, hwnd)
+    Desktops[target].Push(hwnd)
+    if (target != CurrentDesktop)
+        WinMinimize, ahk_id %hwnd%
+
+    global CurrentDesktop, Desktops
+        if (target = CurrentDesktop)
+        return
+        Desktops[CurrentDesktop] := GetVisibleWindows()
+        for _, hwnd in Desktops[CurrentDesktop]
+        WinMinimize, ahk_id %hwnd%
+        for _, hwnd in Desktops[target]
+        WinRestore, ahk_id %hwnd%
+        if (Desktops[target].Length() > 0) {
+        hwnd := Desktops[target][1]
+        WinRestore, ahk_id %hwnd%
+        }
+        CurrentDesktop := target
+    }
 !1::SwitchDesktop(1)
 !2::SwitchDesktop(2)
 !3::SwitchDesktop(3)
+!4::SwitchDesktop(4)
+!5::SwitchDesktop(5)
+!6::SwitchDesktop(6)
+!7::SwitchDesktop(7)
+!8::SwitchDesktop(8)
+!9::SwitchDesktop(9)
 
-; -------- 可选：新窗口自动加入当前桌面 --------
-#IfWinActive
-~LButton::
-    Sleep, 100
-    hwnd := WinExist("A")
-    if (hwnd) {
-        Desktops[CurrentDesktop].Push(hwnd)
-    }
-return
+!+1::MoveWindowToDesktop(1)
+!+2::MoveWindowToDesktop(2)
+!+3::MoveWindowToDesktop(3)
+!+4::MoveWindowToDesktop(4)
+!+5::MoveWindowToDesktop(5)
+!+6::MoveWindowToDesktop(6)
+!+7::MoveWindowToDesktop(7)
+!+8::MoveWindowToDesktop(8)
+!+9::MoveWindowToDesktop(9)
+
+!^1::MoveWindowAndSwitchToDesktop(1)
+!^2::MoveWindowAndSwitchToDesktop(2)
+!^3::MoveWindowAndSwitchToDesktop(3)
+!^4::MoveWindowAndSwitchToDesktop(4)
+!^5::MoveWindowAndSwitchToDesktop(5)
+!^6::MoveWindowAndSwitchToDesktop(6)
+!^7::MoveWindowAndSwitchToDesktop(7)
+!^8::MoveWindowAndSwitchToDesktop(8)
+!^9::MoveWindowAndSwitchToDesktop(9)
