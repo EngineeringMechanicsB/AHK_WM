@@ -1,54 +1,57 @@
-; ===============================
-; Simple suckless virtual desktop
-; ===============================
-;#####脚本由测试组张栩玮制作#####
+#Requires AutoHotkey v2.0
 #SingleInstance Force
-#Persistent
-#NoEnv
-SetBatchLines, -1
-SetWorkingDir %A_ScriptDir%
-CoordMode, Mouse, Screen
-SendMode Input
-SetTitleMatchMode 2
 #WinActivateForce
-SetControlDelay 1
-SetWinDelay 0
-SetKeyDelay -1
-SetMouseDelay -1
-SetTitleMatchMode, 2
 
+; --- 环境设置 ---
+SetWorkingDir(A_ScriptDir)
+CoordMode("Mouse", "Screen")
+SendMode("Input")
+SetTitleMatchMode(2)
+SetControlDelay(1)
+SetWinDelay(0)
+SetKeyDelay(-1)
+SetMouseDelay(-1)
+
+; --- 全局变量 ---
 global CurrentDesktop := 1
 global DesktopCount := 9
-global Desktops := {}
-global AlwaysVisible := {}
+global Desktops := Map()
+global AlwaysVisible := Map()
 
-Loop %DesktopCount%
+; 初始化桌面数组
+Loop DesktopCount {
     Desktops[A_Index] := []
+}
+
+; --- 核心函数 ---
 
 GetAllWindows() {
-    WinGet, winList, List
+    list := WinGetList()
     windows := []
-    Loop % winList {
-        hwnd := winList%A_Index%
-        WinGetClass, class, ahk_id %hwnd%
-        if (class = "Progman" || class = "Shell_TrayWnd")
-            continue
-        windows.Push(hwnd)
+    for hwnd in list {
+        try {
+            class := WinGetClass("ahk_id " hwnd)
+            if (class == "Progman" || class == "Shell_TrayWnd")
+                continue
+            windows.Push(hwnd)
+        }
     }
     return windows
 }
 
 GetVisibleWindows() {
-    WinGet, winList, List
+    list := WinGetList()
     windows := []
-    Loop % winList {
-        hwnd := winList%A_Index%
-        WinGetClass, class, ahk_id %hwnd%
-        if (class = "Progman" || class = "Shell_TrayWnd")
-            continue
-        WinGet, minmax, MinMax, ahk_id %hwnd%
-        if (minmax != -1)
-            windows.Push(hwnd)
+    for hwnd in list {
+        try {
+            class := WinGetClass("ahk_id " hwnd)
+            if (class == "Progman" || class == "Shell_TrayWnd")
+                continue
+            
+            minmax := WinGetMinMax("ahk_id " hwnd)
+            if (minmax != -1) 
+                windows.Push(hwnd)
+        }
     }
     return windows
 }
@@ -56,115 +59,137 @@ GetVisibleWindows() {
 RemoveWindowFromDesktop(desktop, hwnd) {
     global Desktops
     newList := []
-    for _, h in Desktops[desktop]
-        if (h != hwnd)
-            newList.Push(h)
-    Desktops[desktop] := newList
+    if Desktops.Has(desktop) {
+        for h in Desktops[desktop] {
+            if (h != hwnd)
+                newList.Push(h)
+        }
+        Desktops[desktop] := newList
+    }
 }
 
 RemoveWindowFromAllDesktops(hwnd) {
     global DesktopCount
-    Loop %DesktopCount%
+    Loop DesktopCount {
         RemoveWindowFromDesktop(A_Index, hwnd)
+    }
 }
 
-SwitchDesktop(target) {
+; 注意：这里加了 * 号来忽略 Hotkey 自动传入的第二个参数
+SwitchDesktop(target, *) {
     global CurrentDesktop, Desktops, AlwaysVisible
-    if (target = CurrentDesktop)
+    
+    if (target == CurrentDesktop)
         return
+
     Desktops[CurrentDesktop] := GetVisibleWindows()
-    for _, hwnd in Desktops[CurrentDesktop]
-        if (!AlwaysVisible.HasKey(hwnd))
-            WinMinimize, ahk_id %hwnd%
-    for _, hwnd in Desktops[target]
-        WinRestore, ahk_id %hwnd%
-    for hwnd, _ in AlwaysVisible
-        WinRestore, ahk_id %hwnd%
-    if (Desktops[target].Length() > 0) {
-        hwnd := Desktops[target][1]
-        WinActivate, ahk_id %hwnd%
+
+    for hwnd in Desktops[CurrentDesktop] {
+        if (!AlwaysVisible.Has(hwnd)) {
+            try WinMinimize("ahk_id " hwnd)
+        }
     }
+
+    for hwnd in Desktops[target] {
+        try WinRestore("ahk_id " hwnd)
+    }
+
+    for hwnd, _ in AlwaysVisible {
+        try WinRestore("ahk_id " hwnd)
+    }
+
+    if (Desktops[target].Length > 0) {
+        hwnd := Desktops[target][1]
+        try WinActivate("ahk_id " hwnd)
+    }
+
     CurrentDesktop := target
 }
 
-MoveWindowToDesktop(target) {
+; 注意：这里加了 * 号
+MoveWindowToDesktop(target, *) {
     global CurrentDesktop, Desktops, AlwaysVisible
-    hwnd := WinExist("A")
+    
+    try {
+        hwnd := WinExist("A")
+    } catch {
+        return
+    }
+
     if (!hwnd)
         return
-    if (AlwaysVisible.HasKey(hwnd))
+
+    if (AlwaysVisible.Has(hwnd))
         AlwaysVisible.Delete(hwnd)
+
     RemoveWindowFromAllDesktops(hwnd)
+    
+    if !Desktops.Has(target)
+        Desktops[target] := []
+        
     Desktops[target].Push(hwnd)
-    if (target != CurrentDesktop)
-        WinMinimize, ahk_id %hwnd%
+
+    if (target != CurrentDesktop) {
+        try WinMinimize("ahk_id " hwnd)
+    }
 }
 
-MoveAndSwitch(target) {
+; 注意：这里加了 * 号
+MoveAndSwitch(target, *) {
     MoveWindowToDesktop(target)
     SwitchDesktop(target)
 }
 
-GatherAllToCurrentDesktop() {
+GatherAllToCurrentDesktop(*) {
     global CurrentDesktop, Desktops, AlwaysVisible
+    
     Desktops[CurrentDesktop] := []
-    for _, hwnd in GetAllWindows() {
+    
+    for hwnd in GetAllWindows() {
         RemoveWindowFromAllDesktops(hwnd)
         Desktops[CurrentDesktop].Push(hwnd)
-        WinRestore, ahk_id %hwnd%
+        try WinRestore("ahk_id " hwnd)
     }
-    AlwaysVisible := {}
+    AlwaysVisible.Clear()
 }
 
-ToggleAlwaysVisible() {
+ToggleAlwaysVisible(*) {
     global AlwaysVisible
-    hwnd := WinExist("A")
+    try {
+        hwnd := WinExist("A")
+    } catch {
+        return
+    }
+
     if (!hwnd)
         return
-    if (AlwaysVisible.HasKey(hwnd)) {
+
+    if (AlwaysVisible.Has(hwnd)) {
         AlwaysVisible.Delete(hwnd)
     } else {
         AlwaysVisible[hwnd] := true
-        WinRestore, ahk_id %hwnd%
+        try WinRestore("ahk_id " hwnd)
     }
 }
 
-CleanupAndExit() {
-    for _, hwnd in GetAllWindows()
-        WinRestore, ahk_id %hwnd%
+CleanupAndExit(*) {
+    for hwnd in GetAllWindows() {
+        try WinRestore("ahk_id " hwnd)
+    }
     ExitApp
 }
 
-!1::SwitchDesktop(1)
-!2::SwitchDesktop(2)
-!3::SwitchDesktop(3)
-!4::SwitchDesktop(4)
-!5::SwitchDesktop(5)
-!6::SwitchDesktop(6)
-!7::SwitchDesktop(7)
-!8::SwitchDesktop(8)
-!9::SwitchDesktop(9)
+; --- 热键绑定 ---
 
-!+1::MoveWindowToDesktop(1)
-!+2::MoveWindowToDesktop(2)
-!+3::MoveWindowToDesktop(3)
-!+4::MoveWindowToDesktop(4)
-!+5::MoveWindowToDesktop(5)
-!+6::MoveWindowToDesktop(6)
-!+7::MoveWindowToDesktop(7)
-!+8::MoveWindowToDesktop(8)
-!+9::MoveWindowToDesktop(9)
+Loop 9 {
+    i := A_Index
+    ; Bind(i) 会把 i 作为第一个参数，Hotkey 命令会自动把热键名作为第二个参数传入
+    ; 所以上面的函数定义里都加了 * 来接收这多余的第二个参数
+    Hotkey("!" . i, SwitchDesktop.Bind(i))
+    Hotkey("!+" . i, MoveWindowToDesktop.Bind(i))
+    Hotkey("^!" . i, MoveAndSwitch.Bind(i))
+}
 
-^!1::MoveAndSwitch(1)
-^!2::MoveAndSwitch(2)
-^!3::MoveAndSwitch(3)
-^!4::MoveAndSwitch(4)
-^!5::MoveAndSwitch(5)
-^!6::MoveAndSwitch(6)
-^!7::MoveAndSwitch(7)
-^!8::MoveAndSwitch(8)
-^!9::MoveAndSwitch(9)
-
-!+g::GatherAllToCurrentDesktop()
-^!t::ToggleAlwaysVisible()
-!F12::CleanupAndExit()
+Hotkey("!+g", GatherAllToCurrentDesktop)
+Hotkey("^!t", ToggleAlwaysVisible)
+Hotkey("!F12", CleanupAndExit)
