@@ -2,6 +2,10 @@
 #SingleInstance Force
 #WinActivateForce
 
+; ===============================
+; 增强版虚拟桌面 (Suckless Virtual Desktop Enhanced)
+; ===============================
+
 ; --- 环境设置 ---
 SetWorkingDir(A_ScriptDir)
 CoordMode("Mouse", "Screen")
@@ -23,7 +27,26 @@ Loop DesktopCount {
     Desktops[A_Index] := []
 }
 
-; --- 核心函数 ---
+; --- 托盘菜单设置 ---
+A_TrayMenu.Delete() ; 清空默认菜单
+A_TrayMenu.Add("Gather All Windows Here", GatherAllToCurrentDesktop)
+A_TrayMenu.Add("Toggle Window Pin", ToggleAlwaysVisible)
+A_TrayMenu.Add() ; 分隔线
+
+; 动态添加切换菜单
+Loop DesktopCount {
+    i := A_Index
+    A_TrayMenu.Add("Switch to Desktop " . i, SwitchDesktop.Bind(i))
+}
+
+A_TrayMenu.Add()
+A_TrayMenu.Add("Reload Script", (*) => Reload())
+A_TrayMenu.Add("Exit", CleanupAndExit)
+
+; 初始化托盘提示
+UpdateTrayTip()
+
+; --- 核心功能函数 ---
 
 GetAllWindows() {
     list := WinGetList()
@@ -75,38 +98,47 @@ RemoveWindowFromAllDesktops(hwnd) {
     }
 }
 
-; 注意：这里加了 * 号来忽略 Hotkey 自动传入的第二个参数
 SwitchDesktop(target, *) {
     global CurrentDesktop, Desktops, AlwaysVisible
     
-    if (target == CurrentDesktop)
+    if (target == CurrentDesktop) {
+        ShowOSD("Current: Desktop " . target)
         return
+    }
 
+    ; 1. 保存当前桌面
     Desktops[CurrentDesktop] := GetVisibleWindows()
 
+    ; 2. 隐藏当前桌面窗口
     for hwnd in Desktops[CurrentDesktop] {
         if (!AlwaysVisible.Has(hwnd)) {
             try WinMinimize("ahk_id " hwnd)
         }
     }
 
+    ; 3. 恢复目标桌面窗口
     for hwnd in Desktops[target] {
         try WinRestore("ahk_id " hwnd)
     }
 
+    ; 4. 确保固定窗口显示
     for hwnd, _ in AlwaysVisible {
         try WinRestore("ahk_id " hwnd)
     }
 
+    ; 5. 激活目标桌面顶层窗口
     if (Desktops[target].Length > 0) {
         hwnd := Desktops[target][1]
         try WinActivate("ahk_id " hwnd)
     }
 
     CurrentDesktop := target
+    
+    ; 更新 UI
+    ShowOSD("Desktop " . CurrentDesktop)
+    UpdateTrayTip()
 }
 
-; 注意：这里加了 * 号
 MoveWindowToDesktop(target, *) {
     global CurrentDesktop, Desktops, AlwaysVisible
     
@@ -131,10 +163,12 @@ MoveWindowToDesktop(target, *) {
 
     if (target != CurrentDesktop) {
         try WinMinimize("ahk_id " hwnd)
+        ShowOSD("Window Moved to " . target)
+    } else {
+        ShowOSD("Window is on " . target)
     }
 }
 
-; 注意：这里加了 * 号
 MoveAndSwitch(target, *) {
     MoveWindowToDesktop(target)
     SwitchDesktop(target)
@@ -151,6 +185,7 @@ GatherAllToCurrentDesktop(*) {
         try WinRestore("ahk_id " hwnd)
     }
     AlwaysVisible.Clear()
+    ShowOSD("All Windows Gathered")
 }
 
 ToggleAlwaysVisible(*) {
@@ -166,9 +201,11 @@ ToggleAlwaysVisible(*) {
 
     if (AlwaysVisible.Has(hwnd)) {
         AlwaysVisible.Delete(hwnd)
+        ShowOSD("Unpinned")
     } else {
         AlwaysVisible[hwnd] := true
         try WinRestore("ahk_id " hwnd)
+        ShowOSD("Pinned (Always Visible)")
     }
 }
 
@@ -179,17 +216,46 @@ CleanupAndExit(*) {
     ExitApp
 }
 
+UpdateTrayTip() {
+    A_IconTip := "Virtual Desktop: " . CurrentDesktop
+}
+
+; --- UI 显示函数 (OSD) ---
+ShowOSD(text) {
+    static OsdGui := ""
+    
+    ; 销毁旧 GUI 以刷新
+    if IsObject(OsdGui)
+        OsdGui.Destroy()
+    
+    ; 创建无边框 GUI
+    OsdGui := Gui("+AlwaysOnTop -Caption +ToolWindow +Disabled +Owner")
+    OsdGui.BackColor := "202020" ; 深灰色背景
+    
+    ; 设置字体 (白色, Segoe UI)
+    OsdGui.SetFont("s20 w600 cWhite", "Segoe UI")
+    OsdGui.Add("Text", "x20 y10 Center", text)
+    
+    ; 显示在屏幕底部上方一点 (y850 适合 1080p，可自行调整)
+    ; NoActivate 防止打断当前工作
+    OsdGui.Show("NoActivate AutoSize y850") 
+    
+    ; 设置半透明 (200/255)
+    WinSetTransparent(200, OsdGui.Hwnd)
+    
+    ; 1.2秒后自动消失
+    SetTimer(() => (IsObject(OsdGui) ? OsdGui.Destroy() : ""), -1200)
+}
+
 ; --- 热键绑定 ---
 
 Loop 9 {
     i := A_Index
-    ; Bind(i) 会把 i 作为第一个参数，Hotkey 命令会自动把热键名作为第二个参数传入
-    ; 所以上面的函数定义里都加了 * 来接收这多余的第二个参数
-    Hotkey("!" . i, SwitchDesktop.Bind(i))
-    Hotkey("!+" . i, MoveWindowToDesktop.Bind(i))
-    Hotkey("^!" . i, MoveAndSwitch.Bind(i))
+    Hotkey("!" . i, SwitchDesktop.Bind(i))        ; Alt + 1..9 切换
+    Hotkey("!+" . i, MoveWindowToDesktop.Bind(i)) ; Alt + Shift + 1..9 移动
+    Hotkey("^!" . i, MoveAndSwitch.Bind(i))       ; Ctrl + Alt + 1..9 移动并切换
 }
 
-Hotkey("!+g", GatherAllToCurrentDesktop)
-Hotkey("^!t", ToggleAlwaysVisible)
-Hotkey("!F12", CleanupAndExit)
+Hotkey("!+g", GatherAllToCurrentDesktop) ; Alt + Shift + G 聚合所有窗口
+Hotkey("^!t", ToggleAlwaysVisible)       ; Ctrl + Alt + T 固定窗口
+Hotkey("!F12", CleanupAndExit)           ; Alt + F12 还原并退出
