@@ -34,8 +34,8 @@ Loop DesktopCount {
 ; --- 启动流程 ---
 CreateStatusBar()
 UpdateStatusBar()
-UpdateClock()
-SetTimer(UpdateClock, 1000)
+UpdateClockAndProgress()
+SetTimer(UpdateClockAndProgress, 1000)
 SetupTrayIcon()
 
 ; ==============================================================================
@@ -43,20 +43,28 @@ SetupTrayIcon()
 ; ==============================================================================
 
 CreateStatusBar() {
-    global BarGui, BarLeftText, BarRightText, BarHeight
+    global BarGui, BarLeftText, BarRightText, BarProgress, BarHeight
     
-    ; 创建：无边框、置顶、工具窗口、不抢焦点 (+E0x08000000)
     BarGui := Gui("-Caption +AlwaysOnTop +ToolWindow +Owner +E0x08000000")
     BarGui.BackColor := "181818"
-    BarGui.SetFont("s10 w600 cA020F0", "Segoe UI") ; 紫色主题
     
-    ; 左侧：桌面指示器
-    BarLeftText := BarGui.Add("Text", "x15 y4 w" . (A_ScreenWidth/2) . " h20 BackgroundTrans", "")
+    ; Left: Desktop indicators
+    BarGui.SetFont("s10 w600 cA020F0", "Segoe UI")
+    BarLeftText := BarGui.Add("Text", "x15 y4 w300 h20 BackgroundTrans", "")
     
-    ; 右侧：时间 (右对齐视觉位置)
-    BarRightText := BarGui.Add("Text", "x" . (A_ScreenWidth - 540) . " y4 w250 h20 BackgroundTrans", "")
+    ; Middle: Progress Bar (Workday countdown)
+    ; Placed at the center of the screen
+    ProgressWidth := 300
+    ProgressX := (A_ScreenWidth / 2) - (ProgressWidth / 2)
+    ; Background of the bar
+    BarGui.Add("Text", "x" ProgressX " y10 w" ProgressWidth " h6 Background333333", "") 
+    ; The actual progress (Purple)
+    BarProgress := BarGui.Add("Progress", "x" ProgressX " y10 w" ProgressWidth " h6 cA020F0 Background333333", 0)
     
-    ; 显示
+    ; Right: Clock
+    BarGui.SetFont("s10 w600 cA020F0", "Segoe UI")
+    BarRightText := BarGui.Add("Text", "x" . (A_ScreenWidth - 650) . " y4 w250 h20 BackgroundTrans Right", "")
+    
     BarGui.Show("x0 y0 w" . A_ScreenWidth . " h" . BarHeight . " NoActivate")
 }
 
@@ -64,34 +72,52 @@ UpdateStatusBar() {
     global CurrentDesktop, DesktopCount, BarLeftText
     if !BarLeftText
         return
-    displayStr := ""
-    Loop DesktopCount {
-        if (A_Index == CurrentDesktop)
-            displayStr .= " [" . A_Index . "] " 
-        else
-            displayStr .= "  " . A_Index . "  "
-    }
-    BarLeftText.Value := displayStr
+    str := ""
+    Loop DesktopCount
+        str .= (A_Index == CurrentDesktop) ? " [" A_Index "] " : "  " A_Index "  "
+    BarLeftText.Value := str
 }
 
-UpdateClock() {
-    global BarRightText
-    if BarRightText
-        try BarRightText.Value := FormatTime(, "yyyy-MM-dd   HH:mm:ss")
+UpdateClockAndProgress() {
+    global BarRightText, BarProgress
+    if !BarRightText
+        return
+
+    ; Update Clock
+    try BarRightText.Value := FormatTime(, "yyyy-MM-dd   HH:mm")
+
+    ; --- Progress Calculation ---
+    WorkStart := "0900", WorkEnd := "1745"
+    NowTime := A_Now
+    TodayDate := FormatTime(NowTime, "yyyyMMdd")
+    StartTS := TodayDate . WorkStart . "00"
+    EndTS   := TodayDate . WorkEnd . "00"
+    
+    WDay := A_WDay ; 1=Sun, 7=Sat
+    
+    if (WDay == 1 || WDay == 7) {
+        BarProgress.Value := 0 ; Weekend
+    } else {
+        TotalSec := DateDiff(EndTS, StartTS, "Seconds")
+        ElapsedSec := DateDiff(NowTime, StartTS, "Seconds")
+        
+        if (ElapsedSec < 0)
+            BarProgress.Value := 0
+        else if (ElapsedSec > TotalSec)
+            BarProgress.Value := 100
+        else
+            BarProgress.Value := (ElapsedSec / TotalSec) * 100
+    }
 }
 
 ToggleBar(*) {
     global BarVisible, BarGui
-    if (BarVisible) {
-        BarGui.Hide()
-        BarVisible := false
-        ShowOSD("Bar Hidden")
-    } else {
+    if (BarVisible := !BarVisible)
         BarGui.Show("NoActivate")
-        BarVisible := true
-        ShowOSD("Bar Visible")
-    }
+    else
+        BarGui.Hide()
 }
+
 
 ; ==============================================================================
 ; 2. 智能平铺 (Alt + D) - 自动避让 Bar 高度
@@ -189,20 +215,37 @@ TileCurrentDesktop(*) {
     global DoubleAlt
     MouseGetPos(,, &hwnd)
     
+    ; Logic: Double Alt to Minimize
     if (DoubleAlt) {
-        WinMinimize(hwnd)
+        try WinMinimize(hwnd)
         return
     }
-    
-    if (WinGetMinMax(hwnd) == 1) ; 最大化窗口不拖动
-        return
+
+    ; --- Logic: Handle Maximized Windows (Auto-Restore) ---
+    if (WinGetMinMax(hwnd) == 1) {
+        try {
+            ; 1. Restore the window
+            WinRestore(hwnd)
+            ; 2. Get the new restored size
+            WinGetPos(,, &restoreW, &restoreH, hwnd)
+            ; 3. Get mouse position
+            MouseGetPos(&mX, &mY)
+            ; 4. Snap window center to mouse (so it doesn't jump away)
+            ; Moving it so mouse is horizontally centered, and near the top (title bar feel)
+            newWinX := mX - (restoreW / 2)
+            newWinY := mY - (restoreH / 10) ; 1/10 down from top feels like grabbing the header
+            WinMove(newWinX, newWinY,,, hwnd)
+        } catch {
+            return ; If something fails (e.g. permission), abort drag
+        }
+    }
+    ; -------------------------------------------------------
 
     MouseGetPos(&startX, &startY)
     try WinGetPos(&winX, &winY,,, hwnd)
-    catch {
-        return ; 捕获错误直接返回，防止报错
-    }
-    
+    catch 
+        return
+
     while GetKeyState("LButton", "P") {
         MouseGetPos(&curX, &curY)
         try WinMove(winX + (curX - startX), winY + (curY - startY),,, hwnd)
@@ -367,6 +410,10 @@ MoveWindowToDesktop(target, *) {
     }
 }
 
+MoveAndSwitch(target, *) {
+        MoveWindowToDesktop(target)
+            SwitchDesktop(target)
+}
 ; --- 聚合所有窗口 (Alt + Shift + G) ---
 GatherAllToCurrent(*) {
     global Desktops, CurrentDesktop, AlwaysVisible
@@ -492,6 +539,7 @@ Loop 9 {
     i := A_Index
     Hotkey("!" . i, SwitchDesktop.Bind(i))
     Hotkey("!+" . i, MoveWindowToDesktop.Bind(i))
+    Hotkey("^!" . i, MoveAndSwitch.Bind(i))
 }
 
 Hotkey("!d", TileCurrentDesktop)      ; Alt + D : 平铺
