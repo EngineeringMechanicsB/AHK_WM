@@ -3,110 +3,175 @@
 #WinActivateForce
 
 ; ==============================================================================
-; Suckless WM v2.0 (Phase 2)
-; 核心：虚拟桌面 + 悬浮Bar + 智能平铺(避让Bar) + KDE交互 + 安全退出
+; SUCKLESS WM v2.5 (Final Stable)
+; 结构：配置 -> 初始化 -> 按键绑定 -> 功能模块
 ; ==============================================================================
 
-; --- 环境设置 ---
+; --- 0. 环境设置 (Environment) ---
 SetWorkingDir(A_ScriptDir)
-CoordMode("Mouse", "Screen") ; 必须：鼠标和窗口移动基于屏幕绝对坐标
+CoordMode("Mouse", "Screen")
 SetTitleMatchMode(2)
-SetWinDelay(0)               ; 必须：0延迟保证KDE拖拽流畅
+SetWinDelay(0)
 SetControlDelay(0)
 
-; --- 全局变量 ---
+; ==============================================================================
+; 1. 全局配置与变量 (Global Configuration)
+; ==============================================================================
+
+; --- 核心 WM 配置 ---
 global CurrentDesktop := 1
 global DesktopCount   := 9
-global Desktops       := Map()       ; 存储桌面窗口列表
-global AlwaysVisible  := Map()       ; 存储钉住(Pin)的窗口
-global DoubleAlt      := false       ; Alt双击状态检测
-global BarGui         := ""          ; Bar GUI对象
-global BarLeftText    := ""          ; 左侧文字控件
-global BarRightText   := ""          ; 右侧文字控件
-global BarHeight      := 28          ; 定义Bar的高度，用于平铺避让
-global BarVisible     := true        ; Bar显示状态
+global Desktops       := Map()       
+global AlwaysVisible  := Map()       
+global DoubleAlt      := false       
+global BarHeight      := 28          
+global BarVisible     := true
 
-; 初始化桌面数组
+; --- GUI 对象占位 (必须初始化为空) ---
+global BarGui := "", BarLeftText := "", BarRightText := "", BarProgress := ""
+
+; --- 外部工具路径 (请确保路径正确，否则 Alt+Enter/Alt+V 无效) ---
+global VimPath     := "C:\Program Files\Vim\vim91\vim.exe"
+global TerminalExe := "C:\Soft\terminal\WindowsTerminal.exe"
+
+; --- 初始化桌面数据 ---
 Loop DesktopCount {
     Desktops[A_Index] := []
 }
 
-; --- 启动流程 ---
+; ==============================================================================
+; 2. 启动流程 (Initialization)
+; ==============================================================================
 CreateStatusBar()
 UpdateStatusBar()
 UpdateClockAndProgress()
-SetTimer(UpdateClockAndProgress, 1000)
+SetTimer(UpdateClockAndProgress, 1000) ; 每秒刷新
 SetupTrayIcon()
 
 ; ==============================================================================
-; 1. 顶部状态栏 (悬浮模式 & 显隐控制)
+; 3. 快捷键绑定 (Key Bindings)
+; ==============================================================================
+
+; --- 桌面管理 (1-9) ---
+Loop 9 {
+    i := A_Index
+    ; Alt + N: 切换桌面
+    Hotkey("!" . i, SwitchDesktop.Bind(i))
+    ; Alt + Shift + N: 仅移动窗口
+    Hotkey("!+" . i, MoveWindowToDesktop.Bind(i))
+    ; Ctrl + Alt + N: 移动窗口并跟随跳转
+    Hotkey("^!" . i, MoveAndSwitch.Bind(i))
+}
+
+; --- 核心功能 ---
+Hotkey("!d", TileCurrentDesktop)       ; Alt + D: 智能平铺
+Hotkey("!+g", GatherAllToCurrent)      ; Alt + Shift + G: 召唤所有窗口
+Hotkey("^!t", TogglePin)               ; Ctrl + Alt + T: 钉住/解钉窗口
+Hotkey("^!b", ToggleBar)               ; Ctrl + Alt + B: 开关顶栏显隐
+Hotkey("!F12", RestoreAndExit)         ; Alt + F12: 还原所有窗口并退出脚本
+
+; --- 窗口操作 (鼠标下的窗口) ---
+Hotkey("!q", CloseWindowUnderMouse)        ; Alt + Q: 关闭
+Hotkey("!MButton", CloseWindowUnderMouse)  ; Alt + 中键: 关闭
+Hotkey("!f", ToggleMaximizeUnderMouse)     ; Alt + F: 最大化/还原
+Hotkey("!t", ToggleTopUnderMouse)          ; Alt + T: 置顶/取消置顶
+
+; --- 鼠标增强 ---
+; Alt + 滚轮: 调节透明度
+Hotkey("!WheelUp", AdjustTransparency.Bind(20))
+Hotkey("!WheelDown", AdjustTransparency.Bind(-20))
+; 鼠标左右键同按: 模拟 Ctrl+C
+~LButton & RButton::Send("^c")
+~RButton & LButton::Send("^c")
+
+; --- 外部工具快捷键 ---
+Hotkey("!Enter", LaunchTerminal)           ; Alt + Enter: 当前目录打开终端
+Hotkey("!s", (*) => Run("devmgmt.msc"))    ; Alt + S: 设备管理器 (修正语法)
+Hotkey("!v", OpenWithVim)                  ; Alt + V: 用 Vim 打开选中文件
+Hotkey("!x", ShowPowerMenu)                ; Alt + X: 电源菜单
+
+; ==============================================================================
+; 4. 模块：状态栏 (Status Bar & Progress)
 ; ==============================================================================
 
 CreateStatusBar() {
     global BarGui, BarLeftText, BarRightText, BarProgress, BarHeight
     
+    try {
+        if IsObject(BarGui)
+            BarGui.Destroy()
+    }
+
     BarGui := Gui("-Caption +AlwaysOnTop +ToolWindow +Owner +E0x08000000")
     BarGui.BackColor := "181818"
     
-    ; Left: Desktop indicators
+    ; 左侧：桌面指示器
     BarGui.SetFont("s10 w600 cA020F0", "Segoe UI")
     BarLeftText := BarGui.Add("Text", "x15 y4 w300 h20 BackgroundTrans", "")
     
-    ; Middle: Progress Bar (Workday countdown)
-    ; Placed at the center of the screen
+    ; 中间：下班进度条
     ProgressWidth := 300
     ProgressX := (A_ScreenWidth / 2) - (ProgressWidth / 2)
-    ; Background of the bar
+    ; 背景底槽
     BarGui.Add("Text", "x" ProgressX " y10 w" ProgressWidth " h6 Background333333", "") 
-    ; The actual progress (Purple)
-    BarProgress := BarGui.Add("Progress", "x" ProgressX " y10 w" ProgressWidth " h6 cA020F0 Background333333", 0)
+    ; 进度实体 (紫色) - 添加 Smooth 属性
+    BarProgress := BarGui.Add("Progress", "x" ProgressX " y10 w" ProgressWidth " h6 cA020F0 Background333333 +Smooth", 0)
     
-    ; Right: Clock
+    ; 右侧：时钟
     BarGui.SetFont("s10 w600 cA020F0", "Segoe UI")
-    BarRightText := BarGui.Add("Text", "x" . (A_ScreenWidth - 650) . " y4 w250 h20 BackgroundTrans Right", "")
+    BarRightText := BarGui.Add("Text", "x" . (A_ScreenWidth - 650 ) . " y4 w250 h20 BackgroundTrans Right", "")
     
     BarGui.Show("x0 y0 w" . A_ScreenWidth . " h" . BarHeight . " NoActivate")
 }
 
 UpdateStatusBar() {
     global CurrentDesktop, DesktopCount, BarLeftText
-    if !BarLeftText
+    if !IsObject(BarLeftText)
         return
     str := ""
     Loop DesktopCount
         str .= (A_Index == CurrentDesktop) ? " [" A_Index "] " : "  " A_Index "  "
-    BarLeftText.Value := str
+    try BarLeftText.Value := str
 }
 
 UpdateClockAndProgress() {
     global BarRightText, BarProgress
-    if !BarRightText
+    if !IsObject(BarRightText)
         return
 
-    ; Update Clock
+    ; 更新时间
     try BarRightText.Value := FormatTime(, "yyyy-MM-dd   HH:mm")
 
-    ; --- Progress Calculation ---
+    ; --- 进度条逻辑 ---
     WorkStart := "0900", WorkEnd := "1745"
     NowTime := A_Now
     TodayDate := FormatTime(NowTime, "yyyyMMdd")
     StartTS := TodayDate . WorkStart . "00"
     EndTS   := TodayDate . WorkEnd . "00"
     
-    WDay := A_WDay ; 1=Sun, 7=Sat
+    WDay := A_WDay ; 1=周日, 7=周六
     
+    pct := 0
+    ; 周末显示满条 (100%)
     if (WDay == 1 || WDay == 7) {
-        BarProgress.Value := 0 ; Weekend
+        pct := 100
     } else {
         TotalSec := DateDiff(EndTS, StartTS, "Seconds")
         ElapsedSec := DateDiff(NowTime, StartTS, "Seconds")
         
-        if (ElapsedSec < 0)
-            BarProgress.Value := 0
-        else if (ElapsedSec > TotalSec)
-            BarProgress.Value := 100
-        else
-            BarProgress.Value := (ElapsedSec / TotalSec) * 100
+        if (ElapsedSec < 0) {
+            pct := 0
+        } else if (ElapsedSec > TotalSec) {
+            pct := 100
+        } else {
+            pct := (ElapsedSec / TotalSec) * 100
+        }
+    }
+    
+    ; 严格错误处理：确保赋值给控件的是整数
+    try {
+        if IsObject(BarProgress)
+            BarProgress.Value := Integer(pct)
     }
 }
 
@@ -118,225 +183,8 @@ ToggleBar(*) {
         BarGui.Hide()
 }
 
-
 ; ==============================================================================
-; 2. 智能平铺 (Alt + D) - 自动避让 Bar 高度
-; ==============================================================================
-
-TileCurrentDesktop(*) {
-    global BarHeight
-    windows := GetVisibleWindows()
-    count := windows.Length
-    
-    if (count == 0) {
-        ShowOSD("No Windows")
-        return
-    }
-
-    ; 1. 获取屏幕工作区 (WL, WT, WR, WB) - 系统会自动减去任务栏
-    MonitorGetWorkArea(1, &WL, &WT, &WR, &WB)
-    
-    ; 2. ★ 修正坐标：顶部避让 Bar 的高度
-    if (BarVisible) {
-        WT := WT + BarHeight  ; Y起点下移
-    }
-    
-    ; 3. 计算实际可用宽高
-    W := WR - WL
-    H := WB - WT 
-
-    ShowOSD("Tiling: " . count)
-
-    ; --- 算法 A: 1 个窗口 (铺满) ---
-    if (count == 1) {
-        try{
-        WinRestore(windows[1])
-        WinMove(WL, WT, W, H, windows[1])
-        return
-        }
-    }
-
-    ; --- 算法 B: 2 个窗口 (左右护法) ---
-    if (count == 2) {
-        try{
-        WinRestore(windows[1])
-        WinMove(WL, WT, W/2, H, windows[1])
-        
-        WinRestore(windows[2])
-        WinMove(WL + W/2, WT, W/2, H, windows[2])
-        return
-        }
-    }
-
-    ; --- 算法 C: 奇数个 (川字形/竖条) ---
-    if (Mod(count, 2) != 0) {
-        try{
-        itemWidth := W / count
-        Loop count {
-            hwnd := windows[A_Index]
-            WinRestore(hwnd)
-            WinMove(WL + (A_Index - 1) * itemWidth, WT, itemWidth, H, hwnd)
-        }
-        return
-        }
-    }
-
-    ; --- 算法 D: 偶数个 (田字形/网格) ---
-    if (Mod(count, 2) == 0) {
-        try{
-        cols := count / 2
-        itemWidth := W / cols
-        itemHeight := H / 2 ; 上下两行
-        
-        Loop count {
-            hwnd := windows[A_Index]
-            WinRestore(hwnd)
-            
-            idx := A_Index - 1
-            r := Floor(idx / cols) ; 行索引 0/1
-            c := Mod(idx, cols)    ; 列索引
-            
-            xPos := WL + c * itemWidth
-            yPos := WT + r * itemHeight
-            
-            WinMove(xPos, yPos, itemWidth, itemHeight, hwnd)
-        }
-        return
-        }
-    }
-}
-
-; ==============================================================================
-; 3. KDE 风格窗口管理 (修复了 Try Catch 语法)
-; ==============================================================================
-
-; --- Alt + 左键: 拖动 ---
-!LButton:: {
-    global DoubleAlt
-    MouseGetPos(,, &hwnd)
-    
-    ; Logic: Double Alt to Minimize
-    if (DoubleAlt) {
-        try WinMinimize(hwnd)
-        return
-    }
-
-    ; --- Logic: Handle Maximized Windows (Auto-Restore) ---
-    if (WinGetMinMax(hwnd) == 1) {
-        try {
-            ; 1. Restore the window
-            WinRestore(hwnd)
-            ; 2. Get the new restored size
-            WinGetPos(,, &restoreW, &restoreH, hwnd)
-            ; 3. Get mouse position
-            MouseGetPos(&mX, &mY)
-            ; 4. Snap window center to mouse (so it doesn't jump away)
-            ; Moving it so mouse is horizontally centered, and near the top (title bar feel)
-            newWinX := mX - (restoreW / 2)
-            newWinY := mY - (restoreH / 10) ; 1/10 down from top feels like grabbing the header
-            WinMove(newWinX, newWinY,,, hwnd)
-        } catch {
-            return ; If something fails (e.g. permission), abort drag
-        }
-    }
-    ; -------------------------------------------------------
-
-    MouseGetPos(&startX, &startY)
-    try WinGetPos(&winX, &winY,,, hwnd)
-    catch 
-        return
-
-    while GetKeyState("LButton", "P") {
-        MouseGetPos(&curX, &curY)
-        try WinMove(winX + (curX - startX), winY + (curY - startY),,, hwnd)
-    }
-}
-
-; --- Alt + 右键: 调整大小 ---
-!RButton:: {
-    global DoubleAlt
-    MouseGetPos(,, &hwnd)
-    
-    if (DoubleAlt) {
-        if (WinGetMinMax(hwnd) == 1)
-            WinRestore(hwnd)
-        else
-            WinMaximize(hwnd)
-        return
-    }
-
-    if (WinGetMinMax(hwnd) == 1)
-        return
-
-    try WinGetPos(&winX, &winY, &winW, &winH, hwnd)
-    catch {
-        return
-    }
-
-    MouseGetPos(&startX, &startY)
-    
-    ; 智能判断点击区域 (左/右? 上/下?)
-    clickRelX := (startX - winX) / winW
-    clickRelY := (startY - winY) / winH
-    isLeft := (clickRelX < 0.5)
-    isUp   := (clickRelY < 0.5)
-
-    while GetKeyState("RButton", "P") {
-        MouseGetPos(&curX, &curY)
-        dX := curX - startX
-        dY := curY - startY
-        
-        newX := isLeft ? (winX + dX) : winX
-        newW := isLeft ? (winW - dX) : (winW + dX)
-        newY := isUp ? (winY + dY) : winY
-        newH := isUp ? (winH - dY) : (winH + dY)
-        
-        if (newW > 50 && newH > 50)
-            try WinMove(newX, newY, newW, newH, hwnd)
-    }
-}
-
-; --- Alt + 中键 / Alt + Q : 关闭 ---
-!MButton::
-!q:: {
-    MouseGetPos(,, &hwnd)
-    try WinClose(hwnd)
-}
-
-; --- Alt + 滚轮 : 透明度 ---
-!WheelUp:: {
-    MouseGetPos(,, &hwnd)
-    try {
-        cur := WinGetTransparent(hwnd)
-        if (cur == "") 
-            cur := 255
-        WinSetTransparent(Min(cur + 20, 255), hwnd)
-    }
-}
-
-!WheelDown:: {
-    MouseGetPos(,, &hwnd)
-    try {
-        cur := WinGetTransparent(hwnd)
-        if (cur == "") 
-            cur := 255
-        WinSetTransparent(Max(cur - 20, 50), hwnd)
-    }
-}
-
-; --- Alt 双击检测 ---
-~Alt:: {
-    global DoubleAlt
-    if (A_PriorHotkey == "~Alt" && A_TimeSincePriorHotkey < 400)
-        DoubleAlt := true
-    else
-        DoubleAlt := false
-    KeyWait("Alt")
-    DoubleAlt := false
-}
-
-; ==============================================================================
-; 4. 虚拟桌面与窗口管理核心
+; 5. 模块：虚拟桌面核心 (Virtual Desktop Core)
 ; ==============================================================================
 
 SwitchDesktop(target, *) {
@@ -346,28 +194,32 @@ SwitchDesktop(target, *) {
         ShowOSD("Desktop " . target)
         return
     }
-
-    ; 1. 保存当前桌面窗口
+    
+    ; 保存当前
     Desktops[CurrentDesktop] := GetVisibleWindows()
     
-    ; 2. 隐藏当前桌面非钉住窗口
+    ; 隐藏当前桌面非 Pin 窗口
     for hwnd in Desktops[CurrentDesktop] {
-        if (!AlwaysVisible.Has(hwnd))
+        if (!AlwaysVisible.Has(hwnd)) {
             try WinMinimize(hwnd)
+        }
     }
-
-    ; 3. 恢复目标桌面窗口
-    for hwnd in Desktops[target]
+    
+    ; 恢复目标桌面窗口
+    for hwnd in Desktops[target] {
         try WinRestore(hwnd)
-
-    ; 4. 强制恢复钉住的窗口
-    for hwnd, _ in AlwaysVisible
+    }
+    
+    ; 强制恢复 Pin 窗口
+    for hwnd, _ in AlwaysVisible {
         try WinRestore(hwnd)
-
-    ; 5. 激活一个窗口焦点
-    if (Desktops[target].Length > 0)
+    }
+    
+    ; 激活焦点
+    if (Desktops[target].Length > 0) {
         try WinActivate(Desktops[target][1])
-
+    }
+        
     CurrentDesktop := target
     UpdateStatusBar()
     ShowOSD("Desktop " . CurrentDesktop)
@@ -376,34 +228,37 @@ SwitchDesktop(target, *) {
 MoveWindowToDesktop(target, *) {
     global CurrentDesktop, Desktops, AlwaysVisible
     
-    try hwnd := WinExist("A")
-    catch {
-        return ; 修复 Catch Return 错误：v2 必须使用 block 或直接 return
+    ; 严谨的 Try-Catch 获取窗口
+    hwnd := 0
+    try {
+        hwnd := WinExist("A")
+    } catch {
+        return
     }
     
-    if (!hwnd || hwnd == BarGui.Hwnd) 
+    if (!hwnd || (BarGui && hwnd == BarGui.Hwnd)) 
         return
 
-    ; 如果移动了钉住的窗口，取消钉住状态
-    if (AlwaysVisible.Has(hwnd))
+    ; 处理 Pin 状态
+    if (AlwaysVisible.Has(hwnd)) 
         AlwaysVisible.Delete(hwnd)
 
-    ; 从所有桌面记录中移除
+    ; 从所有桌面列表中移除
     Loop DesktopCount {
         d := A_Index
         if (Desktops.Has(d)) {
-            newList := []
+            nl := []
             for h in Desktops[d] {
-                if (h != hwnd)
-                    newList.Push(h)
+                if (h != hwnd) 
+                    nl.Push(h)
             }
-            Desktops[d] := newList
+            Desktops[d] := nl
         }
     }
     
-    ; 加入目标
+    ; 加入目标桌面
     Desktops[target].Push(hwnd)
-
+    
     if (target != CurrentDesktop) {
         try WinMinimize(hwnd)
         ShowOSD("Window -> Desktop " . target)
@@ -411,33 +266,31 @@ MoveWindowToDesktop(target, *) {
 }
 
 MoveAndSwitch(target, *) {
-        MoveWindowToDesktop(target)
-            SwitchDesktop(target)
+    MoveWindowToDesktop(target)
+    SwitchDesktop(target)
+    ShowOSD("Move & Switch -> " . target) 
 }
-; --- 聚合所有窗口 (Alt + Shift + G) ---
+
 GatherAllToCurrent(*) {
     global Desktops, CurrentDesktop, AlwaysVisible
-    
     ShowOSD("Gathering All Windows...")
     
-    ; 获取所有物理窗口
     fullList := WinGetList()
-    
-    ; 清空所有桌面的记录，重新分配
     Loop DesktopCount
         Desktops[A_Index] := []
-    AlwaysVisible.Clear()
     
+    AlwaysVisible.Clear()
     count := 0
+    
     for hwnd in fullList {
         try {
-            if (hwnd == BarGui.Hwnd)
-                continue
-            class := WinGetClass(hwnd)
-            if (class == "Progman" || class == "Shell_TrayWnd")
+            if (BarGui && hwnd == BarGui.Hwnd) 
                 continue
             
-            ; 恢复并加入当前桌面
+            class := WinGetClass(hwnd)
+            if (class == "Progman" || class == "Shell_TrayWnd") 
+                continue
+            
             WinRestore(hwnd)
             Desktops[CurrentDesktop].Push(hwnd)
             count++
@@ -446,15 +299,16 @@ GatherAllToCurrent(*) {
     ShowOSD("Gathered " . count . " Windows")
 }
 
-; --- 钉住/解钉窗口 (Ctrl + Alt + T) ---
 TogglePin(*) {
     global AlwaysVisible
-    try hwnd := WinExist("A")
-    catch {
-        return
+    hwnd := 0
+    try { 
+        hwnd := WinExist("A") 
+    } catch { 
+        return 
     }
     
-    if (!hwnd || hwnd == BarGui.Hwnd)
+    if (!hwnd || (BarGui && hwnd == BarGui.Hwnd)) 
         return
         
     if (AlwaysVisible.Has(hwnd)) {
@@ -466,197 +320,237 @@ TogglePin(*) {
     }
 }
 
-; --- 还原所有并退出 (Alt + F12) ---
-RestoreAndExit(*) {
-    global BarGui
-    ShowOSD("Restoring & Exiting...")
-    Sleep(500) ; 给一点时间显示OSD
+; ==============================================================================
+; 6. 模块：智能平铺 (Smart Tiling)
+; ==============================================================================
+
+TileCurrentDesktop(*) {
+    global BarHeight, BarVisible
+    windows := GetVisibleWindows()
+    count := windows.Length
     
-    ; 1. 销毁 Bar
-    if BarGui
-        BarGui.Destroy()
-        
-    ; 2. 还原所有窗口
-    list := WinGetList()
-    for hwnd in list {
+    if (count == 0) {
+        ShowOSD("No Windows")
+        return
+    }
+
+    MonitorGetWorkArea(1, &WL, &WT, &WR, &WB)
+    if (BarVisible)
+        WT += BarHeight
+    
+    W := WR - WL, H := WB - WT 
+    ShowOSD("Tiling: " . count)
+
+    ; 算法 A: 1个窗口
+    if (count == 1) {
         try {
-            class := WinGetClass(hwnd)
-            if (class != "Progman" && class != "Shell_TrayWnd")
-                WinRestore(hwnd)
+            WinRestore(windows[1])
+            WinMove(WL, WT, W, H, windows[1])
         }
+        return
     }
-    
-    ExitApp
-}
-
-; --- 辅助：获取当前可见窗口 ---
-GetVisibleWindows() {
-    global BarGui
-    list := WinGetList()
-    windows := []
-    for hwnd in list {
+    ; 算法 B: 2个窗口
+    if (count == 2) {
         try {
-            if (hwnd == BarGui.Hwnd)
-                continue
-            class := WinGetClass(hwnd)
-            if (class == "Progman" || class == "Shell_TrayWnd")
-                continue
-            if (WinGetMinMax(hwnd) != -1) 
-                windows.Push(hwnd)
+            WinRestore(windows[1]), WinMove(WL, WT, W/2, H, windows[1])
+            WinRestore(windows[2]), WinMove(WL + W/2, WT, W/2, H, windows[2])
         }
+        return
     }
-    return windows
+    ; 算法 C: 奇数 (列模式)
+    if (Mod(count, 2) != 0) { 
+        try {
+            itemWidth := W / count
+            for i, hwnd in windows
+                WinRestore(hwnd), WinMove(WL + (i-1)*itemWidth, WT, itemWidth, H, hwnd)
+        }
+        return
+    }
+    ; 算法 D: 偶数 (网格模式)
+    if (Mod(count, 2) == 0) { 
+        try {
+            cols := count / 2
+            itemWidth := W / cols, itemHeight := H / 2
+            for i, hwnd in windows {
+                idx := i - 1
+                r := Floor(idx / cols), c := Mod(idx, cols)
+                WinRestore(hwnd), WinMove(WL + c*itemWidth, WT + r*itemHeight, itemWidth, itemHeight, hwnd)
+            }
+        }
+        return
+    }
 }
 
-ShowOSD(text) {
-    static OsdGui := ""
-    if IsObject(OsdGui)
-        OsdGui.Destroy()
+; ==============================================================================
+; 7. 模块：KDE 交互 (Mouse Interaction)
+; ==============================================================================
+
+!LButton:: {
+    global DoubleAlt
+    MouseGetPos(,, &hwnd)
     
-    OsdGui := Gui("+AlwaysOnTop -Caption +ToolWindow +Disabled +Owner")
-    OsdGui.BackColor := "181818"
-    OsdGui.SetFont("s20 w600 cA020F0", "Segoe UI")
-    OsdGui.Add("Text", "Center", text)
-    OsdGui.Show("NoActivate AutoSize y850")
-    WinSetTransparent(200, OsdGui.Hwnd)
-    SetTimer(() => (IsObject(OsdGui) ? OsdGui.Destroy() : ""), -1000)
-}
-
-SetupTrayIcon() {
-    A_TrayMenu.Delete()
-    A_TrayMenu.Add("Tile Windows (Alt+D)", TileCurrentDesktop)
-    A_TrayMenu.Add("Gather All (Alt+Shift+G)", GatherAllToCurrent)
-    A_TrayMenu.Add("Restore & Exit (Alt+F12)", RestoreAndExit)
-}
-
-
-
-; ==============================================================================
-; 全局配置
-; ==============================================================================
-global VimPath := "C:\Program Files\Vim\vim91\vim.exe"
-global TerminalExe := "C:\Soft\terminal\WindowsTerminal.exe"
-
-; ==============================================================================
-; 鼠标增强
-; ==============================================================================
-; 左右键同时按下模拟 Ctrl+C
-~LButton & RButton::
-~RButton & LButton::Send("^c")
-
-; ==============================================================================
-; 快捷键启动
-; ==============================================================================
-
-; Alt + Enter: 在当前路径打开 Windows Terminal
-!Enter::
-{
-    path := Explorer_GetPath()
-    if (path != "")
-        Run('"' . TerminalExe . '" -d "' . path . '"')
-    else
-        Run('"' . TerminalExe . '"')
-}
-
-; Alt + S: 打开设备管理器
-!s::Run("devmgmt.msc")
-
-; ==============================================================================
-; 窗口管理 (针对鼠标下的窗口)
-; ==============================================================================
-
-; Alt + F: 最大化/还原
-!f::
-{
-    try {
-        MouseGetPos(,, &targetWinId)
-        if WinGetMinMax(targetWinId)
-            WinRestore(targetWinId)
-        else
-            WinMaximize(targetWinId)
-    }
-}
-
-; Alt + T: 置顶/取消置顶
-!t::
-{
-    try {
-        MouseGetPos(,, &targetWinId)
-        WinSetAlwaysOnTop(-1, targetWinId) ; -1 表示切换状态
-    }
-}
-
-; ==============================================================================
-; Vim 集成 (核心修复)
-; ==============================================================================
-
-; Alt + V: 用 Vim 打开选中的文件
-!v::
-{
-    ; 1. 尝试获取选中的文件
-    targetPath := Explorer_GetSelection()
-    
-    ; 2. 如果没选中文件，则什么都不做，或者您可以改为打开当前文件夹
-    ; 为了防止误操作，如果没选中文件，这里仅提示
-    if (targetPath == "") {
-        ToolTip("未选中任何文件")
-        SetTimer(() => ToolTip(), -1000)
+    if (DoubleAlt) {
+        try WinMinimize(hwnd)
         return
     }
     
-    ; 3. 运行 Vim
+    ; 自动还原并吸附 (吸附到鼠标位置)
+    if (WinGetMinMax(hwnd) == 1) {
+        try {
+            WinRestore(hwnd)
+            WinGetPos(,, &rw, &rh, hwnd)
+            MouseGetPos(&mx, &my)
+            ; 移动窗口使得鼠标位于标题栏附近
+            WinMove(mx - rw/2, my - rh/10,,, hwnd)
+        } catch {
+            return
+        }
+    }
+    
+    MouseGetPos(&startX, &startY)
     try {
-        Run('"' . VimPath . '" "' . targetPath . '"')
-    } catch as e {
-        MsgBox("无法运行 Vim，请检查路径是否正确：`n" VimPath)
+        WinGetPos(&winX, &winY,,, hwnd)
+    } catch {
+        return
+    }
+    
+    while GetKeyState("LButton", "P") {
+        MouseGetPos(&curX, &curY)
+        try WinMove(winX + (curX - startX), winY + (curY - startY),,, hwnd)
     }
 }
 
-; ==============================================================================
-; 电源菜单 GUI
-; ==============================================================================
-
-; Alt + X: 显示/隐藏电源菜单
-!x::ShowPowerMenu()
-
-ShowPowerMenu() {
-    static pGui := "" ; 静态变量存储 GUI 对象
+!RButton:: {
+    global DoubleAlt
+    MouseGetPos(,, &hwnd)
     
-    ; 如果 GUI 存在，销毁它 (实现 Toggle 效果)
+    if (DoubleAlt) {
+        try (WinGetMinMax(hwnd) == 1 ? WinRestore(hwnd) : WinMaximize(hwnd))
+        return
+    }
+    
+    if (WinGetMinMax(hwnd) == 1) 
+        return
+        
+    try {
+        WinGetPos(&winX, &winY, &winW, &winH, hwnd)
+        MouseGetPos(&startX, &startY)
+        isLeft := (startX - winX) / winW < 0.5
+        isUp   := (startY - winY) / winH < 0.5
+        
+        while GetKeyState("RButton", "P") {
+            MouseGetPos(&curX, &curY)
+            dX := curX - startX, dY := curY - startY
+            nX := isLeft ? (winX+dX) : winX, nW := isLeft ? (winW-dX) : (winW+dX)
+            nY := isUp ? (winY+dY) : winY, nH := isUp ? (winH-dY) : (winH+dY)
+            
+            if (nW > 50 && nH > 50)
+                try WinMove(nX, nY, nW, nH, hwnd)
+        }
+    }
+}
+
+~Alt:: {
+    global DoubleAlt := (A_PriorHotkey == "~Alt" && A_TimeSincePriorHotkey < 400)
+    KeyWait("Alt")
+    DoubleAlt := false
+}
+
+; ==============================================================================
+; 8. 模块：辅助功能 (Helpers & Tools)
+; ==============================================================================
+
+; --- 窗口操作辅助 ---
+CloseWindowUnderMouse(*) {
+    MouseGetPos(,, &hwnd)
+    try WinClose(hwnd)
+}
+
+ToggleMaximizeUnderMouse(*) {
+    try {
+        MouseGetPos(,, &hwnd)
+        if WinGetMinMax(hwnd)
+            WinRestore(hwnd)
+        else
+            WinMaximize(hwnd)
+    }
+}
+
+ToggleTopUnderMouse(*) {
+    try {
+        MouseGetPos(,, &hwnd)
+        WinSetAlwaysOnTop(-1, hwnd)
+        ShowOSD("Topmost Toggled")
+    }
+}
+
+AdjustTransparency(amount, *) {
+    MouseGetPos(,, &hwnd)
+    try {
+        cur := WinGetTransparent(hwnd)
+        if !IsNumber(cur) ; 修复：如果获取失败或为空，默认为不透明(255)
+            cur := 255
+            
+        newVal := cur + amount
+        if (newVal > 255) 
+            newVal := 255
+        if (newVal < 30) 
+            newVal := 30
+            
+        WinSetTransparent(newVal, hwnd)
+    }
+}
+
+; --- 外部工具启动逻辑 ---
+LaunchTerminal(*) {
+    path := Explorer_GetPath()
+    if (path != "") {
+        try Run('"' . TerminalExe . '" -d "' . path . '"')
+    } else {
+        try Run('"' . TerminalExe . '"')
+    }
+}
+
+OpenWithVim(*) {
+    targetPath := Explorer_GetSelection()
+    if (targetPath == "") {
+        ShowOSD("No file selected")
+        return
+    }
+    try {
+        Run('"' . VimPath . '" "' . targetPath . '"')
+    } catch as e {
+        ShowOSD("Vim Launch Failed")
+    }
+}
+
+ShowPowerMenu(*) {
+    static pGui := ""
     if IsObject(pGui) {
         pGui.Destroy()
         pGui := ""
         return
     }
-
     pGui := Gui("+AlwaysOnTop -Caption +ToolWindow +Owner")
     pGui.BackColor := "2e3440"
     pGui.SetFont("s12", "Arial")
-    
-    ; 标题
     pGui.Add("Text", "x0 y15 w500 Center cceceff4", "System Power Menu")
-    pGui.Add("Text", "x50 y45 w400 h2 0x10") ; 分割线
-
-    ; 辅助函数：添加按钮
+    pGui.Add("Text", "x50 y45 w400 h2 0x10")
+    
     AddBtn(x, y, text, func, color) {
         btn := pGui.Add("Text", "x" x " y" y " w120 h60 Center 0x200 +Border cWhite Background" color, text)
         btn.OnEvent("Click", func)
     }
-
-    ; 添加三个按钮
+    
     AddBtn(50,  70, "Shutdown", (*) => Shutdown(1), "b48ead")
     AddBtn(190, 70, "Sleep",    (*) => DllCall("PowrProf\SetSuspendState", "Int", 0, "Int", 0, "Int", 0), "5e81ac")
     AddBtn(330, 70, "Reboot",   (*) => Shutdown(2), "bf616a")
-
-    ; 按 ESC 关闭
+    
     pGui.OnEvent("Escape", (*) => (pGui.Destroy(), pGui := ""))
     pGui.Show("w500 h160")
 }
 
-; ==============================================================================
-; 核心函数库：资源管理器与桌面路径获取 (修复版)
-; ==============================================================================
-
+; --- 资源管理器路径获取 (Robust COM) ---
 Explorer_GetSelection() {
     hwnd := WinExist("A")
     if !hwnd
@@ -717,22 +611,59 @@ Explorer_GetPath() {
     return ""
 }
 
-
-; ==============================================================================
-; 5. 快捷键映射 (User Defined)
-; ==============================================================================
-
-; 切换桌面 (Alt + 1..9)
-; 移动窗口 (Alt + Shift + 1..9)
-Loop 9 {
-    i := A_Index
-    Hotkey("!" . i, SwitchDesktop.Bind(i))
-    Hotkey("!+" . i, MoveWindowToDesktop.Bind(i))
-    Hotkey("^!" . i, MoveAndSwitch.Bind(i))
+; --- 系统辅助 ---
+RestoreAndExit(*) {
+    global BarGui
+    ShowOSD("Exiting...")
+    Sleep(500)
+    
+    if IsObject(BarGui) 
+        BarGui.Destroy()
+        
+    for hwnd in WinGetList() {
+        try {
+            class := WinGetClass(hwnd)
+            if (class != "Progman" && class != "Shell_TrayWnd") 
+                WinRestore(hwnd)
+        }
+    }
+    ExitApp
 }
 
-Hotkey("!d", TileCurrentDesktop)      ; Alt + D : 平铺
-Hotkey("!+g", GatherAllToCurrent)     ; Alt + Shift + G : 聚合所有窗口
-Hotkey("^!t", TogglePin)              ; Ctrl + Alt + T  : 钉住窗口
-Hotkey("^!b", ToggleBar)              ; Ctrl + Alt + B  : 开关顶栏
-Hotkey("!F12", RestoreAndExit)        ; Alt + F12       : 安全退出
+GetVisibleWindows() {
+    global BarGui
+    list := WinGetList()
+    windows := []
+    for hwnd in list {
+        try {
+            if (BarGui && hwnd == BarGui.Hwnd) 
+                continue
+            class := WinGetClass(hwnd)
+            if (class == "Progman" || class == "Shell_TrayWnd") 
+                continue
+            if (WinGetMinMax(hwnd) != -1) 
+                windows.Push(hwnd)
+        }
+    }
+    return windows
+}
+
+ShowOSD(text) {
+    static OsdGui := ""
+    if IsObject(OsdGui)
+        OsdGui.Destroy()
+        
+    OsdGui := Gui("+AlwaysOnTop -Caption +ToolWindow +Disabled +Owner")
+    OsdGui.BackColor := "181818"
+    OsdGui.SetFont("s20 w600 cA020F0", "Segoe UI")
+    OsdGui.Add("Text", "Center", text)
+    OsdGui.Show("NoActivate AutoSize y850")
+    WinSetTransparent(200, OsdGui.Hwnd)
+    
+    SetTimer(() => (IsObject(OsdGui) ? OsdGui.Destroy() : ""), -1000)
+}
+
+SetupTrayIcon() {
+    A_TrayMenu.Delete()
+    A_TrayMenu.Add("Restore & Exit", RestoreAndExit)
+}
