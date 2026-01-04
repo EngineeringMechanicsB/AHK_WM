@@ -529,6 +529,195 @@ SetupTrayIcon() {
     A_TrayMenu.Add("Restore & Exit (Alt+F12)", RestoreAndExit)
 }
 
+
+
+; ==============================================================================
+; 全局配置
+; ==============================================================================
+global VimPath := "C:\Program Files\Vim\vim91\vim.exe"
+global TerminalExe := "C:\Soft\terminal\WindowsTerminal.exe"
+
+; ==============================================================================
+; 鼠标增强
+; ==============================================================================
+; 左右键同时按下模拟 Ctrl+C
+~LButton & RButton::
+~RButton & LButton::Send("^c")
+
+; ==============================================================================
+; 快捷键启动
+; ==============================================================================
+
+; Alt + Enter: 在当前路径打开 Windows Terminal
+!Enter::
+{
+    path := Explorer_GetPath()
+    if (path != "")
+        Run('"' . TerminalExe . '" -d "' . path . '"')
+    else
+        Run('"' . TerminalExe . '"')
+}
+
+; Alt + S: 打开设备管理器
+!s::Run("devmgmt.msc")
+
+; ==============================================================================
+; 窗口管理 (针对鼠标下的窗口)
+; ==============================================================================
+
+; Alt + F: 最大化/还原
+!f::
+{
+    try {
+        MouseGetPos(,, &targetWinId)
+        if WinGetMinMax(targetWinId)
+            WinRestore(targetWinId)
+        else
+            WinMaximize(targetWinId)
+    }
+}
+
+; Alt + T: 置顶/取消置顶
+!t::
+{
+    try {
+        MouseGetPos(,, &targetWinId)
+        WinSetAlwaysOnTop(-1, targetWinId) ; -1 表示切换状态
+    }
+}
+
+; ==============================================================================
+; Vim 集成 (核心修复)
+; ==============================================================================
+
+; Alt + V: 用 Vim 打开选中的文件
+!v::
+{
+    ; 1. 尝试获取选中的文件
+    targetPath := Explorer_GetSelection()
+    
+    ; 2. 如果没选中文件，则什么都不做，或者您可以改为打开当前文件夹
+    ; 为了防止误操作，如果没选中文件，这里仅提示
+    if (targetPath == "") {
+        ToolTip("未选中任何文件")
+        SetTimer(() => ToolTip(), -1000)
+        return
+    }
+    
+    ; 3. 运行 Vim
+    try {
+        Run('"' . VimPath . '" "' . targetPath . '"')
+    } catch as e {
+        MsgBox("无法运行 Vim，请检查路径是否正确：`n" VimPath)
+    }
+}
+
+; ==============================================================================
+; 电源菜单 GUI
+; ==============================================================================
+
+; Alt + X: 显示/隐藏电源菜单
+!x::ShowPowerMenu()
+
+ShowPowerMenu() {
+    static pGui := "" ; 静态变量存储 GUI 对象
+    
+    ; 如果 GUI 存在，销毁它 (实现 Toggle 效果)
+    if IsObject(pGui) {
+        pGui.Destroy()
+        pGui := ""
+        return
+    }
+
+    pGui := Gui("+AlwaysOnTop -Caption +ToolWindow +Owner")
+    pGui.BackColor := "2e3440"
+    pGui.SetFont("s12", "Arial")
+    
+    ; 标题
+    pGui.Add("Text", "x0 y15 w500 Center cceceff4", "System Power Menu")
+    pGui.Add("Text", "x50 y45 w400 h2 0x10") ; 分割线
+
+    ; 辅助函数：添加按钮
+    AddBtn(x, y, text, func, color) {
+        btn := pGui.Add("Text", "x" x " y" y " w120 h60 Center 0x200 +Border cWhite Background" color, text)
+        btn.OnEvent("Click", func)
+    }
+
+    ; 添加三个按钮
+    AddBtn(50,  70, "Shutdown", (*) => Shutdown(1), "b48ead")
+    AddBtn(190, 70, "Sleep",    (*) => DllCall("PowrProf\SetSuspendState", "Int", 0, "Int", 0, "Int", 0), "5e81ac")
+    AddBtn(330, 70, "Reboot",   (*) => Shutdown(2), "bf616a")
+
+    ; 按 ESC 关闭
+    pGui.OnEvent("Escape", (*) => (pGui.Destroy(), pGui := ""))
+    pGui.Show("w500 h160")
+}
+
+; ==============================================================================
+; 核心函数库：资源管理器与桌面路径获取 (修复版)
+; ==============================================================================
+
+Explorer_GetSelection() {
+    hwnd := WinExist("A")
+    if !hwnd
+        return ""
+
+    WinClass := WinGetClass(hwnd)
+    
+    ; --- 情况 A: 桌面 (Progman / WorkerW) ---
+    if (WinClass ~= "Progman|WorkerW") {
+        try {
+            ; 核心修复：ComValue(19, 8) 对应 VT_UI4, SCW_DESKTOP
+            ; 这能直接获取桌面对象，不再报错
+            oDesktop := ComObject("Shell.Application").Windows.Item(ComValue(19, 8))
+            
+            sel := oDesktop.Document.SelectedItems
+            if (sel.Count > 0)
+                return sel.Item(0).Path
+        } catch {
+            return ""
+        }
+    }
+    ; --- 情况 B: 资源管理器 (CabinetWClass) ---
+    else if (WinClass ~= "(Cabinet|Explore)WClass") {
+        try {
+            for window in ComObject("Shell.Application").Windows {
+                if (window.HWND == hwnd) {
+                    sel := window.Document.SelectedItems
+                    if (sel.Count > 0)
+                        return sel.Item(0).Path
+                }
+            }
+        }
+    }
+    
+    return ""
+}
+
+Explorer_GetPath() {
+    hwnd := WinExist("A")
+    if !hwnd
+        return ""
+    
+    WinClass := WinGetClass(hwnd)
+    
+    ; 如果是桌面，返回桌面路径
+    if (WinClass ~= "Progman|WorkerW")
+        return A_Desktop
+        
+    ; 如果是资源管理器，返回当前目录
+    if (WinClass ~= "(Cabinet|Explore)WClass") {
+        try {
+            for window in ComObject("Shell.Application").Windows {
+                if (window.HWND == hwnd)
+                    return window.Document.Folder.Self.Path
+            }
+        }
+    }
+    return ""
+}
+
+
 ; ==============================================================================
 ; 5. 快捷键映射 (User Defined)
 ; ==============================================================================
