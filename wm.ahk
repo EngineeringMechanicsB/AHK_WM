@@ -39,6 +39,21 @@ Loop DesktopCount {
     Desktops[A_Index] := []
 }
 
+; --- 剪切板路径设置 ---
+; 请确保路径准确，建议使用变量组合，方便迁移
+global VimPath    := "C:\Program Files\Vim\vim91\vim.exe" 
+global OutputDir  := "C:\Users\Administrator\Desktop\zxw"
+global OutputFile := OutputDir . "\CB.txt"
+
+; --- 窗口布局设置 ---
+global VimWinX      := 400   ; 窗口 X 坐标
+global VimWinY      := 0     ; 窗口 Y 坐标
+global VimWinWidth  := 1000  ; 建议设置一个宽度，或者留空使用默认
+global VimWinHeight := 800   ; 建议设置一个高度
+
+; --- 运行状态变量 ---
+global CurrentVimPID := 0    ; 用于追踪 Vim 进程 ID
+global LastClipContent := "" ; 用于防止重复记录
 ; ==============================================================================
 ; 2. 启动流程 (Initialization)
 ; ==============================================================================
@@ -47,7 +62,10 @@ UpdateStatusBar()
 UpdateClockAndProgress()
 SetTimer(UpdateClockAndProgress, 1000) ; 每秒刷新
 SetupTrayIcon()
-
+; 确保目标目录存在，不存在则创建
+if !DirExist(OutputDir)
+    DirCreate(OutputDir)
+RecordClipboard()
 ; ==============================================================================
 ; 3. 快捷键绑定 (Key Bindings)
 ; ==============================================================================
@@ -90,6 +108,22 @@ Hotkey("!s", (*) => Run("devmgmt.msc"))    ; Alt + S: 设备管理器 (修正语
 Hotkey("!v", OpenWithVim)                  ; Alt + V: 用 Vim 打开选中文件
 Hotkey("!x", ShowPowerMenu)                ; Alt + X: 电源菜单
 
+; --- 剪切板快捷键 ---
+; --- 监听复制 (Ctrl + C) ---
+~^c::
+{
+        ; 延时一小会儿，确保系统剪贴板已更新
+            Sleep(100) 
+                RecordClipboard()
+}
+
+; --- 呼出/隐藏 Vim 记录 (Ctrl + `) ---
+^`::
+{
+        ToggleVimWindow()
+}
+
+
 ; ==============================================================================
 ; 4. 模块：状态栏 (Status Bar & Progress)
 ; ==============================================================================
@@ -102,7 +136,7 @@ CreateStatusBar() {
             BarGui.Destroy()
     }
 
-    BarGui := Gui("-Caption +AlwaysOnTop +ToolWindow +Owner +E0x08000000")
+    BarGui := Gui("-Caption +AlwaysOnTop +ToolWindow +Owner +E0x08000000 -DPIScale")
     BarGui.BackColor := "181818"
     
     ; 左侧：桌面指示器
@@ -119,7 +153,7 @@ CreateStatusBar() {
     
     ; 右侧：时钟
     BarGui.SetFont("s10 w600 cA020F0", "Segoe UI")
-    BarRightText := BarGui.Add("Text", "x" . (A_ScreenWidth - 650 ) . " y4 w250 h20 BackgroundTrans Right", "")
+    BarRightText := BarGui.Add("Text", "x" . (A_ScreenWidth - 260 ) . " y4 w250 h20 BackgroundTrans Right", "")
     
     BarGui.Show("x0 y0 w" . A_ScreenWidth . " h" . BarHeight . " NoActivate")
 }
@@ -268,7 +302,7 @@ MoveWindowToDesktop(target, *) {
 MoveAndSwitch(target, *) {
     MoveWindowToDesktop(target)
     SwitchDesktop(target)
-    ShowOSD("Move & Switch -> " . target) 
+    ShowOSD("Move And Switch -> " . target) 
 }
 
 GatherAllToCurrent(*) {
@@ -666,4 +700,84 @@ ShowOSD(text) {
 SetupTrayIcon() {
     A_TrayMenu.Delete()
     A_TrayMenu.Add("Restore & Exit", RestoreAndExit)
+}
+; ==============================================================================
+; 9. 模块：剪切板模块
+; ==============================================================================
+/**
+ * 记录剪贴板内容到文件
+ */
+RecordClipboard() {
+    global LastClipContent
+    
+    ; 1. 尝试获取文本内容
+    try {
+        txt := A_Clipboard
+    } catch {
+        return ; 如果剪贴板无法读取，直接返回
+    }
+
+    ; 2. 只有当剪贴板包含纯文本时才记录 (防止复制文件或图片时写入乱码)
+    if (Type(txt) != "String" || txt == "")
+        return
+
+    ; 3. 防止连续重复记录相同内容
+    if (txt == LastClipContent)
+        return
+
+    LastClipContent := txt
+    
+    ; 4. 格式化写入内容
+    Timestamp := FormatTime(, "yyyy-MM-dd HH:mm:ss")
+    Separator := "------------------------------------------------------------------------------------------------"
+    
+    ; 构造最终文本块
+    Content := Separator . "`r`n" . Timestamp . "`r`n" . txt . "`r`n`r`n"
+    
+    ; 5. 追加到文件 (指定 UTF-8 编码)
+    try {
+        FileAppend(Content, OutputFile, "UTF-8")
+        
+        ; 可选：显示一个小提示，告知用户记录成功 (不想被打扰可注释掉下面这行)
+        ; ToolTip("已记录到 CB.txt")
+        ; SetTimer () => ToolTip(), -1000
+    } catch as e {
+        ; 文件被占用或其他错误时忽略
+    }
+}
+
+/**
+ * 切换 Vim 窗口显示状态
+ */
+ToggleVimWindow() {
+    global CurrentVimPID, VimPath, OutputFile
+
+    ; 判断 Vim 窗口是否已经存在
+    if (CurrentVimPID && WinExist("ahk_pid " . CurrentVimPID)) {
+        ; --- 状态 A: 窗口存在，执行关闭 ---
+        WinClose("ahk_pid " . CurrentVimPID)
+        CurrentVimPID := 0
+    } else {
+        ; --- 状态 B: 窗口不存在，执行打开 ---
+        
+        ; 使用 "+$" 参数告诉 Vim 打开后直接跳转到最后一行 (无需 Send G)
+        RunCmd := Format('"{1}" "+$" "{2}"', VimPath, OutputFile)
+        
+        try {
+            Run(RunCmd, , , &pid)
+            CurrentVimPID := pid
+            
+            ; 等待窗口出现 (最多等 3 秒)
+            if WinWait("ahk_pid " . pid, , 3) {
+                ; 设置置顶
+                WinSetAlwaysOnTop(1, "ahk_pid " . pid)
+                ; 移动窗口 (宽和高如果不需要改变，可以去掉后两个参数)
+                WinMove(VimWinX, VimWinY, , , "ahk_pid " . pid)
+                ; 激活窗口
+                WinActivate("ahk_pid " . pid)
+            }
+        } catch as e {
+            MsgBox("无法启动 Vim，请检查路径配置：`n" . VimPath)
+        }
+    }
 }
