@@ -54,6 +54,27 @@ global VimWinHeight := 800   ; 建议设置一个高度
 ; --- 运行状态变量 ---
 global CurrentVimPID := 0    ; 用于追踪 Vim 进程 ID
 global LastClipContent := "" ; 用于防止重复记录
+; --- 环形菜单配置区域 ---
+global PieConfig := Map(
+    "Top",        "↑",
+     "TopRight",   "↗",
+     "Right",      "→",
+     "DownRight",  "↘",
+     "Down",       "↓",
+     "DownLeft",   "↙",
+     "Left",       "←",
+     "TopLeft",    "↖",
+     "Center",     "●"
+     )
+
+global Color_Bg       := "181818"
+global Color_Text     := "CCCCCC"
+global Color_Active   := "A020F0"
+global MenuSize       := 300        ; 菜单直径 (物理像素)
+global Radius         := MenuSize/2 
+global CenterZone     := 40         
+global FontSize       := 14
+global FontSizeActive := 22
 ; ==============================================================================
 ; 2. 启动流程 (Initialization)
 ; ==============================================================================
@@ -64,7 +85,7 @@ SetTimer(UpdateClockAndProgress, 1000) ; 每秒刷新
 SetupTrayIcon()
 ; 确保目标目录存在，不存在则创建
 if !DirExist(OutputDir)
-    DirCreate(OutputDir)
+   DirCreate(OutputDir)
 RecordClipboard()
 ; ==============================================================================
 ; 3. 快捷键绑定 (Key Bindings)
@@ -93,6 +114,7 @@ Hotkey("!q", CloseWindowUnderMouse)        ; Alt + Q: 关闭
 Hotkey("!MButton", CloseWindowUnderMouse)  ; Alt + 中键: 关闭
 Hotkey("!f", ToggleMaximizeUnderMouse)     ; Alt + F: 最大化/还原
 Hotkey("!t", ToggleTopUnderMouse)          ; Alt + T: 置顶/取消置顶
+Hotkey("!w", HideUnderMouse)               ; Alt + W: 最小化/取消最小化
 
 ; --- 鼠标增强 ---
 ; Alt + 滚轮: 调节透明度
@@ -121,6 +143,16 @@ Hotkey("!x", ShowPowerMenu)                ; Alt + X: 电源菜单
 ^`::
 {
         ToggleVimWindow()
+}
+
+; --- 环形菜单快捷键 ---
+~Space & RButton:: PieMenu.Start()
+
+~Space Up:: 
+~RButton Up:: 
+{
+    if PieMenu.IsActive
+        PieMenu.Execute()
 }
 
 
@@ -518,6 +550,13 @@ ToggleTopUnderMouse(*) {
     }
 }
 
+HideUnderMouse(*) {
+    try {
+        MouseGetPos(,, &hwnd)
+        WinMinimize(hwnd)
+        ShowOSD("Minimize Toggled")
+    }
+}
 AdjustTransparency(amount, *) {
     MouseGetPos(,, &hwnd)
     try {
@@ -780,4 +819,176 @@ ToggleVimWindow() {
             MsgBox("无法启动 Vim，请检查路径配置：`n" . VimPath)
         }
     }
+}
+; ==============================================================================
+; 10. 模块：环形菜单
+; ==============================================================================
+class PieMenu {
+    static IsActive := false
+    static GuiObj := ""
+    static Labels := Map()
+    static StartX := 0
+    static StartY := 0
+    static CurrentSector := ""
+    static LastSector := ""
+    static TimerFn := ObjBindMethod(PieMenu, "CheckMouse")
+
+    static Start() {
+        if this.IsActive
+            return
+        
+        this.IsActive := true
+        MouseGetPos(&x, &y)
+        this.StartX := x
+        this.StartY := y
+        this.CurrentSector := "Center"
+        this.LastSector := ""
+        this.CreateGui()
+        SetTimer(this.TimerFn, 10)
+    }
+
+    static CreateGui() {
+        this.GuiObj := Gui("-Caption +AlwaysOnTop +ToolWindow +Owner +E0x20 -DPIScale") 
+        this.GuiObj.BackColor := Color_Bg
+        this.GuiObj.SetFont("s" . FontSize . " w600", "Segoe UI")
+        
+        WinSetTransparent(220, this.GuiObj)
+        WinSetRegion("0-0 w" . MenuSize . " h" . MenuSize . " E", this.GuiObj)
+
+        ; --- 中心点 ---
+        cx := Radius - 20
+        cy := Radius - 20
+        this.Labels["Center"] := this.GuiObj.Add("Text", "x" . cx . " y" . cy . " w40 h40 Center +0x200 c" . Color_Text, PieConfig["Center"])
+
+        ; --- 8个方向 ---
+        directions := ["Right", "DownRight", "Down", "DownLeft", "Left", "TopLeft", "Top", "TopRight"]
+        
+        loop 8 {
+            idx := A_Index
+            dir := directions[idx]
+            text := PieConfig[dir]
+            
+            ; 角度计算 (0度=右, 顺时针)
+            angle := (idx - 1) * 45
+            rad := angle * (3.1415926 / 180)
+            
+            ; 距离圆心的距离 (0.75 表示在半径的 75% 处)
+            dist := Radius * 0.75
+            
+            ; 控件大小 (如果文字显示不全，调大这里)
+            ctrlW := 60
+            ctrlH := 40
+            
+            ; 核心三角函数计算
+            offsetX := Cos(rad) * dist
+            offsetY := Sin(rad) * dist
+            
+            ; 计算左上角坐标 (让控件中心对齐目标点)
+            finalX := (Radius + offsetX) - (ctrlW / 2)
+            finalY := (Radius + offsetY) - (ctrlH / 2)
+            
+            this.Labels[dir] := this.GuiObj.Add("Text", "x" . finalX . " y" . finalY . " w" . ctrlW . " h" . ctrlH . " Center +0x200 c" . Color_Text, text)
+        }
+
+        ; 居中显示 (因为用了 -DPIScale，这里的计算是纯物理像素，不会错位)
+        gx := this.StartX - Radius
+        gy := this.StartY - Radius
+        this.GuiObj.Show("x" . gx . " y" . gy . " w" . MenuSize . " h" . MenuSize . " NoActivate")
+    }
+
+    static CheckMouse() {
+        if !this.IsActive
+            return
+        MouseGetPos(&mx, &my)
+        dx := mx - this.StartX
+        dy := my - this.StartY
+        dist := Sqrt(dx*dx + dy*dy)
+
+        if (dist < CenterZone) {
+            this.CurrentSector := "Center"
+        } else {
+            angle := DllCall("msvcrt\atan2", "Double", dy, "Double", dx, "Cdecl Double") * 180 / 3.1415926
+            if (angle < 0)
+                angle += 360
+            sectorIdx := Round(angle / 45)
+            if (sectorIdx == 8)
+                sectorIdx := 0
+            static dirMap := ["Right", "DownRight", "Down", "DownLeft", "Left", "TopLeft", "Top", "TopRight"]
+            this.CurrentSector := dirMap[sectorIdx + 1]
+        }
+
+        if (this.CurrentSector != this.LastSector) {
+            this.UpdateUI()
+            this.LastSector := this.CurrentSector
+        }
+    }
+
+    static UpdateUI() {
+        if !IsObject(this.GuiObj)
+            return
+        for dir, ctrl in this.Labels {
+            try {
+                ctrl.SetFont("s" . FontSize . " c" . Color_Text . " w600")
+                ctrl.Opt("c" . Color_Text)
+            }
+        }
+        if this.Labels.Has(this.CurrentSector) {
+            try {
+                curr := this.Labels[this.CurrentSector]
+                curr.SetFont("s" . FontSizeActive . " c" . Color_Active . " w700")
+                curr.Opt("c" . Color_Active)
+            }
+        }
+    }
+
+    static Execute() {
+        this.IsActive := false
+        SetTimer(this.TimerFn, 0)
+        if IsObject(this.GuiObj)
+            this.GuiObj.Destroy()
+        sector := this.CurrentSector
+        if (sector != "Center" && sector != "") {
+            try %sector%()
+        }
+    }
+}
+; ==============================================================================
+; 4. 功能函数 (在此处填入具体逻辑)
+; ==============================================================================
+
+Top() {
+        MsgBox "↑"
+            ; Send "^w" ; 关闭标签页
+}
+
+TopRight() {
+        MsgBox "↗"
+            ; Send "^+{Tab}" ; 下一个标签页
+}
+
+Right() {
+        MsgBox "→"
+            ; Send "^{Tab}"
+}
+
+DownRight() {
+        MsgBox "↘"
+}
+
+Down() {
+        MsgBox "↓"
+            ; Send "{F5}" ; 刷新
+}
+
+DownLeft() {
+        MsgBox "↙"
+}
+
+Left() {
+        MsgBox "←"
+            ; Send "!{Left}" ; 后退
+}
+
+TopLeft() {
+        MsgBox "↖"
 }
