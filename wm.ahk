@@ -1,164 +1,460 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Force
 #WinActivateForce
-
 ; ==============================================================================
-; SUCKLESS WM v2.5 (Final Stable)
-; 结构：配置 -> 初始化 -> 按键绑定 -> 功能模块
+; 全局配置与变量 (Configuration)
 ; ==============================================================================
 
-; --- 0. 环境设置 (Environment) ---
+; --- 环境设置 ---
 SetWorkingDir(A_ScriptDir)
 CoordMode("Mouse", "Screen")
 SetTitleMatchMode(2)
 SetWinDelay(0)
 SetControlDelay(0)
 
-; ==============================================================================
-; 1. 全局配置与变量 (Global Configuration)
-; ==============================================================================
+; --- 视觉风格 ---
+global Color_Bg       := "181818"    ; 背景：深灰
+global Color_Text     := "CCCCCC"    ; 文字：浅灰
+global Color_Active   := "A020F0"    ; 高亮：紫色
+global BarHeight      := 28          ; 顶栏高度
 
-; --- 核心 WM 配置 ---
-global CurrentDesktop := 1
-global DesktopCount   := 9
-global Desktops       := Map()       
-global AlwaysVisible  := Map()       
-global DoubleAlt      := false       
-global BarHeight      := 28          
-global BarVisible     := true
-
-; --- GUI 对象占位 (必须初始化为空) ---
-global BarGui := "", BarLeftText := "", BarRightText := "", BarProgress := ""
-
-; --- 外部工具路径 (请确保路径正确，否则 Alt+Enter/Alt+V 无效) ---
-global VimPath     := "C:\Program Files\Vim\vim91\vim.exe"
-global TerminalExe := "C:\Soft\terminal\WindowsTerminal.exe"
-
-; --- 初始化桌面数据 ---
-Loop DesktopCount {
-    Desktops[A_Index] := []
-}
-
-; --- 剪切板路径设置 ---
-; 请确保路径准确，建议使用变量组合，方便迁移
-global VimPath    := "C:\Program Files\Vim\vim91\vim.exe" 
-global OutputDir  := "C:\Users\Administrator\Desktop\zxw"
-global OutputFile := OutputDir . "\CB.txt"
-
-; --- 窗口布局设置 ---
-global VimWinX      := 400   ; 窗口 X 坐标
-global VimWinY      := 0     ; 窗口 Y 坐标
-global VimWinWidth  := 1000  ; 建议设置一个宽度，或者留空使用默认
-global VimWinHeight := 800   ; 建议设置一个高度
-
-; --- 运行状态变量 ---
-global CurrentVimPID := 0    ; 用于追踪 Vim 进程 ID
-global LastClipContent := "" ; 用于防止重复记录
-; --- 环形菜单配置区域 ---
-global PieConfig := Map(
-    "Top",        "↑",
-     "TopRight",   "↗",
-     "Right",      "→",
-     "DownRight",  "↘",
-     "Down",       "↓",
-     "DownLeft",   "↙",
-     "Left",       "←",
-     "TopLeft",    "↖",
-     "Center",     "●"
-     )
-
-global Color_Bg       := "181818"
-global Color_Text     := "CCCCCC"
-global Color_Active   := "A020F0"
-global MenuSize       := 300        ; 菜单直径 (物理像素)
+; --- 环形菜单配置 ---
+global MenuSize       := 300
 global Radius         := MenuSize/2 
 global CenterZone     := 40         
 global FontSize       := 14
 global FontSizeActive := 22
+global PieConfig      := Map(
+    "Top", "↑", "TopRight", "↗", "Right", "→", "DownRight", "↘", 
+    "Down", "↓", "DownLeft", "↙", "Left", "←", "TopLeft", "↖", "Center", "●"
+)
+
+; --- 路径配置 (已通用化) ---
+global ButtonDir      := A_ScriptDir . "\buttons"
+; 将输出目录设为当前用户桌面的 zxw 文件夹
+global OutputDir      := A_Desktop . "\zxw"
+global OutputFile     := OutputDir . "\CB.txt"
+
+; --- 状态变量 ---
+global CurrentDesktop := 1
+global DesktopCount   := 9
+global Desktops       := Map()
+global AlwaysVisible  := Map()
+global BarVisible     := true
+global LastClipContent := ""
+global BarGui := "", BarLeftText := "", BarRightText := "", BarProgress := ""
+
+; --- 窗口布局 ---
+global VimWinX := 400, VimWinY := 0, VimWinWidth := 1000, VimWinHeight := 800
+
 ; ==============================================================================
-; 2. 启动流程 (Initialization)
+; 启动流程 (Initialization)
 ; ==============================================================================
+
+; 初始化桌面数组
+Loop DesktopCount {
+    Desktops[A_Index] := []
+}
+
+; 检查目录和文件
+if !DirExist(OutputDir)
+    DirCreate(OutputDir)
+if !DirExist(ButtonDir)
+    DirCreate(ButtonDir)
+
+; 确保剪贴板记录文件存在，不存在则创建
+if !FileExist(OutputFile)
+    FileAppend("--- Clipboard History Initialized ---`r`n", OutputFile, "UTF-8")
+
+; [核心] 检查并生成外部按钮脚本，如果生成了新文件则重载
+if InitializeButtons() {
+    Reload() ; 重新加载以生效 Include
+}
+
+; 启动 UI 模块
 CreateStatusBar()
 UpdateStatusBar()
 UpdateClockAndProgress()
-SetTimer(UpdateClockAndProgress, 1000) ; 每秒刷新
+SetTimer(UpdateClockAndProgress, 1000)
 SetupTrayIcon()
-; 确保目标目录存在，不存在则创建
-if !DirExist(OutputDir)
-   DirCreate(OutputDir)
-RecordClipboard()
+
+RecordClipboard() ; 启动时检查一次剪贴板
+
 ; ==============================================================================
-; 3. 快捷键绑定 (Key Bindings)
+; 快捷键绑定 (Key Bindings)
 ; ==============================================================================
 
-; --- 桌面管理 (1-9) ---
+; --- 帮助系统 ---
+Hotkey("!/", ShowHelpGui)                    ; Alt + / : 显示帮助菜单
+
+; --- 桌面管理 (Alt + 1-9) ---
 Loop 9 {
     i := A_Index
-    ; Alt + N: 切换桌面
-    Hotkey("!" . i, SwitchDesktop.Bind(i))
-    ; Alt + Shift + N: 仅移动窗口
-    Hotkey("!+" . i, MoveWindowToDesktop.Bind(i))
-    ; Ctrl + Alt + N: 移动窗口并跟随跳转
-    Hotkey("^!" . i, MoveAndSwitch.Bind(i))
+    Hotkey("!" . i, SwitchDesktop.Bind(i))        ; 切换桌面
+    Hotkey("!+" . i, MoveWindowToDesktop.Bind(i)) ; 移动窗口
+    Hotkey("^!" . i, MoveAndSwitch.Bind(i))       ; 移动并跟随
 }
 
-; --- 核心功能 ---
-Hotkey("!d", TileCurrentDesktop)       ; Alt + D: 智能平铺
-Hotkey("!+g", GatherAllToCurrent)      ; Alt + Shift + G: 召唤所有窗口
-Hotkey("^!t", TogglePin)               ; Ctrl + Alt + T: 钉住/解钉窗口
-Hotkey("^!b", ToggleBar)               ; Ctrl + Alt + B: 开关顶栏显隐
-Hotkey("!F12", RestoreAndExit)         ; Alt + F12: 还原所有窗口并退出脚本
+; --- 核心 WM 功能 ---
+Hotkey("!d", TileCurrentDesktop)             ; Alt + D : 智能平铺
+Hotkey("!+g", GatherAllToCurrent)            ; Alt + Shift + G : 召唤所有窗口
+Hotkey("^!t", TogglePin)                     ; Ctrl + Alt + T : 钉住窗口
+Hotkey("^!b", ToggleBar)                     ; Ctrl + Alt + B : 开关顶栏
+Hotkey("!F12", RestoreAndExit)               ; Alt + F12 : 还原并退出
 
-; --- 窗口操作 (鼠标下的窗口) ---
-Hotkey("!q", CloseWindowUnderMouse)        ; Alt + Q: 关闭
-Hotkey("!MButton", CloseWindowUnderMouse)  ; Alt + 中键: 关闭
-Hotkey("!f", ToggleMaximizeUnderMouse)     ; Alt + F: 最大化/还原
-Hotkey("!t", ToggleTopUnderMouse)          ; Alt + T: 置顶/取消置顶
-Hotkey("!w", HideUnderMouse)               ; Alt + W: 最小化/取消最小化
+; --- 窗口操作 (带 OSD 提示) ---
+Hotkey("!q", CloseWindowUnderMouse)          ; Alt + Q : 关闭窗口
+Hotkey("!MButton", CloseWindowUnderMouse)    ; Alt + 中键 : 关闭窗口
+Hotkey("!f", ToggleMaximizeUnderMouse)       ; Alt + F : 最大化/还原
+Hotkey("!t", ToggleTopUnderMouse)            ; Alt + T : 置顶/取消
+Hotkey("!w", HideUnderMouse)                 ; Alt + W : 最小化
 
 ; --- 鼠标增强 ---
-; Alt + 滚轮: 调节透明度
-Hotkey("!WheelUp", AdjustTransparency.Bind(20))
+Hotkey("!WheelUp", AdjustTransparency.Bind(20))   ; Alt + 滚轮上 : 增加透明度
 Hotkey("!WheelDown", AdjustTransparency.Bind(-20))
-; 鼠标左右键同按: 模拟 Ctrl+C
-~LButton & RButton::Send("^c")
+~LButton & RButton::Send("^c")                    ; 左右键同按 : 复制
 ~RButton & LButton::Send("^c")
 
-; --- 外部工具快捷键 ---
-Hotkey("!Enter", LaunchTerminal)           ; Alt + Enter: 当前目录打开终端
-Hotkey("!s", (*) => Run("devmgmt.msc"))    ; Alt + S: 设备管理器 (修正语法)
-Hotkey("!v", OpenWithVim)                  ; Alt + V: 用 Vim 打开选中文件
-Hotkey("!x", ShowPowerMenu)                ; Alt + X: 电源菜单
+; --- 工具与剪贴板 ---
+Hotkey("!Enter", LaunchCmd)                  ; Alt + Enter : 打开 CMD
+Hotkey("!s", (*) => Run("devmgmt.msc"))      ; Alt + S : 设备管理器
+Hotkey("!v", SystemOpen)                     ; Alt + V : 系统默认方式打开文件
+Hotkey("!x", ShowPowerMenu)                  ; Alt + X : 电源菜单
+^`:: OpenClipboardHistory()                  ; Ctrl + ` : 打开剪贴板记录文件
+~^c:: (Sleep(100), RecordClipboard())        ; 监听复制
 
-; --- 剪切板快捷键 ---
-; --- 监听复制 (Ctrl + C) ---
-~^c::
-{
-        ; 延时一小会儿，确保系统剪贴板已更新
-            Sleep(100) 
-                RecordClipboard()
-}
-
-; --- 呼出/隐藏 Vim 记录 (Ctrl + `) ---
-^`::
-{
-        ToggleVimWindow()
-}
-
-; --- 环形菜单快捷键 ---
+; --- 环形菜单 ---
 ~Space & RButton:: PieMenu.Start()
 
-~Space Up:: 
-~RButton Up:: 
+Space Up:: 
+RButton Up:: 
 {
     if PieMenu.IsActive
         PieMenu.Execute()
 }
 
+; ==============================================================================
+; 功能实现模块 (Function Modules)
+; ==============================================================================
 
-; ==============================================================================
-; 4. 模块：状态栏 (Status Bar & Progress)
-; ==============================================================================
+; ------------------------------------------------------------------------------
+; [Module] 帮助 GUI
+; ------------------------------------------------------------------------------
+ShowHelpGui(*) {
+    static helpGui := ""
+    
+    CloseWatcher() {
+        if !IsObject(helpGui) {
+            SetTimer CloseWatcher, 0
+            return
+        }
+        if GetKeyState("Escape", "P") || GetKeyState("LButton", "P") {
+            try helpGui.Destroy()
+            helpGui := ""
+            SetTimer CloseWatcher, 0
+        }
+    }
+
+    if IsObject(helpGui) {
+        helpGui.Destroy()
+        helpGui := ""
+        return
+    }
+
+    helpGui := Gui("-Caption +AlwaysOnTop +ToolWindow -DPIScale +Owner")
+    helpGui.BackColor := Color_Bg
+    helpGui.SetFont("s16 w700 c" . Color_Active, "Segoe UI")
+    helpGui.Add("Text", "x0 y25 w600 Center", "SUCKLESS WM HELP")
+    
+    helpGui.SetFont("s10 w600 c" . Color_Active)
+    helpGui.Add("Text", "x50 y65 w500 h2 0x10") 
+
+    shortcuts := [
+        ["Alt + /", "显示此帮助"],
+        ["Space + RClick", "环形菜单 (Pie Menu)"],
+        ["Alt + 1-9", "切换桌面 (Shift 移动)"],
+        ["Alt + LButton", "移动窗口"],
+        ["Alt + RButton", "调整窗口大小"],
+        ["Alt + Wheel", "调整窗口透明度"],
+        ["Alt + Q", "关闭窗口"],
+        ["Alt + D", "智能平铺"],
+        ["Alt + W", "最小化窗口"],
+        ["Alt + F", "最大化/还原"],
+        ["Alt + T", "置顶/取消置顶"],
+        ["Ctrl + Alt + B", "开关顶部 Bar"],
+        ["Ctrl + ``", "打开剪贴板记录"],
+        ["Alt + Enter", "在当前位置打开 CMD"],
+        ["Alt + F12", "安全退出脚本"]
+    ]
+
+    helpGui.SetFont("s11 w400 c" . Color_Text)
+    for i, item in shortcuts {
+        yPos := 80 + (i-1)*30
+        helpGui.Add("Text", "x60 y" . yPos . " w160 c" . Color_Active, item[1])
+        helpGui.Add("Text", "x220 y" . yPos . " w320", item[2])
+    }
+    
+    helpGui.Show("Center")
+    SetTimer CloseWatcher, 50
+}
+
+; ------------------------------------------------------------------------------
+; [Module] 外部按钮脚本管理
+; ------------------------------------------------------------------------------
+InitializeButtons() {
+    dirs := ["Top", "TopRight", "Right", "DownRight", "Down", "DownLeft", "Left", "TopLeft"]
+    created := false
+    
+    for d in dirs {
+        fPath := ButtonDir . "\" . d . ".ahk"
+        if !FileExist(fPath) {
+            template := '
+            (
+            SetWorkingDir(A_ScriptDir)
+            CoordMode("Mouse", "Screen")
+            SetTitleMatchMode(2)
+            SetWinDelay(0)
+            SetControlDelay(0)
+
+            %dir%(){
+                ToolTip "%dir%"
+                Sleep 200
+                ToolTip()
+            }
+            )'
+            FileAppend(StrReplace(template, "%dir%", d), fPath, "UTF-8")
+            created := true
+        }
+    }
+    return created 
+}
+
+; ------------------------------------------------------------------------------
+; [Module] OSD 提示系统
+; ------------------------------------------------------------------------------
+ShowOSD(text) {
+    static OsdGui := ""
+    if IsObject(OsdGui)
+        OsdGui.Destroy()
+    OsdGui := Gui("+AlwaysOnTop -Caption +ToolWindow +Disabled +Owner -DPIScale")
+    OsdGui.BackColor := Color_Bg
+    OsdGui.SetFont("s20 w600 c" . Color_Active, "Segoe UI")
+    OsdGui.Add("Text", "Center", text)
+    OsdGui.Show("NoActivate AutoSize y850")
+    WinSetTransparent(200, OsdGui.Hwnd)
+    SetTimer(() => (IsObject(OsdGui) ? OsdGui.Destroy() : ""), -1000)
+}
+
+; ------------------------------------------------------------------------------
+; [Module] 窗口操作
+; ------------------------------------------------------------------------------
+CloseWindowUnderMouse(*) {
+    MouseGetPos(,, &hwnd)
+    try {
+        WinClose(hwnd)
+        ShowOSD("Closing Windows...")
+    }
+}
+
+HideUnderMouse(*) {
+    MouseGetPos(,, &hwnd)
+    try {
+        WinMinimize(hwnd)
+        ShowOSD("WinMinimized")
+    }
+}
+
+ToggleMaximizeUnderMouse(*) {
+    MouseGetPos(,, &hwnd)
+    try {
+        if WinGetMinMax(hwnd) {
+            WinRestore(hwnd)
+            ShowOSD("WinRestore")
+        } else {
+            WinMaximize(hwnd)
+            ShowOSD("WinMaximized")
+        }
+    }
+}
+
+ToggleTopUnderMouse(*) {
+    MouseGetPos(,, &hwnd)
+    try {
+        WinSetAlwaysOnTop(-1, hwnd)
+        state := WinGetExStyle(hwnd)
+        ShowOSD((state & 0x8) ? "WinOnTop" : "WinOffTop")
+    }
+}
+
+AdjustTransparency(amount, *) {
+    MouseGetPos(,, &hwnd)
+    try {
+        cur := WinGetTransparent(hwnd)
+        if !IsNumber(cur) 
+            cur := 255
+        newVal := cur + amount
+        newVal := Max(30, Min(255, newVal))
+        WinSetTransparent(newVal, hwnd)
+        ShowOSD("WinTransparent: " . Integer(newVal/2.55) . "%")
+    }
+}
+
+; ------------------------------------------------------------------------------
+; [Module] 环形菜单 (Pie Menu)
+; ------------------------------------------------------------------------------
+class PieMenu {
+    static IsActive := false, GuiObj := "", Labels := Map(), TimerFn := ObjBindMethod(PieMenu, "CheckMouse")
+    static StartX := 0, StartY := 0, CurrentSector := "", LastSector := ""
+
+    static Start() {
+        if this.IsActive || GetKeyState("Alt", "P")
+            return
+        this.IsActive := true
+        MouseGetPos(&x, &y)
+        this.StartX := x, this.StartY := y, this.CurrentSector := "Center", this.LastSector := ""
+        this.CreateGui()
+        SetTimer(this.TimerFn, 10)
+    }
+
+    static CreateGui() {
+        this.GuiObj := Gui("-Caption +AlwaysOnTop +ToolWindow +Owner +E0x20 -DPIScale") 
+        this.GuiObj.BackColor := Color_Bg
+        WinSetTransparent(220, this.GuiObj)
+        WinSetRegion("0-0 w" . MenuSize . " h" . MenuSize . " E", this.GuiObj)
+        
+        this.Labels["Center"] := this.GuiObj.Add("Text", "x" Radius-20 " y" Radius-20 " w40 h40 Center +0x200 c" Color_Text, PieConfig["Center"])
+        
+        dirs := ["Right", "DownRight", "Down", "DownLeft", "Left", "TopLeft", "Top", "TopRight"]
+        loop 8 {
+            dir := dirs[A_Index], angle := (A_Index-1)*45, rad := angle*0.01745329
+            fX := Radius + Cos(rad)*Radius*0.75 - 30
+            fY := Radius + Sin(rad)*Radius*0.75 - 20
+            this.Labels[dir] := this.GuiObj.Add("Text", "x" fX " y" fY " w60 h40 Center +0x200 c" Color_Text, PieConfig[dir])
+        }
+        this.GuiObj.Show("x" this.StartX-Radius " y" this.StartY-Radius " w" MenuSize " h" MenuSize " NoActivate")
+    }
+
+    static CheckMouse() {
+        if !this.IsActive
+            return
+        MouseGetPos(&mx, &my)
+        dx := mx - this.StartX
+        dy := my - this.StartY
+        dist := Sqrt(dx*dx + dy*dy)
+
+        if (dist < CenterZone) {
+            this.CurrentSector := "Center"
+        } else {
+            angle := DllCall("msvcrt\atan2", "Double", dy, "Double", dx, "Cdecl Double") * 180 / 3.1415926
+            if (angle < 0)
+                angle += 360
+            sectorIdx := Round(angle / 45)
+            if (sectorIdx == 8)
+                sectorIdx := 0
+            static dirMap := ["Right", "DownRight", "Down", "DownLeft", "Left", "TopLeft", "Top", "TopRight"]
+            this.CurrentSector := dirMap[sectorIdx + 1]
+        }
+
+        if (this.CurrentSector != this.LastSector) {
+            this.UpdateUI()
+            this.LastSector := this.CurrentSector
+        }
+    }
+
+    static UpdateUI() {
+        if !IsObject(this.GuiObj)
+            return
+        for dir, ctrl in this.Labels {
+            try {
+                ctrl.SetFont("s" . FontSize . " c" . Color_Text . " w600")
+                ctrl.Opt("c" . Color_Text)
+            }
+        }
+        if this.Labels.Has(this.CurrentSector) {
+            try {
+                curr := this.Labels[this.CurrentSector]
+                curr.SetFont("s" . FontSizeActive . " c" . Color_Active . " w700")
+                curr.Opt("c" . Color_Active)
+            }
+        }
+    }
+
+    static Execute() {
+        this.IsActive := false
+        SetTimer(this.TimerFn, 0)
+        if IsObject(this.GuiObj)
+            this.GuiObj.Destroy()
+        if (this.CurrentSector != "Center" && this.CurrentSector != "") {
+            try %this.CurrentSector%()
+            catch
+                ShowOSD("Function Lost: " . this.CurrentSector)
+        }
+    }
+}
+
+; ------------------------------------------------------------------------------
+; [Module] 虚拟桌面与状态栏
+; ------------------------------------------------------------------------------
+SwitchDesktop(target, *) {
+    global CurrentDesktop, Desktops, AlwaysVisible
+    if (target == CurrentDesktop) {
+        ShowOSD("Desktop " . target)
+        return
+    }
+    Desktops[CurrentDesktop] := GetVisibleWindows()
+    for hwnd in Desktops[CurrentDesktop]
+        if (!AlwaysVisible.Has(hwnd))
+            try WinMinimize(hwnd)
+    for hwnd in Desktops[target]
+        try WinRestore(hwnd)
+    for hwnd, _ in AlwaysVisible
+        try WinRestore(hwnd)
+    
+    CurrentDesktop := target
+    UpdateStatusBar()
+    ShowOSD("DeskTop " . CurrentDesktop)
+}
+
+MoveWindowToDesktop(target, *) {
+    global CurrentDesktop, Desktops, AlwaysVisible
+    hwnd := 0
+    try {
+        hwnd := WinExist("A")
+    } catch {
+        return
+    }
+    
+    if (!hwnd || (BarGui && hwnd == BarGui.Hwnd)) 
+        return
+
+    if (AlwaysVisible.Has(hwnd)) 
+        AlwaysVisible.Delete(hwnd)
+
+    Loop DesktopCount {
+        d := A_Index
+        if (Desktops.Has(d)) {
+            nl := []
+            for h in Desktops[d] {
+                if (h != hwnd) 
+                    nl.Push(h)
+            }
+            Desktops[d] := nl
+        }
+    }
+    
+    Desktops[target].Push(hwnd)
+    
+    if (target != CurrentDesktop) {
+        try WinMinimize(hwnd)
+        ShowOSD("Window -> Desktop " . target)
+    }
+}
+
+MoveAndSwitch(target, *) {
+    MoveWindowToDesktop(target)
+    SwitchDesktop(target)
+    ShowOSD("Move And Switch -> " . target)
+}
 
 CreateStatusBar() {
     global BarGui, BarLeftText, BarRightText, BarProgress, BarHeight
@@ -171,19 +467,14 @@ CreateStatusBar() {
     BarGui := Gui("-Caption +AlwaysOnTop +ToolWindow +Owner +E0x08000000 -DPIScale")
     BarGui.BackColor := "181818"
     
-    ; 左侧：桌面指示器
     BarGui.SetFont("s10 w600 cA020F0", "Segoe UI")
     BarLeftText := BarGui.Add("Text", "x15 y4 w300 h20 BackgroundTrans", "")
     
-    ; 中间：下班进度条
     ProgressWidth := 300
     ProgressX := (A_ScreenWidth / 2) - (ProgressWidth / 2)
-    ; 背景底槽
     BarGui.Add("Text", "x" ProgressX " y10 w" ProgressWidth " h6 Background333333", "") 
-    ; 进度实体 (紫色) - 添加 Smooth 属性
     BarProgress := BarGui.Add("Progress", "x" ProgressX " y10 w" ProgressWidth " h6 cA020F0 Background333333 +Smooth", 0)
     
-    ; 右侧：时钟
     BarGui.SetFont("s10 w600 cA020F0", "Segoe UI")
     BarRightText := BarGui.Add("Text", "x" . (A_ScreenWidth - 260 ) . " y4 w250 h20 BackgroundTrans Right", "")
     
@@ -205,20 +496,17 @@ UpdateClockAndProgress() {
     if !IsObject(BarRightText)
         return
 
-    ; 更新时间
     try BarRightText.Value := FormatTime(, "yyyy-MM-dd   HH:mm")
 
-    ; --- 进度条逻辑 ---
     WorkStart := "0900", WorkEnd := "1745"
     NowTime := A_Now
     TodayDate := FormatTime(NowTime, "yyyyMMdd")
     StartTS := TodayDate . WorkStart . "00"
     EndTS   := TodayDate . WorkEnd . "00"
     
-    WDay := A_WDay ; 1=周日, 7=周六
+    WDay := A_WDay 
     
     pct := 0
-    ; 周末显示满条 (100%)
     if (WDay == 1 || WDay == 7) {
         pct := 100
     } else {
@@ -234,7 +522,6 @@ UpdateClockAndProgress() {
         }
     }
     
-    ; 严格错误处理：确保赋值给控件的是整数
     try {
         if IsObject(BarProgress)
             BarProgress.Value := Integer(pct)
@@ -249,92 +536,25 @@ ToggleBar(*) {
         BarGui.Hide()
 }
 
-; ==============================================================================
-; 5. 模块：虚拟桌面核心 (Virtual Desktop Core)
-; ==============================================================================
-
-SwitchDesktop(target, *) {
-    global CurrentDesktop, Desktops, AlwaysVisible
-    
-    if (target == CurrentDesktop) {
-        ShowOSD("Desktop " . target)
-        return
-    }
-    
-    ; 保存当前
-    Desktops[CurrentDesktop] := GetVisibleWindows()
-    
-    ; 隐藏当前桌面非 Pin 窗口
-    for hwnd in Desktops[CurrentDesktop] {
-        if (!AlwaysVisible.Has(hwnd)) {
-            try WinMinimize(hwnd)
-        }
-    }
-    
-    ; 恢复目标桌面窗口
-    for hwnd in Desktops[target] {
-        try WinRestore(hwnd)
-    }
-    
-    ; 强制恢复 Pin 窗口
-    for hwnd, _ in AlwaysVisible {
-        try WinRestore(hwnd)
-    }
-    
-    ; 激活焦点
-    if (Desktops[target].Length > 0) {
-        try WinActivate(Desktops[target][1])
-    }
-        
-    CurrentDesktop := target
-    UpdateStatusBar()
-    ShowOSD("Desktop " . CurrentDesktop)
-}
-
-MoveWindowToDesktop(target, *) {
-    global CurrentDesktop, Desktops, AlwaysVisible
-    
-    ; 严谨的 Try-Catch 获取窗口
+TogglePin(*) {
+    global AlwaysVisible
     hwnd := 0
-    try {
-        hwnd := WinExist("A")
-    } catch {
-        return
+    try { 
+        hwnd := WinExist("A") 
+    } catch { 
+        return 
     }
     
     if (!hwnd || (BarGui && hwnd == BarGui.Hwnd)) 
         return
-
-    ; 处理 Pin 状态
-    if (AlwaysVisible.Has(hwnd)) 
+        
+    if (AlwaysVisible.Has(hwnd)) {
         AlwaysVisible.Delete(hwnd)
-
-    ; 从所有桌面列表中移除
-    Loop DesktopCount {
-        d := A_Index
-        if (Desktops.Has(d)) {
-            nl := []
-            for h in Desktops[d] {
-                if (h != hwnd) 
-                    nl.Push(h)
-            }
-            Desktops[d] := nl
-        }
+        ShowOSD("Unpinned")
+    } else {
+        AlwaysVisible[hwnd] := true
+        ShowOSD("Pinned (Always Visible)")
     }
-    
-    ; 加入目标桌面
-    Desktops[target].Push(hwnd)
-    
-    if (target != CurrentDesktop) {
-        try WinMinimize(hwnd)
-        ShowOSD("Window -> Desktop " . target)
-    }
-}
-
-MoveAndSwitch(target, *) {
-    MoveWindowToDesktop(target)
-    SwitchDesktop(target)
-    ShowOSD("Move And Switch -> " . target) 
 }
 
 GatherAllToCurrent(*) {
@@ -365,91 +585,225 @@ GatherAllToCurrent(*) {
     ShowOSD("Gathered " . count . " Windows")
 }
 
-TogglePin(*) {
-    global AlwaysVisible
-    hwnd := 0
-    try { 
-        hwnd := WinExist("A") 
-    } catch { 
-        return 
-    }
-    
-    if (!hwnd || (BarGui && hwnd == BarGui.Hwnd)) 
-        return
-        
-    if (AlwaysVisible.Has(hwnd)) {
-        AlwaysVisible.Delete(hwnd)
-        ShowOSD("Unpinned")
-    } else {
-        AlwaysVisible[hwnd] := true
-        ShowOSD("Pinned (Always Visible)")
-    }
-}
-
-; ==============================================================================
-; 6. 模块：智能平铺 (Smart Tiling)
-; ==============================================================================
-
 TileCurrentDesktop(*) {
     global BarHeight, BarVisible
     windows := GetVisibleWindows()
     count := windows.Length
-    
     if (count == 0) {
-        ShowOSD("No Windows")
+        ShowOSD("No Windows To Tile")
         return
     }
-
+    ShowOSD("Tile: " . count)
     MonitorGetWorkArea(1, &WL, &WT, &WR, &WB)
     if (BarVisible)
         WT += BarHeight
-    
     W := WR - WL, H := WB - WT 
-    ShowOSD("Tiling: " . count)
-
-    ; 算法 A: 1个窗口
+    
     if (count == 1) {
-        try {
-            WinRestore(windows[1])
-            WinMove(WL, WT, W, H, windows[1])
-        }
-        return
-    }
-    ; 算法 B: 2个窗口
-    if (count == 2) {
-        try {
-            WinRestore(windows[1]), WinMove(WL, WT, W/2, H, windows[1])
-            WinRestore(windows[2]), WinMove(WL + W/2, WT, W/2, H, windows[2])
-        }
-        return
-    }
-    ; 算法 C: 奇数 (列模式)
-    if (Mod(count, 2) != 0) { 
+        try WinRestore(windows[1]), WinMove(WL, WT, W, H, windows[1])
+    } else if (count == 2) {
+        try WinRestore(windows[1]), WinMove(WL, WT, W/2, H, windows[1])
+        try WinRestore(windows[2]), WinMove(WL + W/2, WT, W/2, H, windows[2])
+    } else if (Mod(count, 2) != 0) {
         try {
             itemWidth := W / count
             for i, hwnd in windows
                 WinRestore(hwnd), WinMove(WL + (i-1)*itemWidth, WT, itemWidth, H, hwnd)
         }
-        return
-    }
-    ; 算法 D: 偶数 (网格模式)
-    if (Mod(count, 2) == 0) { 
+    } else {
         try {
-            cols := count / 2
-            itemWidth := W / cols, itemHeight := H / 2
+            cols := count / 2, itemW := W / cols, itemH := H / 2
             for i, hwnd in windows {
-                idx := i - 1
-                r := Floor(idx / cols), c := Mod(idx, cols)
-                WinRestore(hwnd), WinMove(WL + c*itemWidth, WT + r*itemHeight, itemWidth, itemHeight, hwnd)
+                idx := i - 1, r := Floor(idx/cols), c := Mod(idx, cols)
+                WinRestore(hwnd), WinMove(WL + c*itemW, WT + r*itemH, itemW, itemH, hwnd)
             }
         }
-        return
     }
 }
 
-; ==============================================================================
-; 7. 模块：KDE 交互 (Mouse Interaction)
-; ==============================================================================
+; ------------------------------------------------------------------------------
+; [Module] 剪贴板与工具
+; ------------------------------------------------------------------------------
+RecordClipboard() {
+    global LastClipContent, OutputFile
+    try txt := A_Clipboard
+    catch 
+        return
+    if (Type(txt) != "String" || txt == "" || txt == LastClipContent)
+        return
+    LastClipContent := txt
+    Content := "------------------------------------------------------------------------------------------------`r`n"
+             . FormatTime(, "yyyy-MM-dd HH:mm:ss") . "`r`n" . txt . "`r`n`r`n"
+    
+    ; 确保文件存在
+    if !FileExist(OutputFile) {
+        if !DirExist(OutputDir)
+            DirCreate(OutputDir)
+        FileAppend("", OutputFile, "UTF-8")
+    }
+
+    try FileAppend(Content, OutputFile, "UTF-8")
+}
+
+OpenClipboardHistory() {
+    global OutputFile
+    if !FileExist(OutputFile) {
+        if !DirExist(OutputDir)
+            DirCreate(OutputDir)
+        FileAppend("--- Clipboard History Created ---`r`n", OutputFile, "UTF-8")
+    }
+    try {
+        Run(OutputFile) ; 直接运行文件，系统会调用关联的编辑器打开
+    } catch {
+        ShowOSD("Cannot Open CB File")
+    }
+}
+
+LaunchCmd(*) {
+    path := Explorer_GetPath()
+    try {
+        if (path) {
+            ; 使用 /K 保持窗口打开，并切换驱动器和目录
+            Run(A_ComSpec . ' /K "cd /d ' . path . '"')
+        } else {
+            Run(A_ComSpec)
+        }
+    } catch {
+        try Run(A_ComSpec) ; 保底启动
+    }
+}
+
+SystemOpen(*) {
+    targetPath := Explorer_GetSelection()
+    if (targetPath == "") {
+        ShowOSD("No file selected")
+        return
+    }
+    try {
+        Run(targetPath) ; 使用系统默认方式打开
+    } catch as e {
+        ShowOSD("Open Failed")
+    }
+}
+
+ShowPowerMenu(*) {
+    static pGui := ""
+    if IsObject(pGui) {
+        pGui.Destroy(), pGui := ""
+        return
+    }
+    pGui := Gui("+AlwaysOnTop -Caption +ToolWindow +Owner")
+    pGui.BackColor := "2e3440"
+    pGui.SetFont("s12", "Arial")
+    pGui.Add("Text", "x0 y15 w500 Center cceceff4", "System Power Menu")
+    pGui.Add("Text", "x50 y45 w400 h2 0x10")
+    
+    AddBtn(x, y, txt, fn, col) {
+        btn := pGui.Add("Text", "x" x " y" y " w120 h60 Center 0x200 +Border cWhite Background" col, txt)
+        btn.OnEvent("Click", fn)
+    }
+    AddBtn(50, 70, "Shutdown", (*) => Shutdown(1), "b48ead")
+    AddBtn(190, 70, "Sleep", (*) => DllCall("PowrProf\SetSuspendState", "Int", 0, "Int", 0, "Int", 0), "5e81ac")
+    AddBtn(330, 70, "Reboot", (*) => Shutdown(2), "bf616a")
+    pGui.OnEvent("Escape", (*) => (pGui.Destroy(), pGui := ""))
+    pGui.Show("w500 h160")
+}
+
+; ------------------------------------------------------------------------------
+; [Module] 系统辅助
+; ------------------------------------------------------------------------------
+RestoreAndExit(*) {
+    global BarGui
+    ShowOSD("Script Shutting Down ...")
+    Sleep(500)
+    if IsObject(BarGui)
+        BarGui.Destroy()
+    for hwnd in WinGetList() {
+        try {
+            class := WinGetClass(hwnd)
+            if (class != "Progman" && class != "Shell_TrayWnd")
+                WinRestore(hwnd)
+        }
+    }
+    ExitApp
+}
+
+GetVisibleWindows() {
+    global BarGui
+    list := WinGetList()
+    windows := []
+    for hwnd in list {
+        try {
+            if (BarGui && hwnd == BarGui.Hwnd) 
+                continue
+            class := WinGetClass(hwnd)
+            if (class == "Progman" || class == "Shell_TrayWnd") 
+                continue
+            if (WinGetMinMax(hwnd) != -1) 
+                windows.Push(hwnd)
+        }
+    }
+    return windows
+}
+
+Explorer_GetSelection() {
+    hwnd := WinExist("A")
+    if !hwnd
+        return ""
+
+    WinClass := WinGetClass(hwnd)
+    
+    if (WinClass ~= "Progman|WorkerW") {
+        try {
+            oDesktop := ComObject("Shell.Application").Windows.Item(ComValue(19, 8))
+            sel := oDesktop.Document.SelectedItems
+            if (sel.Count > 0)
+                return sel.Item(0).Path
+        }
+    }
+    else if (WinClass ~= "(Cabinet|Explore)WClass") {
+        try {
+            for window in ComObject("Shell.Application").Windows {
+                if (window.HWND == hwnd) {
+                    sel := window.Document.SelectedItems
+                    if (sel.Count > 0)
+                        return sel.Item(0).Path
+                }
+            }
+        }
+    }
+    return ""
+}
+
+Explorer_GetPath() {
+    hwnd := WinExist("A")
+    if !hwnd
+        return ""
+    
+    WinClass := WinGetClass(hwnd)
+    
+    if (WinClass ~= "Progman|WorkerW")
+        return A_Desktop
+        
+    if (WinClass ~= "(Cabinet|Explore)WClass") {
+        try {
+            for window in ComObject("Shell.Application").Windows {
+                if (window.HWND == hwnd)
+                    return window.Document.Folder.Self.Path
+            }
+        }
+    }
+    return ""
+}
+
+SetupTrayIcon() {
+    A_TrayMenu.Delete()
+    A_TrayMenu.Add("Restore & Exit", RestoreAndExit)
+}
+
+; ------------------------------------------------------------------------------
+; 模块：KDE 交互 (Mouse Interaction)
+; ------------------------------------------------------------------------------
 
 !LButton:: {
     global DoubleAlt
@@ -460,13 +814,11 @@ TileCurrentDesktop(*) {
         return
     }
     
-    ; 自动还原并吸附 (吸附到鼠标位置)
     if (WinGetMinMax(hwnd) == 1) {
         try {
             WinRestore(hwnd)
             WinGetPos(,, &rw, &rh, hwnd)
             MouseGetPos(&mx, &my)
-            ; 移动窗口使得鼠标位于标题栏附近
             WinMove(mx - rw/2, my - rh/10,,, hwnd)
         } catch {
             return
@@ -522,473 +874,14 @@ TileCurrentDesktop(*) {
     DoubleAlt := false
 }
 
-; ==============================================================================
-; 8. 模块：辅助功能 (Helpers & Tools)
-; ==============================================================================
-
-; --- 窗口操作辅助 ---
-CloseWindowUnderMouse(*) {
-    MouseGetPos(,, &hwnd)
-    try WinClose(hwnd)
-}
-
-ToggleMaximizeUnderMouse(*) {
-    try {
-        MouseGetPos(,, &hwnd)
-        if WinGetMinMax(hwnd)
-            WinRestore(hwnd)
-        else
-            WinMaximize(hwnd)
-    }
-}
-
-ToggleTopUnderMouse(*) {
-    try {
-        MouseGetPos(,, &hwnd)
-        WinSetAlwaysOnTop(-1, hwnd)
-        ShowOSD("Topmost Toggled")
-    }
-}
-
-HideUnderMouse(*) {
-    try {
-        MouseGetPos(,, &hwnd)
-        WinMinimize(hwnd)
-        ShowOSD("Minimize Toggled")
-    }
-}
-AdjustTransparency(amount, *) {
-    MouseGetPos(,, &hwnd)
-    try {
-        cur := WinGetTransparent(hwnd)
-        if !IsNumber(cur) ; 修复：如果获取失败或为空，默认为不透明(255)
-            cur := 255
-            
-        newVal := cur + amount
-        if (newVal > 255) 
-            newVal := 255
-        if (newVal < 30) 
-            newVal := 30
-            
-        WinSetTransparent(newVal, hwnd)
-    }
-}
-
-; --- 外部工具启动逻辑 ---
-LaunchTerminal(*) {
-    path := Explorer_GetPath()
-    if (path != "") {
-        try Run('"' . TerminalExe . '" -d "' . path . '"')
-    } else {
-        try Run('"' . TerminalExe . '"')
-    }
-}
-
-OpenWithVim(*) {
-    targetPath := Explorer_GetSelection()
-    if (targetPath == "") {
-        ShowOSD("No file selected")
-        return
-    }
-    try {
-        Run('"' . VimPath . '" "' . targetPath . '"')
-    } catch as e {
-        ShowOSD("Vim Launch Failed")
-    }
-}
-
-ShowPowerMenu(*) {
-    static pGui := ""
-    if IsObject(pGui) {
-        pGui.Destroy()
-        pGui := ""
-        return
-    }
-    pGui := Gui("+AlwaysOnTop -Caption +ToolWindow +Owner")
-    pGui.BackColor := "2e3440"
-    pGui.SetFont("s12", "Arial")
-    pGui.Add("Text", "x0 y15 w500 Center cceceff4", "System Power Menu")
-    pGui.Add("Text", "x50 y45 w400 h2 0x10")
-    
-    AddBtn(x, y, text, func, color) {
-        btn := pGui.Add("Text", "x" x " y" y " w120 h60 Center 0x200 +Border cWhite Background" color, text)
-        btn.OnEvent("Click", func)
-    }
-    
-    AddBtn(50,  70, "Shutdown", (*) => Shutdown(1), "b48ead")
-    AddBtn(190, 70, "Sleep",    (*) => DllCall("PowrProf\SetSuspendState", "Int", 0, "Int", 0, "Int", 0), "5e81ac")
-    AddBtn(330, 70, "Reboot",   (*) => Shutdown(2), "bf616a")
-    
-    pGui.OnEvent("Escape", (*) => (pGui.Destroy(), pGui := ""))
-    pGui.Show("w500 h160")
-}
-
-; --- 资源管理器路径获取 (Robust COM) ---
-Explorer_GetSelection() {
-    hwnd := WinExist("A")
-    if !hwnd
-        return ""
-
-    WinClass := WinGetClass(hwnd)
-    
-    ; --- 情况 A: 桌面 (Progman / WorkerW) ---
-    if (WinClass ~= "Progman|WorkerW") {
-        try {
-            ; 核心修复：ComValue(19, 8) 对应 VT_UI4, SCW_DESKTOP
-            ; 这能直接获取桌面对象，不再报错
-            oDesktop := ComObject("Shell.Application").Windows.Item(ComValue(19, 8))
-            
-            sel := oDesktop.Document.SelectedItems
-            if (sel.Count > 0)
-                return sel.Item(0).Path
-        } catch {
-            return ""
-        }
-    }
-    ; --- 情况 B: 资源管理器 (CabinetWClass) ---
-    else if (WinClass ~= "(Cabinet|Explore)WClass") {
-        try {
-            for window in ComObject("Shell.Application").Windows {
-                if (window.HWND == hwnd) {
-                    sel := window.Document.SelectedItems
-                    if (sel.Count > 0)
-                        return sel.Item(0).Path
-                }
-            }
-        }
-    }
-    
-    return ""
-}
-
-Explorer_GetPath() {
-    hwnd := WinExist("A")
-    if !hwnd
-        return ""
-    
-    WinClass := WinGetClass(hwnd)
-    
-    ; 如果是桌面，返回桌面路径
-    if (WinClass ~= "Progman|WorkerW")
-        return A_Desktop
-        
-    ; 如果是资源管理器，返回当前目录
-    if (WinClass ~= "(Cabinet|Explore)WClass") {
-        try {
-            for window in ComObject("Shell.Application").Windows {
-                if (window.HWND == hwnd)
-                    return window.Document.Folder.Self.Path
-            }
-        }
-    }
-    return ""
-}
-
-; --- 系统辅助 ---
-RestoreAndExit(*) {
-    global BarGui
-    ShowOSD("Exiting...")
-    Sleep(500)
-    
-    if IsObject(BarGui) 
-        BarGui.Destroy()
-        
-    for hwnd in WinGetList() {
-        try {
-            class := WinGetClass(hwnd)
-            if (class != "Progman" && class != "Shell_TrayWnd") 
-                WinRestore(hwnd)
-        }
-    }
-    ExitApp
-}
-
-GetVisibleWindows() {
-    global BarGui
-    list := WinGetList()
-    windows := []
-    for hwnd in list {
-        try {
-            if (BarGui && hwnd == BarGui.Hwnd) 
-                continue
-            class := WinGetClass(hwnd)
-            if (class == "Progman" || class == "Shell_TrayWnd") 
-                continue
-            if (WinGetMinMax(hwnd) != -1) 
-                windows.Push(hwnd)
-        }
-    }
-    return windows
-}
-
-ShowOSD(text) {
-    static OsdGui := ""
-    if IsObject(OsdGui)
-        OsdGui.Destroy()
-        
-    OsdGui := Gui("+AlwaysOnTop -Caption +ToolWindow +Disabled +Owner")
-    OsdGui.BackColor := "181818"
-    OsdGui.SetFont("s20 w600 cA020F0", "Segoe UI")
-    OsdGui.Add("Text", "Center", text)
-    OsdGui.Show("NoActivate AutoSize y850")
-    WinSetTransparent(200, OsdGui.Hwnd)
-    
-    SetTimer(() => (IsObject(OsdGui) ? OsdGui.Destroy() : ""), -1000)
-}
-
-SetupTrayIcon() {
-    A_TrayMenu.Delete()
-    A_TrayMenu.Add("Restore & Exit", RestoreAndExit)
-}
-; ==============================================================================
-; 9. 模块：剪切板模块
-; ==============================================================================
-/**
- * 记录剪贴板内容到文件
- */
-RecordClipboard() {
-    global LastClipContent
-    
-    ; 1. 尝试获取文本内容
-    try {
-        txt := A_Clipboard
-    } catch {
-        return ; 如果剪贴板无法读取，直接返回
-    }
-
-    ; 2. 只有当剪贴板包含纯文本时才记录 (防止复制文件或图片时写入乱码)
-    if (Type(txt) != "String" || txt == "")
-        return
-
-    ; 3. 防止连续重复记录相同内容
-    if (txt == LastClipContent)
-        return
-
-    LastClipContent := txt
-    
-    ; 4. 格式化写入内容
-    Timestamp := FormatTime(, "yyyy-MM-dd HH:mm:ss")
-    Separator := "------------------------------------------------------------------------------------------------"
-    
-    ; 构造最终文本块
-    Content := Separator . "`r`n" . Timestamp . "`r`n" . txt . "`r`n`r`n"
-    
-    ; 5. 追加到文件 (指定 UTF-8 编码)
-    try {
-        FileAppend(Content, OutputFile, "UTF-8")
-        
-        ; 可选：显示一个小提示，告知用户记录成功 (不想被打扰可注释掉下面这行)
-        ; ToolTip("已记录到 CB.txt")
-        ; SetTimer () => ToolTip(), -1000
-    } catch as e {
-        ; 文件被占用或其他错误时忽略
-    }
-}
-
-/**
- * 切换 Vim 窗口显示状态
- */
-ToggleVimWindow() {
-    global CurrentVimPID, VimPath, OutputFile
-
-    ; 判断 Vim 窗口是否已经存在
-    if (CurrentVimPID && WinExist("ahk_pid " . CurrentVimPID)) {
-        ; --- 状态 A: 窗口存在，执行关闭 ---
-        WinClose("ahk_pid " . CurrentVimPID)
-        CurrentVimPID := 0
-    } else {
-        ; --- 状态 B: 窗口不存在，执行打开 ---
-        
-        ; 使用 "+$" 参数告诉 Vim 打开后直接跳转到最后一行 (无需 Send G)
-        RunCmd := Format('"{1}" "+$" "{2}"', VimPath, OutputFile)
-        
-        try {
-            Run(RunCmd, , , &pid)
-            CurrentVimPID := pid
-            
-            ; 等待窗口出现 (最多等 3 秒)
-            if WinWait("ahk_pid " . pid, , 3) {
-                ; 设置置顶
-                WinSetAlwaysOnTop(1, "ahk_pid " . pid)
-                ; 移动窗口 (宽和高如果不需要改变，可以去掉后两个参数)
-                WinMove(VimWinX, VimWinY, , , "ahk_pid " . pid)
-                ; 激活窗口
-                WinActivate("ahk_pid " . pid)
-            }
-        } catch as e {
-            MsgBox("无法启动 Vim，请检查路径配置：`n" . VimPath)
-        }
-    }
-}
-; ==============================================================================
-; 10. 模块：环形菜单
-; ==============================================================================
-class PieMenu {
-    static IsActive := false
-    static GuiObj := ""
-    static Labels := Map()
-    static StartX := 0
-    static StartY := 0
-    static CurrentSector := ""
-    static LastSector := ""
-    static TimerFn := ObjBindMethod(PieMenu, "CheckMouse")
-
-    static Start() {
-        if this.IsActive
-            return
-        
-        this.IsActive := true
-        MouseGetPos(&x, &y)
-        this.StartX := x
-        this.StartY := y
-        this.CurrentSector := "Center"
-        this.LastSector := ""
-        this.CreateGui()
-        SetTimer(this.TimerFn, 10)
-    }
-
-    static CreateGui() {
-        this.GuiObj := Gui("-Caption +AlwaysOnTop +ToolWindow +Owner +E0x20 -DPIScale") 
-        this.GuiObj.BackColor := Color_Bg
-        this.GuiObj.SetFont("s" . FontSize . " w600", "Segoe UI")
-        
-        WinSetTransparent(220, this.GuiObj)
-        WinSetRegion("0-0 w" . MenuSize . " h" . MenuSize . " E", this.GuiObj)
-
-        ; --- 中心点 ---
-        cx := Radius - 20
-        cy := Radius - 20
-        this.Labels["Center"] := this.GuiObj.Add("Text", "x" . cx . " y" . cy . " w40 h40 Center +0x200 c" . Color_Text, PieConfig["Center"])
-
-        ; --- 8个方向 ---
-        directions := ["Right", "DownRight", "Down", "DownLeft", "Left", "TopLeft", "Top", "TopRight"]
-        
-        loop 8 {
-            idx := A_Index
-            dir := directions[idx]
-            text := PieConfig[dir]
-            
-            ; 角度计算 (0度=右, 顺时针)
-            angle := (idx - 1) * 45
-            rad := angle * (3.1415926 / 180)
-            
-            ; 距离圆心的距离 (0.75 表示在半径的 75% 处)
-            dist := Radius * 0.75
-            
-            ; 控件大小 (如果文字显示不全，调大这里)
-            ctrlW := 60
-            ctrlH := 40
-            
-            ; 核心三角函数计算
-            offsetX := Cos(rad) * dist
-            offsetY := Sin(rad) * dist
-            
-            ; 计算左上角坐标 (让控件中心对齐目标点)
-            finalX := (Radius + offsetX) - (ctrlW / 2)
-            finalY := (Radius + offsetY) - (ctrlH / 2)
-            
-            this.Labels[dir] := this.GuiObj.Add("Text", "x" . finalX . " y" . finalY . " w" . ctrlW . " h" . ctrlH . " Center +0x200 c" . Color_Text, text)
-        }
-
-        ; 居中显示 (因为用了 -DPIScale，这里的计算是纯物理像素，不会错位)
-        gx := this.StartX - Radius
-        gy := this.StartY - Radius
-        this.GuiObj.Show("x" . gx . " y" . gy . " w" . MenuSize . " h" . MenuSize . " NoActivate")
-    }
-
-    static CheckMouse() {
-        if !this.IsActive
-            return
-        MouseGetPos(&mx, &my)
-        dx := mx - this.StartX
-        dy := my - this.StartY
-        dist := Sqrt(dx*dx + dy*dy)
-
-        if (dist < CenterZone) {
-            this.CurrentSector := "Center"
-        } else {
-            angle := DllCall("msvcrt\atan2", "Double", dy, "Double", dx, "Cdecl Double") * 180 / 3.1415926
-            if (angle < 0)
-                angle += 360
-            sectorIdx := Round(angle / 45)
-            if (sectorIdx == 8)
-                sectorIdx := 0
-            static dirMap := ["Right", "DownRight", "Down", "DownLeft", "Left", "TopLeft", "Top", "TopRight"]
-            this.CurrentSector := dirMap[sectorIdx + 1]
-        }
-
-        if (this.CurrentSector != this.LastSector) {
-            this.UpdateUI()
-            this.LastSector := this.CurrentSector
-        }
-    }
-
-    static UpdateUI() {
-        if !IsObject(this.GuiObj)
-            return
-        for dir, ctrl in this.Labels {
-            try {
-                ctrl.SetFont("s" . FontSize . " c" . Color_Text . " w600")
-                ctrl.Opt("c" . Color_Text)
-            }
-        }
-        if this.Labels.Has(this.CurrentSector) {
-            try {
-                curr := this.Labels[this.CurrentSector]
-                curr.SetFont("s" . FontSizeActive . " c" . Color_Active . " w700")
-                curr.Opt("c" . Color_Active)
-            }
-        }
-    }
-
-    static Execute() {
-        this.IsActive := false
-        SetTimer(this.TimerFn, 0)
-        if IsObject(this.GuiObj)
-            this.GuiObj.Destroy()
-        sector := this.CurrentSector
-        if (sector != "Center" && sector != "") {
-            try %sector%()
-        }
-    }
-}
-; ==============================================================================
-; 4. 功能函数 (在此处填入具体逻辑)
-; ==============================================================================
-
-Top() {
-        MsgBox "↑"
-            ; Send "^w" ; 关闭标签页
-}
-
-TopRight() {
-        MsgBox "↗"
-            ; Send "^+{Tab}" ; 下一个标签页
-}
-
-Right() {
-        MsgBox "→"
-            ; Send "^{Tab}"
-}
-
-DownRight() {
-        MsgBox "↘"
-}
-
-Down() {
-        MsgBox "↓"
-            ; Send "{F5}" ; 刷新
-}
-
-DownLeft() {
-        MsgBox "↙"
-}
-
-Left() {
-        MsgBox "←"
-            ; Send "!{Left}" ; 后退
-}
-
-TopLeft() {
-        MsgBox "↖"
-}
+; ------------------------------------------------------------------------------
+; 外部脚本引用
+; ------------------------------------------------------------------------------
+#Include "*i %A_ScriptDir%\buttons\Top.ahk"
+#Include "*i %A_ScriptDir%\buttons\TopRight.ahk"
+#Include "*i %A_ScriptDir%\buttons\Right.ahk"
+#Include "*i %A_ScriptDir%\buttons\DownRight.ahk"
+#Include "*i %A_ScriptDir%\buttons\Down.ahk"
+#Include "*i %A_ScriptDir%\buttons\DownLeft.ahk"
+#Include "*i %A_ScriptDir%\buttons\Left.ahk"
+#Include "*i %A_ScriptDir%\buttons\TopLeft.ahk"
