@@ -177,14 +177,14 @@ ShowHelpGui(*) {
     helpGui := Gui("-Caption +AlwaysOnTop +ToolWindow -DPIScale +Owner")
     helpGui.BackColor := Color_Bg
     helpGui.SetFont("s16 w700 c" . Color_Active, "Segoe UI")
-    helpGui.Add("Text", "x0 y25 w600 Center", "SUCKLESS WM HELP")
+    helpGui.Add("Text", "x0 y25 w600 Center", "ZhangXuWei WM HELP")
     
     helpGui.SetFont("s10 w600 c" . Color_Active)
     helpGui.Add("Text", "x50 y65 w500 h2 0x10") ; 紫色分割线
 
     ; 帮助列表
     shortcuts := [
-        ["Alt + /", "显示此帮助"],
+        ["Alt + /", "显示/隐藏帮助菜单"],
         ["Space + RClick", "环形菜单 (Pie Menu)"],
         ["Alt + 1-9", "切换桌面 (Shift 移动)"],
         ["Alt + LButton", "移动窗口"],
@@ -194,9 +194,12 @@ ShowHelpGui(*) {
         ["Alt + D", "智能平铺"],
         ["Alt + W", "最小化窗口"],
         ["Alt + F", "最大化/还原"],
+        ["Alt + R", "强制刷新脚本"],
         ["Alt + T", "置顶/取消置顶"],
-        ["Ctrl + Alt + B", "开关顶部 Bar"],
+        ["Alt + F12", "安全退出脚本"],
         ["Ctrl + ``", "剪贴板历史 (Vim)"],
+        ["Ctrl + Alt + B", "开关顶部 Bar"],
+        ["Alt + V", "使用Vim编辑选中文件"],
         ["Alt + X", "电源菜单"]
     ]
 
@@ -311,7 +314,7 @@ AdjustTransparency(amount, *) {
         if !IsNumber(cur) 
             cur := 255
         newVal := cur + amount
-        newVal := Max(30, Min(255, newVal))
+        newVal := Max(2.55, Min(255, newVal))
         WinSetTransparent(newVal, hwnd)
         ShowOSD("WinTransparent: " . Integer(newVal/2.55) . "%")
     }
@@ -856,7 +859,7 @@ SetupTrayIcon() {
             WinGetPos(,, &rw, &rh, hwnd)
             MouseGetPos(&mx, &my)
             ; 移动窗口使得鼠标位于标题栏附近
-            WinMove(mx - rw/2, my - rh/10,,, hwnd)
+            WinMove(mx - rw/2, my - rh/2,,, hwnd)
         } catch {
             return
         }
@@ -918,11 +921,11 @@ SetupTrayIcon() {
 ; ------------------------------------------------------------------------------
 
 ; 使用 *i 忽略错误，确保 InitializeButtons 创建文件后重载能正常读取
-#Include "*i %A_ScriptDir%\buttons\Top.ahk"
-#Include "*i %A_ScriptDir%\buttons\TopRight.ahk"
-#Include "*i %A_ScriptDir%\buttons\Right.ahk"
-#Include "*i %A_ScriptDir%\buttons\DownRight.ahk"
-#Include "*i %A_ScriptDir%\buttons\Down.ahk"
-#Include "*i %A_ScriptDir%\buttons\DownLeft.ahk"
-#Include "*i %A_ScriptDir%\buttons\Left.ahk"
-#Include "*i %A_ScriptDir%\buttons\TopLeft.ahk"
+#Include "*i %A_ScriptDir%\Buttons\Top.ahk"
+#Include "*i %A_ScriptDir%\Buttons\TopRight.ahk"
+#Include "*i %A_ScriptDir%\Buttons\Right.ahk"
+#Include "*i %A_ScriptDir%\Buttons\DownRight.ahk"
+#Include "*i %A_ScriptDir%\Buttons\Down.ahk"
+#Include "*i %A_ScriptDir%\Buttons\DownLeft.ahk"
+#Include "*i %A_ScriptDir%\Buttons\Left.ahk"
+#Include "*i %A_ScriptDir%\Buttons\TopLeft.ahk"
