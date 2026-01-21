@@ -13,29 +13,14 @@ SetTitleMatchMode(2)
 SetWinDelay(0)
 SetControlDelay(0)
 
-; --- 视觉风格 ---
-global Color_Bg       := "181818"    ; 背景：深灰
-global Color_Text     := "CCCCCC"    ; 文字：浅灰
-global Color_Active   := "A020F0"    ; 高亮：紫色
-global BarHeight      := 28          ; 顶栏高度
-
-; --- 环形菜单配置 ---
-global MenuSize       := 300
-global Radius         := MenuSize/2 
-global CenterZone     := 40         
-global FontSize       := 14
-global FontSizeActive := 22
-global PieConfig      := Map(
-    "Top", "↑", "TopRight", "↗", "Right", "→", "DownRight", "↘", 
-    "Down", "↓", "DownLeft", "↙", "Left", "←", "TopLeft", "↖", "Center", "●"
-)
-
-; --- 路径配置 ---
-global ButtonDir      := A_ScriptDir . "\buttons"
-global OutputDir      := "C:\Users\Administrator\Desktop\zxw"
-global OutputFile     := OutputDir . "\CB.txt"
-global VimPath        := "C:\Program Files\Vim\vim91\vim.exe"
-global TerminalExe    := "C:\Soft\terminal\WindowsTerminal.exe"
+; --- 声明全局变量 ---
+global Color_Bg, Color_Text, Color_Active, BarHeight
+global MenuSize, Radius, CenterZone, FontSize, FontSizeActive
+global ButtonDir, OutputDir, OutputFile, VimPath, TerminalExe
+global VimWinX, VimWinY, VimWinWidth, VimWinHeight
+global WorkStart, WorkEnd
+global PieConfig
+global ConfigFile := A_ScriptDir . "\wm_config.ini" ; 定义配置文件路径
 
 ; --- 状态变量 ---
 global CurrentDesktop := 1
@@ -47,13 +32,16 @@ global CurrentVimPID  := 0
 global LastClipContent := ""
 global BarGui := "", BarLeftText := "", BarRightText := "", BarProgress := ""
 
-; --- 窗口布局 ---
-global VimWinX := 400, VimWinY := 0, VimWinWidth := 1000, VimWinHeight := 800
+; --- 环形菜单固定配置 ---
+PieConfig := Map(
+    "Top", "↑", "TopRight", "↗", "Right", "→", "DownRight", "↘", 
+    "Down", "↓", "DownLeft", "↙", "Left", "←", "TopLeft", "↖", "Center", "●"
+)
 
 ; ==============================================================================
 ;启动流程 (Initialization)
 ; ==============================================================================
-
+LoadOrInitConfig()
 ; 初始化桌面数组
 Loop DesktopCount {
     Desktops[A_Index] := []
@@ -65,7 +53,6 @@ if !DirExist(OutputDir)
 if !DirExist(ButtonDir)
     DirCreate(ButtonDir)
 
-; [核心] 检查并生成外部按钮脚本，如果生成了新文件则重载
 if InitializeButtons() {
     Reload() ; 重新加载以生效 Include
 }
@@ -118,11 +105,14 @@ Hotkey("!WheelDown", AdjustTransparency.Bind(-20))
 ; --- 工具与剪贴板 ---
 Hotkey("!Enter", LaunchTerminal)             ; Alt + Enter : 打开终端
 Hotkey("!s", (*) => Run("devmgmt.msc"))      ; Alt + S : 设备管理器
+Hotkey("!n", (*) => Run("ncpa.cpl"))         ; Alt + N : 网络管理器
 Hotkey("!v", OpenWithVim)                    ; Alt + V : Vim 打开文件
 Hotkey("!x", ShowPowerMenu)                  ; Alt + X : 电源菜单
+
 !r::{
-    Reload
+    Reload                                   ; Alt + R :刷新配置
     }
+
 ^`:: ToggleVimWindow()                       ; Ctrl + ` : 剪贴板历史
 ~^c:: (Sleep(100), RecordClipboard())        ; 监听复制
 
@@ -139,6 +129,110 @@ RButton Up::
 ; ==============================================================================
 ; 功能实现模块 (Function Modules)
 ; ==============================================================================
+; ------------------------------------------------------------------------------
+; [Module] 配置文件
+; ------------------------------------------------------------------------------
+LoadOrInitConfig() {
+    global
+    
+    ; 1. 如果配置文件不存在，生成默认配置
+    if !FileExist(ConfigFile) {
+        DefaultIni := "
+        (
+        [ZhangXuWei_WM_Config]
+
+        [Visual]
+        ; 背景颜色 (深灰)
+        Color_Bg=181818
+        ; 文字颜色 (浅灰)
+        Color_Text=CCCCCC
+        ; 高亮/激活颜色 (紫色)
+        Color_Active=A020F0
+        ; 顶部状态栏高度
+        BarHeight=35
+        
+        [PieMenu]
+        ; 环形菜单直径
+        MenuSize=300
+        ; 中心死区范围
+        CenterZone=40
+        ; 菜单字体大小
+        FontSize=14
+        ; 选中项字体大小
+        FontSizeActive=22
+        
+        [Paths]
+        ; 按钮脚本目录
+        ButtonDir=Buttons
+        ; 剪贴板记录输出目录
+        OutputDir=C:\Users\Administrator\Desktop\zxw
+        ; Vim 编辑器路径
+        VimPath=C:\Program Files\Vim\vim91\vim.exe
+        ; 终端路径
+        TerminalExe=C:\Soft\terminal\WindowsTerminal.exe
+        
+        [Layout]
+        ; Vim 浮动窗口坐标 X
+        VimWinX=400
+        ; Vim 浮动窗口坐标 Y
+        VimWinY=0
+        ; Vim 浮动窗口宽度
+        VimWinWidth=1000
+        ; Vim 浮动窗口高度
+        VimWinHeight=800
+
+        [WorkTime]
+        ; 工作时间 格式为时分
+        WorkStart=0900
+        WorkEnd=1745
+        )"
+        
+        try {
+            FileAppend(DefaultIni, ConfigFile, "UTF-8")
+            MsgBox("检测到首次运行，已生成配置文件：`n" . ConfigFile . "`n`n请根据需要修改配置。", "WM Config", "Iconi")
+        } catch as e {
+            MsgBox("无法创建配置文件，请检查权限！`n" . e.Message)
+        }
+    }
+
+    ; 2. 从 INI 文件读取配置 (IniRead, 文件名, 节, 键, 默认值)
+    ; 注意：IniRead 读出来是字符串，对于数字计算，建议转为 Number/Integer
+    
+    ; --- Visual ---
+    Color_Bg      := IniRead(ConfigFile, "Visual", "Color_Bg", "181818")
+    Color_Text    := IniRead(ConfigFile, "Visual", "Color_Text", "CCCCCC")
+    Color_Active  := IniRead(ConfigFile, "Visual", "Color_Active", "A020F0")
+    BarHeight     := Integer(IniRead(ConfigFile, "Visual", "BarHeight", "28"))
+
+    ; --- PieMenu ---
+    MenuSize      := Integer(IniRead(ConfigFile, "PieMenu", "MenuSize", "300"))
+    Radius        := MenuSize / 2  ; Radius 是计算属性，不需要存ini，直接算
+    CenterZone    := Integer(IniRead(ConfigFile, "PieMenu", "CenterZone", "40"))
+    FontSize      := Integer(IniRead(ConfigFile, "PieMenu", "FontSize", "14"))
+    FontSizeActive:= Integer(IniRead(ConfigFile, "PieMenu", "FontSizeActive", "22"))
+
+    ; --- Paths ---
+    ; 处理相对路径：如果 INI 里写的是 "Buttons"，我们把它转为绝对路径
+    bDirTemp      := IniRead(ConfigFile, "Paths", "ButtonDir", "Buttons")
+    ButtonDir     := (bDirTemp ~= "^[a-zA-Z]:") ? bDirTemp : (A_ScriptDir . "\" . bDirTemp)
+    
+    OutputDir     := IniRead(ConfigFile, "Paths", "OutputDir", "C:\Users\Administrator\Desktop\zxw")
+    OutputFile    := OutputDir . "\CB.txt" ; 拼接文件名
+    
+    VimPath       := IniRead(ConfigFile, "Paths", "VimPath", "C:\Program Files\Vim\vim91\vim.exe")
+    TerminalExe   := IniRead(ConfigFile, "Paths", "TerminalExe", "C:\Soft\terminal\WindowsTerminal.exe")
+
+    ; --- Layout ---
+    VimWinX       := Integer(IniRead(ConfigFile, "Layout", "VimWinX", "400"))
+    VimWinY       := Integer(IniRead(ConfigFile, "Layout", "VimWinY", "0"))
+    VimWinWidth   := Integer(IniRead(ConfigFile, "Layout", "VimWinWidth", "1000"))
+    VimWinHeight  := Integer(IniRead(ConfigFile, "Layout", "VimWinHeight", "800"))
+
+    ; --- WorkTime ---
+    WorkStart     := IniRead(ConfigFile, "WorkTime", "WorkStart", "0900")
+    WorkEnd       := IniRead(ConfigFile, "WorkTime", "WorkEnd", "1745")
+}
+
 
 ; ------------------------------------------------------------------------------
 ; [Module] 帮助 GUI
@@ -148,14 +242,11 @@ ShowHelpGui(*) {
     
     ; --- 定义关闭检测函数 (嵌套函数) ---
     CloseWatcher() {
-        ; 1. 安全检查：如果 helpGui 已经被(手动)销毁了，或者是空字符串
         if !IsObject(helpGui) {
             SetTimer CloseWatcher, 0 ; 关闭定时器
             return
         }
 
-        ; 2. 检测按键：Esc 或 鼠标左键点击
-        ; 使用 "P" 参数检测物理按键，防止模拟按键误触
         if GetKeyState("Escape", "P") || GetKeyState("LButton", "P") {
             try helpGui.Destroy()
             helpGui := ""            ; 清空变量
@@ -164,11 +255,9 @@ ShowHelpGui(*) {
     }
 
     ; --- 主逻辑 ---
-    ; 如果窗口已存在，则关闭它（切换功能）
     if IsObject(helpGui) {
         helpGui.Destroy()
         helpGui := ""
-        ; 这里不需要手动关定时器，下一轮 CloseWatcher 会自动发现对象没了并关闭自己
         return
     }
 
@@ -253,6 +342,7 @@ InitializeButtons() {
 ; [Module] OSD 提示系统
 ; ------------------------------------------------------------------------------
 ShowOSD(text) {
+    try{
     static OsdGui := ""
     if IsObject(OsdGui)
         OsdGui.Destroy()
@@ -264,8 +354,8 @@ ShowOSD(text) {
     OsdGui.Show("NoActivate AutoSize y850")
     WinSetTransparent(200, OsdGui.Hwnd)
     SetTimer(() => (IsObject(OsdGui) ? OsdGui.Destroy() : ""), -1000)
+    }
 }
-
 ; ------------------------------------------------------------------------------
 ; [Module] 窗口操作 (带 GUI 提示)
 ; ------------------------------------------------------------------------------
@@ -486,32 +576,43 @@ MoveAndSwitch(target, *) {
 
 CreateStatusBar() {
     global BarGui, BarLeftText, BarRightText, BarProgress, BarHeight
-    
+
     try {
         if IsObject(BarGui)
             BarGui.Destroy()
     }
 
+    ; 创建 GUI
     BarGui := Gui("-Caption +AlwaysOnTop +ToolWindow +Owner +E0x08000000 -DPIScale")
     BarGui.BackColor := "181818"
+    ; --- 动态计算垂直居中坐标 ---
+    ; 假设文字高度约为 20px, 进度条高度设定为 6px
+    TextY := (BarHeight - 20) / 2   ; 文字的 Y 坐标
+    ProgY := (BarHeight - 6) / 2    ; 进度条的 Y 坐标
     
     ; 左侧：桌面指示器
     BarGui.SetFont("s10 w600 cA020F0", "Segoe UI")
-    BarLeftText := BarGui.Add("Text", "x15 y4 w300 h20 BackgroundTrans", "")
+    ; 使用变量 TextY 替换原来的 y4
+    BarLeftText := BarGui.Add("Text", "x15 y" . TextY . " w300 h20 BackgroundTrans", "")
     
     ; 中间：下班进度条
     ProgressWidth := 300
     ProgressX := (A_ScreenWidth / 2) - (ProgressWidth / 2)
-    ; 背景底槽
-    BarGui.Add("Text", "x" ProgressX " y10 w" ProgressWidth " h6 Background333333", "") 
-    ; 进度实体 (紫色) - 添加 Smooth 属性
-    BarProgress := BarGui.Add("Progress", "x" ProgressX " y10 w" ProgressWidth " h6 cA020F0 Background333333 +Smooth", 0)
+    
+    ; 背景底槽 (使用 ProgY 替换 y10)
+    BarGui.Add("Text", "x" ProgressX " y" . ProgY . " w" ProgressWidth " h6 Background333333", "") 
+    
+    ; 进度实体 (紫色) (使用 ProgY 替换 y10)
+    BarProgress := BarGui.Add("Progress", "x" ProgressX " y" . ProgY . " w" ProgressWidth " h6 cA020F0 Background333333 +Smooth", 0)
     
     ; 右侧：时钟
     BarGui.SetFont("s10 w600 cA020F0", "Segoe UI")
-    BarRightText := BarGui.Add("Text", "x" . (A_ScreenWidth - 260 ) . " y4 w250 h20 BackgroundTrans Right", "")
+    ; 使用变量 TextY 替换原来的 y4
+    BarRightText := BarGui.Add("Text", "x" . (A_ScreenWidth - 260 ) . " y" . TextY . " w250 h20 BackgroundTrans Right", "")
     
+    ; 显示 Bar
     BarGui.Show("x0 y0 w" . A_ScreenWidth . " h" . BarHeight . " NoActivate")
+	
 }
 
 UpdateStatusBar() {
@@ -526,6 +627,7 @@ UpdateStatusBar() {
 
 UpdateClockAndProgress() {
     global BarRightText, BarProgress
+    global WorkStart, WorkEnd
     if !IsObject(BarRightText)
         return
 
@@ -533,7 +635,6 @@ UpdateClockAndProgress() {
     try BarRightText.Value := FormatTime(, "yyyy-MM-dd   HH:mm")
 
     ; --- 进度条逻辑 ---
-    WorkStart := "0900", WorkEnd := "1745"
     NowTime := A_Now
     TodayDate := FormatTime(NowTime, "yyyyMMdd")
     StartTS := TodayDate . WorkStart . "00"
@@ -639,10 +740,28 @@ TileCurrentDesktop(*) {
     
     if (count == 1) {
         try WinRestore(windows[1]), WinMove(WL, WT, W, H, windows[1])
-    } else if (count == 2) {
+    } 
+    else if (count == 2) {
         try WinRestore(windows[1]), WinMove(WL, WT, W/2, H, windows[1])
         try WinRestore(windows[2]), WinMove(WL + W/2, WT, W/2, H, windows[2])
-    } else if (Mod(count, 2) != 0) {
+    }
+    else if (count == 3) {
+
+        try WinRestore(windows[1]), WinMove(WL, WT, W/2, H, windows[1])
+        try WinRestore(windows[2]), WinMove(WL + W/2, WT, W/2, H/2, windows[2])
+        try WinRestore(windows[3]), WinMove(WL + W/2, WT + H/2, W/2, H/2, windows[3])
+    }
+    else if (count == 5) {
+        colW := W / 3
+        halfH := H / 2
+        try WinRestore(windows[1]), WinMove(WL + colW, WT, colW, H, windows[1])
+        try WinRestore(windows[2]), WinMove(WL, WT, colW, halfH, windows[2])
+        try WinRestore(windows[3]), WinMove(WL, WT + halfH, colW, halfH, windows[3])
+        try WinRestore(windows[4]), WinMove(WL + 2*colW, WT, colW, halfH, windows[4])
+        try WinRestore(windows[5]), WinMove(WL + 2*colW, WT + halfH, colW, halfH, windows[5])
+
+    }
+    else if (Mod(count, 2) != 0) {
         try {
             itemWidth := W / count
             for i, hwnd in windows
@@ -784,8 +903,6 @@ Explorer_GetSelection() {
     ; --- 情况 A: 桌面 (Progman / WorkerW) ---
     if (WinClass ~= "Progman|WorkerW") {
         try {
-            ; 核心修复：ComValue(19, 8) 对应 VT_UI4, SCW_DESKTOP
-            ; 这能直接获取桌面对象，不再报错
             oDesktop := ComObject("Shell.Application").Windows.Item(ComValue(19, 8))
             
             sel := oDesktop.Document.SelectedItems
@@ -818,11 +935,9 @@ Explorer_GetPath() {
     
     WinClass := WinGetClass(hwnd)
     
-    ; 如果是桌面，返回桌面路径
     if (WinClass ~= "Progman|WorkerW")
         return A_Desktop
         
-    ; 如果是资源管理器，返回当前目录
     if (WinClass ~= "(Cabinet|Explore)WClass") {
         try {
             for window in ComObject("Shell.Application").Windows {
@@ -844,21 +959,12 @@ SetupTrayIcon() {
 ; ------------------------------------------------------------------------------
 
 !LButton:: {
-    global DoubleAlt
     MouseGetPos(,, &hwnd)
-    
-    if (DoubleAlt) {
-        try WinMinimize(hwnd)
-        return
-    }
-    
-    ; 自动还原并吸附 (吸附到鼠标位置)
     if (WinGetMinMax(hwnd) == 1) {
         try {
             WinRestore(hwnd)
             WinGetPos(,, &rw, &rh, hwnd)
             MouseGetPos(&mx, &my)
-            ; 移动窗口使得鼠标位于标题栏附近
             WinMove(mx - rw/2, my - rh/2,,, hwnd)
         } catch {
             return
@@ -879,14 +985,7 @@ SetupTrayIcon() {
 }
 
 !RButton:: {
-    global DoubleAlt
     MouseGetPos(,, &hwnd)
-    
-    if (DoubleAlt) {
-        try (WinGetMinMax(hwnd) == 1 ? WinRestore(hwnd) : WinMaximize(hwnd))
-        return
-    }
-    
     if (WinGetMinMax(hwnd) == 1) 
         return
         
@@ -907,15 +1006,6 @@ SetupTrayIcon() {
         }
     }
 }
-
-~Alt:: {
-    global DoubleAlt := (A_PriorHotkey == "~Alt" && A_TimeSincePriorHotkey < 400)
-    KeyWait("Alt")
-    DoubleAlt := false
-}
-
-
-
 ; ------------------------------------------------------------------------------
 ; 外部脚本引用 (External Buttons Include)
 ; ------------------------------------------------------------------------------
