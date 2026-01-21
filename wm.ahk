@@ -1,7 +1,6 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Force
 #WinActivateForce
-; 脚本由张栩玮编写
 ; ==============================================================================
 ;全局配置与变量 (Configuration)
 ; ==============================================================================
@@ -41,6 +40,7 @@ PieConfig := Map(
 ; ==============================================================================
 ;启动流程 (Initialization)
 ; ==============================================================================
+
 LoadOrInitConfig()
 ; 初始化桌面数组
 Loop DesktopCount {
@@ -89,7 +89,7 @@ Hotkey("^!t", TogglePin)                     ; Ctrl + Alt + T : 钉住窗口
 Hotkey("^!b", ToggleBar)                     ; Ctrl + Alt + B : 开关顶栏
 Hotkey("!F12", RestoreAndExit)               ; Alt + F12 : 还原并退出
 
-; --- 窗口操作 (带 OSD 提示) ---
+; --- 窗口操作 ---
 Hotkey("!q", CloseWindowUnderMouse)          ; Alt + Q : 关闭窗口
 Hotkey("!MButton", CloseWindowUnderMouse)    ; Alt + 中键 : 关闭窗口
 Hotkey("!f", ToggleMaximizeUnderMouse)       ; Alt + F : 最大化/还原
@@ -591,7 +591,7 @@ CreateStatusBar() {
     ProgY := (BarHeight - 6) / 2    ; 进度条的 Y 坐标
     
     ; 左侧：桌面指示器
-    BarGui.SetFont("s10 w600 cA020F0", "Segoe UI")
+    BarGui.SetFont("s10 w600 c" . Color_Active , "Segoe UI")
     ; 使用变量 TextY 替换原来的 y4
     BarLeftText := BarGui.Add("Text", "x15 y" . TextY . " w300 h20 BackgroundTrans", "")
     
@@ -603,10 +603,11 @@ CreateStatusBar() {
     BarGui.Add("Text", "x" ProgressX " y" . ProgY . " w" ProgressWidth " h6 Background333333", "") 
     
     ; 进度实体 (紫色) (使用 ProgY 替换 y10)
-    BarProgress := BarGui.Add("Progress", "x" ProgressX " y" . ProgY . " w" ProgressWidth " h6 cA020F0 Background333333 +Smooth", 0)
+    ProgressOptions := Format("x{1} y{2} w{3} h6 c{4} Background333333 +Smooth",ProgressX,ProgY,ProgressWidth,Color_Active )
+    BarProgress := BarGui.Add("Progress",ProgressOptions, 0)
     
     ; 右侧：时钟
-    BarGui.SetFont("s10 w600 cA020F0", "Segoe UI")
+    BarGui.SetFont("s10 w600 c" . Color_Active , "Segoe UI")
     ; 使用变量 TextY 替换原来的 y4
     BarRightText := BarGui.Add("Text", "x" . (A_ScreenWidth - 260 ) . " y" . TextY . " w250 h20 BackgroundTrans Right", "")
     
@@ -842,7 +843,7 @@ ShowPowerMenu(*) {
     pGui := Gui("+AlwaysOnTop -Caption +ToolWindow +Owner")
     pGui.BackColor := "2e3440"
     pGui.SetFont("s12", "Arial")
-    pGui.Add("Text", "x0 y15 w500 Center cceceff4", "System Power Menu")
+    pGui.Add("Text", "x0 y15 w500 Center c" . Color_Active, "System Power Menu")
     pGui.Add("Text", "x50 y45 w400 h2 0x10")
     
     AddBtn(x, y, txt, fn, col) {
