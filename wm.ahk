@@ -13,10 +13,11 @@ SetWinDelay(0)
 SetControlDelay(0)
 
 ; --- 声明全局变量 ---
-global Color_Bg, Color_Text, Color_Active, BarHeight
-global MenuSize, Radius, CenterZone, FontSize, FontSizeActive
+global Color_Bg, Color_Text, Color_Active, BarHeight, BarTransparent
+global MenuSize, Radius, CenterZone, FontSize, FontSizeActive, MenuTransparent
 global ButtonDir, OutputDir, OutputFile, VimPath, TerminalExe
 global VimWinX, VimWinY, VimWinWidth, VimWinHeight
+global OSDHeight, OSDTransparent
 global WorkStart, WorkEnd
 global PieConfig
 global ConfigFile := A_ScriptDir . "\wm_config.ini" ; 定义配置文件路径
@@ -54,7 +55,7 @@ if !DirExist(ButtonDir)
     DirCreate(ButtonDir)
 
 if InitializeButtons() {
-    Reload() ; 重新加载以生效 Include
+    Reload()
 }
 
 ; 启动 UI 模块
@@ -65,7 +66,7 @@ SetTimer(UpdateClockAndProgress, 1000)
 SetupTrayIcon()
 if !DirExist(OutputDir)
 DirCreate(OutputDir)
-RecordClipboard() ; 启动时检查一次剪贴板
+RecordClipboard()
 
 ; ==============================================================================
 ; 快捷键绑定 (Key Bindings)
@@ -99,7 +100,7 @@ Hotkey("!w", HideUnderMouse)                 ; Alt + W : 最小化
 ; --- 鼠标增强 ---
 Hotkey("!WheelUp", AdjustTransparency.Bind(20))   ; Alt + 滚轮上 : 增加透明度
 Hotkey("!WheelDown", AdjustTransparency.Bind(-20))
-~LButton & RButton::Send("^c")                    ; 左右键同按 : 复制
+~LButton & RButton::Send("^c")                    ; 左右键同按 : Ctrl+C
 ~RButton & LButton::Send("^c")
 
 ; --- 工具与剪贴板 ---
@@ -150,6 +151,8 @@ LoadOrInitConfig() {
         Color_Active=A020F0
         ; 顶部状态栏高度
         BarHeight=35
+        ; 顶部状态栏透明度 (0-255)
+        BarTransparent=200
         
         [PieMenu]
         ; 环形菜单直径
@@ -160,6 +163,8 @@ LoadOrInitConfig() {
         FontSize=14
         ; 选中项字体大小
         FontSizeActive=22
+        ; Menu透明度 (0-255)
+        MenuTransparent=200
         
         [Paths]
         ; 按钮脚本目录
@@ -181,6 +186,12 @@ LoadOrInitConfig() {
         ; Vim 浮动窗口高度
         VimWinHeight=800
 
+        [OSD]
+        ; OSD 浮动窗口高度
+        OSDHeight=850
+        ; OSD透明度 (0-255)
+        OSDTransparent=200
+
         [WorkTime]
         ; 工作时间 格式为时分
         WorkStart=0900
@@ -196,41 +207,43 @@ LoadOrInitConfig() {
     }
 
     ; 2. 从 INI 文件读取配置 (IniRead, 文件名, 节, 键, 默认值)
-    ; 注意：IniRead 读出来是字符串，对于数字计算，建议转为 Number/Integer
     
     ; --- Visual ---
-    Color_Bg      := IniRead(ConfigFile, "Visual", "Color_Bg", "181818")
-    Color_Text    := IniRead(ConfigFile, "Visual", "Color_Text", "CCCCCC")
-    Color_Active  := IniRead(ConfigFile, "Visual", "Color_Active", "A020F0")
-    BarHeight     := Integer(IniRead(ConfigFile, "Visual", "BarHeight", "28"))
+    Color_Bg        := IniRead(ConfigFile, "Visual", "Color_Bg", "181818")
+    Color_Text      := IniRead(ConfigFile, "Visual", "Color_Text", "CCCCCC")
+    Color_Active    := IniRead(ConfigFile, "Visual", "Color_Active", "A020F0")
+    BarHeight       := Integer(IniRead(ConfigFile, "Visual", "BarHeight", "28"))
+    BarTransparent  := Integer(IniRead(ConfigFile, "Visual", "BarTransparent", "200"))
 
     ; --- PieMenu ---
-    MenuSize      := Integer(IniRead(ConfigFile, "PieMenu", "MenuSize", "300"))
-    Radius        := MenuSize / 2  ; Radius 是计算属性，不需要存ini，直接算
-    CenterZone    := Integer(IniRead(ConfigFile, "PieMenu", "CenterZone", "40"))
-    FontSize      := Integer(IniRead(ConfigFile, "PieMenu", "FontSize", "14"))
-    FontSizeActive:= Integer(IniRead(ConfigFile, "PieMenu", "FontSizeActive", "22"))
+    MenuSize        := Integer(IniRead(ConfigFile, "PieMenu", "MenuSize", "300"))
+    Radius          := MenuSize / 2  ; Radius 是计算属性，不需要存ini，直接算
+    CenterZone      := Integer(IniRead(ConfigFile, "PieMenu", "CenterZone", "40"))
+    FontSize        := Integer(IniRead(ConfigFile, "PieMenu", "FontSize", "14"))
+    FontSizeActive  := Integer(IniRead(ConfigFile, "PieMenu", "FontSizeActive", "22"))
+    MenuTransparent := Integer(IniRead(ConfigFile, "PieMenu", "MenuTransparent", "200"))
 
     ; --- Paths ---
-    ; 处理相对路径：如果 INI 里写的是 "Buttons"，我们把它转为绝对路径
-    bDirTemp      := IniRead(ConfigFile, "Paths", "ButtonDir", "Buttons")
-    ButtonDir     := (bDirTemp ~= "^[a-zA-Z]:") ? bDirTemp : (A_ScriptDir . "\" . bDirTemp)
-    
-    OutputDir     := IniRead(ConfigFile, "Paths", "OutputDir", "C:\Users\Administrator\Desktop\zxw")
-    OutputFile    := OutputDir . "\CB.txt" ; 拼接文件名
-    
-    VimPath       := IniRead(ConfigFile, "Paths", "VimPath", "C:\Program Files\Vim\vim91\vim.exe")
-    TerminalExe   := IniRead(ConfigFile, "Paths", "TerminalExe", "C:\Soft\terminal\WindowsTerminal.exe")
+    bDirTemp        := IniRead(ConfigFile, "Paths", "ButtonDir", "Buttons")
+    ButtonDir       := (bDirTemp ~= "^[a-zA-Z]:") ? bDirTemp : (A_ScriptDir . "\" . bDirTemp)
+    OutputDir       := IniRead(ConfigFile, "Paths", "OutputDir", "C:\Users\Administrator\Documents")
+    OutputFile      := OutputDir . "\CB.txt" ; 拼接文件名
+    VimPath         := IniRead(ConfigFile, "Paths", "VimPath", "C:\Program Files\Vim\vim91\vim.exe")
+    TerminalExe     := IniRead(ConfigFile, "Paths", "TerminalExe", "C:\Soft\terminal\WindowsTerminal.exe")
 
     ; --- Layout ---
-    VimWinX       := Integer(IniRead(ConfigFile, "Layout", "VimWinX", "400"))
-    VimWinY       := Integer(IniRead(ConfigFile, "Layout", "VimWinY", "0"))
-    VimWinWidth   := Integer(IniRead(ConfigFile, "Layout", "VimWinWidth", "1000"))
-    VimWinHeight  := Integer(IniRead(ConfigFile, "Layout", "VimWinHeight", "800"))
+    VimWinX         := Integer(IniRead(ConfigFile, "Layout", "VimWinX", "400"))
+    VimWinY         := Integer(IniRead(ConfigFile, "Layout", "VimWinY", "0"))
+    VimWinWidth     := Integer(IniRead(ConfigFile, "Layout", "VimWinWidth", "1000"))
+    VimWinHeight    := Integer(IniRead(ConfigFile, "Layout", "VimWinHeight", "800"))
+
+    ; --- OSD ---
+    OSDHeight       := Integer(IniRead(ConfigFile, "OSD", "OSDHeight", "850"))
+    OSDTransparent  := Integer(IniRead(ConfigFile, "OSD", "OSDTransparent", "200"))
 
     ; --- WorkTime ---
-    WorkStart     := IniRead(ConfigFile, "WorkTime", "WorkStart", "0900")
-    WorkEnd       := IniRead(ConfigFile, "WorkTime", "WorkEnd", "1745")
+    WorkStart       := IniRead(ConfigFile, "WorkTime", "WorkStart", "0900")
+    WorkEnd         := IniRead(ConfigFile, "WorkTime", "WorkEnd", "1745")
 }
 
 
@@ -279,6 +292,7 @@ ShowHelpGui(*) {
         ["Alt + LButton", "移动窗口"],
         ["Alt + RButton", "调整窗口大小"],
         ["Alt + Wheel", "调整窗口透明度"],
+        ["Alt + Shift + G", "抓取所有窗口"],
         ["Alt + Q", "关闭窗口"],
         ["Alt + D", "智能平铺"],
         ["Alt + W", "最小化窗口"],
@@ -343,6 +357,8 @@ InitializeButtons() {
 ; ------------------------------------------------------------------------------
 ShowOSD(text) {
     try{
+    global OSDHeight, OSDTransparent
+    global Color_Active
     static OsdGui := ""
     if IsObject(OsdGui)
         OsdGui.Destroy()
@@ -351,8 +367,8 @@ ShowOSD(text) {
     OsdGui.BackColor := Color_Bg
     OsdGui.SetFont("s20 w600 c" . Color_Active, "Segoe UI")
     OsdGui.Add("Text", "Center", text)
-    OsdGui.Show("NoActivate AutoSize y850")
-    WinSetTransparent(200, OsdGui.Hwnd)
+    OsdGui.Show(Format("NoActivate AutoSize y{}", OSDHeight))
+    WinSetTransparent(OSDTransparent, OsdGui.Hwnd)
     SetTimer(() => (IsObject(OsdGui) ? OsdGui.Destroy() : ""), -1000)
     }
 }
@@ -414,6 +430,7 @@ AdjustTransparency(amount, *) {
 ; [Module] 环形菜单 (Pie Menu)
 ; ------------------------------------------------------------------------------
 class PieMenu {
+    
     static IsActive := false, GuiObj := "", Labels := Map(), TimerFn := ObjBindMethod(PieMenu, "CheckMouse")
     static StartX := 0, StartY := 0, CurrentSector := "", LastSector := ""
 
@@ -428,10 +445,11 @@ class PieMenu {
     }
 
     static CreateGui() {
+        global MenuTransparent
         ; 忽略 DPI 缩放，确保物理定位
         this.GuiObj := Gui("-Caption +AlwaysOnTop +ToolWindow +Owner +E0x20 -DPIScale") 
         this.GuiObj.BackColor := Color_Bg
-        WinSetTransparent(220, this.GuiObj)
+        WinSetTransparent(MenuTransparent, this.GuiObj)
         WinSetRegion("0-0 w" . MenuSize . " h" . MenuSize . " E", this.GuiObj)
         
         this.Labels["Center"] := this.GuiObj.Add("Text", "x" Radius-20 " y" Radius-20 " w40 h40 Center +0x200 c" Color_Text, PieConfig["Center"])
@@ -575,7 +593,7 @@ MoveAndSwitch(target, *) {
 }
 
 CreateStatusBar() {
-    global BarGui, BarLeftText, BarRightText, BarProgress, BarHeight
+    global BarTransparent, BarGui, BarLeftText, BarRightText, BarProgress, BarHeight
 
     try {
         if IsObject(BarGui)
@@ -586,13 +604,11 @@ CreateStatusBar() {
     BarGui := Gui("-Caption +AlwaysOnTop +ToolWindow +Owner +E0x08000000 -DPIScale")
     BarGui.BackColor := "181818"
     ; --- 动态计算垂直居中坐标 ---
-    ; 假设文字高度约为 20px, 进度条高度设定为 6px
     TextY := (BarHeight - 20) / 2   ; 文字的 Y 坐标
     ProgY := (BarHeight - 6) / 2    ; 进度条的 Y 坐标
     
     ; 左侧：桌面指示器
     BarGui.SetFont("s10 w600 c" . Color_Active , "Segoe UI")
-    ; 使用变量 TextY 替换原来的 y4
     BarLeftText := BarGui.Add("Text", "x15 y" . TextY . " w300 h20 BackgroundTrans", "")
     
     ; 中间：下班进度条
@@ -608,11 +624,11 @@ CreateStatusBar() {
     
     ; 右侧：时钟
     BarGui.SetFont("s10 w600 c" . Color_Active , "Segoe UI")
-    ; 使用变量 TextY 替换原来的 y4
     BarRightText := BarGui.Add("Text", "x" . (A_ScreenWidth - 260 ) . " y" . TextY . " w250 h20 BackgroundTrans Right", "")
     
     ; 显示 Bar
     BarGui.Show("x0 y0 w" . A_ScreenWidth . " h" . BarHeight . " NoActivate")
+    WinSetTransparent(BarTransparent, BarGui.Hwnd)
 	
 }
 
@@ -660,7 +676,6 @@ UpdateClockAndProgress() {
         }
     }
     
-    ; 严格错误处理：确保赋值给控件的是整数
     try {
         if IsObject(BarProgress)
             BarProgress.Value := Integer(pct)
@@ -725,6 +740,7 @@ GatherAllToCurrent(*) {
     ShowOSD("Gathered " . count . " Windows")
 }
 
+; 窗口平铺规则
 TileCurrentDesktop(*) {
     global BarHeight, BarVisible
     windows := GetVisibleWindows()
