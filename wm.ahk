@@ -2,27 +2,23 @@
 #SingleInstance Force
 #WinActivateForce
 ; ==============================================================================
-;全局配置与变量 (Configuration)
+; Configuration
 ; ==============================================================================
 
-; --- 环境设置 ---
 SetWorkingDir(A_ScriptDir)
 CoordMode("Mouse", "Screen")
 SetTitleMatchMode(2)
 SetWinDelay(0)
 SetControlDelay(0)
 
-; --- 声明全局变量 ---
 global Color_Bg, Color_Text, Color_Active, BarHeight, BarTransparent
 global MenuSize, Radius, CenterZone, FontSize, FontSizeActive, MenuTransparent
 global ButtonDir, OutputDir, OutputFile, VimPath, TerminalExe
 global VimWinX, VimWinY, VimWinWidth, VimWinHeight
 global OSDHeight, OSDTransparent
-global WorkStart, WorkEnd
+global WorkStart, WorkEnd, WDayBar, WorkTime
 global PieConfig
-global ConfigFile := A_ScriptDir . "\wm_config.ini" ; 定义配置文件路径
-
-; --- 状态变量 ---
+global ConfigFile := A_ScriptDir . "\wm_config.ini"
 global CurrentDesktop := 1
 global DesktopCount   := 9
 global Desktops       := Map()
@@ -32,23 +28,20 @@ global CurrentVimPID  := 0
 global LastClipContent := ""
 global BarGui := "", BarLeftText := "", BarRightText := "", BarProgress := ""
 
-; --- 环形菜单固定配置 ---
 PieConfig := Map(
     "Top", "↑", "TopRight", "↗", "Right", "→", "DownRight", "↘", 
     "Down", "↓", "DownLeft", "↙", "Left", "←", "TopLeft", "↖", "Center", "●"
 )
 
 ; ==============================================================================
-;启动流程 (Initialization)
+; Initialization
 ; ==============================================================================
 
 LoadOrInitConfig()
-; 初始化桌面数组
 Loop DesktopCount {
     Desktops[A_Index] := []
 }
 
-; 检查目录
 if !DirExist(OutputDir)
     DirCreate(OutputDir)
 if !DirExist(ButtonDir)
@@ -58,7 +51,6 @@ if InitializeButtons() {
     Reload()
 }
 
-; 启动 UI 模块
 CreateStatusBar()
 UpdateStatusBar()
 UpdateClockAndProgress()
@@ -69,55 +61,47 @@ DirCreate(OutputDir)
 RecordClipboard()
 
 ; ==============================================================================
-; 快捷键绑定 (Key Bindings)
+; Key Bindings
 ; ==============================================================================
 
-; --- 帮助系统 ---
-Hotkey("!/", ShowHelpGui)                    ; Alt + / : 显示帮助菜单
-
-; --- 桌面管理 (Alt + 1-9) ---
+Hotkey("!/", ShowHelpGui)
 Loop 9 {
     i := A_Index
-    Hotkey("!" . i, SwitchDesktop.Bind(i))        ; 切换桌面
-    Hotkey("!+" . i, MoveWindowToDesktop.Bind(i)) ; 移动窗口
-    Hotkey("^!" . i, MoveAndSwitch.Bind(i))       ; 移动并跟随
+    Hotkey("!" . i, SwitchDesktop.Bind(i))
+    Hotkey("!+" . i, MoveWindowToDesktop.Bind(i))
+    Hotkey("^!" . i, MoveAndSwitch.Bind(i))
 }
 
-; --- 核心 WM 功能 ---
-Hotkey("!d", TileCurrentDesktop)             ; Alt + D : 智能平铺
-Hotkey("!+g", GatherAllToCurrent)            ; Alt + Shift + G : 召唤所有窗口
-Hotkey("^!t", TogglePin)                     ; Ctrl + Alt + T : 钉住窗口
-Hotkey("^!b", ToggleBar)                     ; Ctrl + Alt + B : 开关顶栏
-Hotkey("!F12", RestoreAndExit)               ; Alt + F12 : 还原并退出
+Hotkey("!d", TileCurrentDesktop)
+Hotkey("!+g", GatherAllToCurrent)
+Hotkey("^!t", TogglePin)
+Hotkey("^!b", ToggleBar)
+Hotkey("!F12", RestoreAndExit)
 
-; --- 窗口操作 ---
-Hotkey("!q", CloseWindowUnderMouse)          ; Alt + Q : 关闭窗口
-Hotkey("!MButton", CloseWindowUnderMouse)    ; Alt + 中键 : 关闭窗口
-Hotkey("!f", ToggleMaximizeUnderMouse)       ; Alt + F : 最大化/还原
-Hotkey("!t", ToggleTopUnderMouse)            ; Alt + T : 置顶/取消
-Hotkey("!w", HideUnderMouse)                 ; Alt + W : 最小化
+Hotkey("!q", CloseWindowUnderMouse)
+Hotkey("!MButton", CloseWindowUnderMouse)
+Hotkey("!f", ToggleMaximizeUnderMouse)
+Hotkey("!t", ToggleTopUnderMouse)
+Hotkey("!w", HideUnderMouse)
 
-; --- 鼠标增强 ---
-Hotkey("!WheelUp", AdjustTransparency.Bind(20))   ; Alt + 滚轮上 : 增加透明度
+Hotkey("!WheelUp", AdjustTransparency.Bind(20))
 Hotkey("!WheelDown", AdjustTransparency.Bind(-20))
-~LButton & RButton::Send("^c")                    ; 左右键同按 : Ctrl+C
+~LButton & RButton::Send("^c")
 ~RButton & LButton::Send("^c")
 
-; --- 工具与剪贴板 ---
-Hotkey("!Enter", LaunchTerminal)             ; Alt + Enter : 打开终端
-Hotkey("!s", (*) => Run("devmgmt.msc"))      ; Alt + S : 设备管理器
-Hotkey("!n", (*) => Run("ncpa.cpl"))         ; Alt + N : 网络管理器
-Hotkey("!v", OpenWithVim)                    ; Alt + V : Vim 打开文件
-Hotkey("!x", ShowPowerMenu)                  ; Alt + X : 电源菜单
+Hotkey("!Enter", LaunchTerminal)
+Hotkey("!s", (*) => Run("devmgmt.msc"))
+Hotkey("!n", (*) => Run("ncpa.cpl"))
+Hotkey("!v", OpenWithVim)
+Hotkey("!x", ShowPowerMenu)
 
 !r::{
-    Reload                                   ; Alt + R :刷新配置
+    Reload
     }
 
-^`:: ToggleVimWindow()                       ; Ctrl + ` : 剪贴板历史
-~^c:: (Sleep(100), RecordClipboard())        ; 监听复制
+^`:: ToggleVimWindow()
+~^c:: (Sleep(100), RecordClipboard())
 
-; --- 环形菜单 ---
 ~Space & RButton:: PieMenu.Start()
 
 Space Up:: 
@@ -128,86 +112,85 @@ RButton Up::
 }
 
 ; ==============================================================================
-; 功能实现模块 (Function Modules)
+; Function Modules
 ; ==============================================================================
 ; ------------------------------------------------------------------------------
-; [Module] 配置文件
+; [Module] Config File
 ; ------------------------------------------------------------------------------
 LoadOrInitConfig() {
     global
     
-    ; 1. 如果配置文件不存在，生成默认配置
     if !FileExist(ConfigFile) {
         DefaultIni := "
         (
-        [ZhangXuWei_WM_Config]
+        [WM_Config]
 
         [Visual]
-        ; 背景颜色 (深灰)
+        ; Background Color
         Color_Bg=181818
-        ; 文字颜色 (浅灰)
+        ; Text Color
         Color_Text=CCCCCC
-        ; 高亮/激活颜色 (紫色)
+        ; Active/Highlight Color
         Color_Active=A020F0
-        ; 顶部状态栏高度
+        ; Status Bar Height
         BarHeight=35
-        ; 顶部状态栏透明度 (0-255)
+        ; Status Bar Transparency (0-255)
         BarTransparent=200
         
         [PieMenu]
-        ; 环形菜单直径
+        ; Menu Diameter
         MenuSize=300
-        ; 中心死区范围
+        ; Center Dead Zone Range
         CenterZone=40
-        ; 菜单字体大小
+        ; Menu Font Size
         FontSize=14
-        ; 选中项字体大小
+        ; Active Item Font Size
         FontSizeActive=22
-        ; Menu透明度 (0-255)
+        ; Menu Transparency (0-255)
         MenuTransparent=200
         
         [Paths]
-        ; 按钮脚本目录
+        ; Button Script Directory
         ButtonDir=Buttons
-        ; 剪贴板记录输出目录
-        OutputDir=C:\Users\Administrator\Desktop\zxw
-        ; Vim 编辑器路径
-        VimPath=C:\Program Files\Vim\vim91\vim.exe
-        ; 终端路径
-        TerminalExe=C:\Soft\terminal\WindowsTerminal.exe
+        ; Clipboard Recovery Output Directory
+        OutputDir=C:\Users\Administrator\Desktop
+        ; Vim Path
+        VimPath=C:\Windows\system32\notepad.exe
+        ; Terminal Path
+        TerminalExe=C:\Windows\system32\cmd.exe
         
         [Layout]
-        ; Vim 浮动窗口坐标 X
+        ; Vim Window X
         VimWinX=400
-        ; Vim 浮动窗口坐标 Y
+        ; Vim Window Y
         VimWinY=0
-        ; Vim 浮动窗口宽度
+        ; Vim Window Width
         VimWinWidth=1000
-        ; Vim 浮动窗口高度
+        ; Vim Window Height
         VimWinHeight=800
 
         [OSD]
-        ; OSD 浮动窗口高度
+        ; OSD Height Position
         OSDHeight=850
-        ; OSD透明度 (0-255)
+        ; OSD Transparency (0-255)
         OSDTransparent=200
 
         [WorkTime]
-        ; 工作时间 格式为时分
+        ; Work Time Format HHmm
         WorkStart=0900
         WorkEnd=1745
+        WDayBar=off
+        WorkTime=on
         )"
         
         try {
             FileAppend(DefaultIni, ConfigFile, "UTF-8")
-            MsgBox("检测到首次运行，已生成配置文件：`n" . ConfigFile . "`n`n请根据需要修改配置。", "WM Config", "Iconi")
+            MsgBox("First run detected. Config file created at:`n" . ConfigFile . "`n`nPlease press 'Alt + /' to view the Help Menu.", "WM Config", "Iconi")
         } catch as e {
-            MsgBox("无法创建配置文件，请检查权限！`n" . e.Message)
+            MsgBox("Failed to create config file, check permissions!`n" . e.Message)
         }
     }
 
-    ; 2. 从 INI 文件读取配置 (IniRead, 文件名, 节, 键, 默认值)
-    
     ; --- Visual ---
     Color_Bg        := IniRead(ConfigFile, "Visual", "Color_Bg", "181818")
     Color_Text      := IniRead(ConfigFile, "Visual", "Color_Text", "CCCCCC")
@@ -217,7 +200,7 @@ LoadOrInitConfig() {
 
     ; --- PieMenu ---
     MenuSize        := Integer(IniRead(ConfigFile, "PieMenu", "MenuSize", "300"))
-    Radius          := MenuSize / 2  ; Radius 是计算属性，不需要存ini，直接算
+    Radius          := MenuSize / 2 
     CenterZone      := Integer(IniRead(ConfigFile, "PieMenu", "CenterZone", "40"))
     FontSize        := Integer(IniRead(ConfigFile, "PieMenu", "FontSize", "14"))
     FontSizeActive  := Integer(IniRead(ConfigFile, "PieMenu", "FontSizeActive", "22"))
@@ -227,7 +210,7 @@ LoadOrInitConfig() {
     bDirTemp        := IniRead(ConfigFile, "Paths", "ButtonDir", "Buttons")
     ButtonDir       := (bDirTemp ~= "^[a-zA-Z]:") ? bDirTemp : (A_ScriptDir . "\" . bDirTemp)
     OutputDir       := IniRead(ConfigFile, "Paths", "OutputDir", "C:\Users\Administrator\Documents")
-    OutputFile      := OutputDir . "\CB.txt" ; 拼接文件名
+    OutputFile      := OutputDir . "\CB.txt"
     VimPath         := IniRead(ConfigFile, "Paths", "VimPath", "C:\Program Files\Vim\vim91\vim.exe")
     TerminalExe     := IniRead(ConfigFile, "Paths", "TerminalExe", "C:\Soft\terminal\WindowsTerminal.exe")
 
@@ -244,66 +227,63 @@ LoadOrInitConfig() {
     ; --- WorkTime ---
     WorkStart       := IniRead(ConfigFile, "WorkTime", "WorkStart", "0900")
     WorkEnd         := IniRead(ConfigFile, "WorkTime", "WorkEnd", "1745")
+    WDayBar         := IniRead(ConfigFile, "WorkTime", "WDayBar", "off")
+    WorkTime        := IniRead(ConfigFile, "WorkTime", "WorkTime", "on")
 }
 
 
 ; ------------------------------------------------------------------------------
-; [Module] 帮助 GUI
+; [Module] Help GUI
 ; ------------------------------------------------------------------------------
 ShowHelpGui(*) {
     static helpGui := ""
     
-    ; --- 定义关闭检测函数 (嵌套函数) ---
     CloseWatcher() {
         if !IsObject(helpGui) {
-            SetTimer CloseWatcher, 0 ; 关闭定时器
+            SetTimer CloseWatcher, 0
             return
         }
 
         if GetKeyState("Escape", "P") || GetKeyState("LButton", "P") {
             try helpGui.Destroy()
-            helpGui := ""            ; 清空变量
-            SetTimer CloseWatcher, 0 ; 关闭定时器
+            helpGui := ""
+            SetTimer CloseWatcher, 0
         }
     }
 
-    ; --- 主逻辑 ---
     if IsObject(helpGui) {
         helpGui.Destroy()
         helpGui := ""
         return
     }
 
-    ; --- 创建 GUI ---
-    ; 忽略 DPI 缩放 (-DPIScale)
     helpGui := Gui("-Caption +AlwaysOnTop +ToolWindow -DPIScale +Owner")
     helpGui.BackColor := Color_Bg
     helpGui.SetFont("s16 w700 c" . Color_Active, "Segoe UI")
-    helpGui.Add("Text", "x0 y25 w600 Center", "ZhangXuWei WM HELP")
+    helpGui.Add("Text", "x0 y25 w600 Center", "HELP")
     
     helpGui.SetFont("s10 w600 c" . Color_Active)
-    helpGui.Add("Text", "x50 y65 w500 h2 0x10") ; 紫色分割线
+    helpGui.Add("Text", "x50 y65 w500 h2 0x10")
 
-    ; 帮助列表
     shortcuts := [
-        ["Alt + /", "显示/隐藏帮助菜单"],
-        ["Space + RClick", "环形菜单 (Pie Menu)"],
-        ["Alt + 1-9", "切换桌面 (Shift 移动)"],
-        ["Alt + LButton", "移动窗口"],
-        ["Alt + RButton", "调整窗口大小"],
-        ["Alt + Wheel", "调整窗口透明度"],
-        ["Alt + Shift + G", "抓取所有窗口"],
-        ["Alt + Q", "关闭窗口"],
-        ["Alt + D", "智能平铺"],
-        ["Alt + W", "最小化窗口"],
-        ["Alt + F", "最大化/还原"],
-        ["Alt + R", "强制刷新脚本"],
-        ["Alt + T", "置顶/取消置顶"],
-        ["Alt + F12", "安全退出脚本"],
-        ["Ctrl + ``", "剪贴板历史 (Vim)"],
-        ["Ctrl + Alt + B", "开关顶部 Bar"],
-        ["Alt + V", "使用Vim编辑选中文件"],
-        ["Alt + X", "电源菜单"]
+        ["Alt + /", "Show/Hide Help Menu"],
+        ["Space + RClick", "Pie Menu (Mouse)"],
+        ["Alt + 1-9", "Switch Desktop (Shift to Move)"],
+        ["Alt + LButton", "Move Window"],
+        ["Alt + RButton", "Resize Window"],
+        ["Alt + Wheel", "Window Transparency"],
+        ["Alt + Shift + G", "Gather All Windows"],
+        ["Alt + Q", "Close Window"],
+        ["Alt + D", "Smart Tiling"],
+        ["Alt + W", "Minimize Window"],
+        ["Alt + F", "Maximize/Restore"],
+        ["Alt + R", "Reload Script"],
+        ["Alt + T", "Toggle Pin/OnTop"],
+        ["Ctrl + ``", "Clipboard History"],
+        ["Ctrl + Alt + B", "Toggle Top Bar"],
+        ["Alt + V", "Edit Selectd File"],
+        ["Alt + F12", "Safely Exit"],
+        ["Alt + X", "Power Menu"]
     ]
 
     helpGui.SetFont("s11 w400 c" . Color_Text)
@@ -314,14 +294,12 @@ ShowHelpGui(*) {
     }
     
     helpGui.Show("Center")
-    
-    ; --- 启动检测定时器 ---
     SetTimer CloseWatcher, 50
 }
 
 
 ; ------------------------------------------------------------------------------
-; [Module] 外部按钮脚本管理
+; [Module] Round Menu
 ; ------------------------------------------------------------------------------
 InitializeButtons() {
     dirs := ["Top", "TopRight", "Right", "DownRight", "Down", "DownLeft", "Left", "TopLeft"]
@@ -330,7 +308,6 @@ InitializeButtons() {
     for d in dirs {
         fPath := ButtonDir . "\" . d . ".ahk"
         if !FileExist(fPath) {
-            ; 生成符合要求的模板
             template := '
             (
             SetWorkingDir(A_ScriptDir)
@@ -349,11 +326,11 @@ InitializeButtons() {
             created := true
         }
     }
-    return created ; 返回是否创建了新文件
+    return created 
 }
 
 ; ------------------------------------------------------------------------------
-; [Module] OSD 提示系统
+; [Module] OSD
 ; ------------------------------------------------------------------------------
 ShowOSD(text) {
     try{
@@ -362,7 +339,6 @@ ShowOSD(text) {
     static OsdGui := ""
     if IsObject(OsdGui)
         OsdGui.Destroy()
-    ; 忽略 DPI 缩放
     OsdGui := Gui("+AlwaysOnTop -Caption +ToolWindow +Disabled +Owner -DPIScale")
     OsdGui.BackColor := Color_Bg
     OsdGui.SetFont("s20 w600 c" . Color_Active, "Segoe UI")
@@ -373,7 +349,7 @@ ShowOSD(text) {
     }
 }
 ; ------------------------------------------------------------------------------
-; [Module] 窗口操作 (带 GUI 提示)
+; [Module] Windows Function
 ; ------------------------------------------------------------------------------
 CloseWindowUnderMouse(*) {
     MouseGetPos(,, &hwnd)
@@ -427,7 +403,7 @@ AdjustTransparency(amount, *) {
 }
 
 ; ------------------------------------------------------------------------------
-; [Module] 环形菜单 (Pie Menu)
+; [Module] Pie Menu
 ; ------------------------------------------------------------------------------
 class PieMenu {
     
@@ -446,7 +422,6 @@ class PieMenu {
 
     static CreateGui() {
         global MenuTransparent
-        ; 忽略 DPI 缩放，确保物理定位
         this.GuiObj := Gui("-Caption +AlwaysOnTop +ToolWindow +Owner +E0x20 -DPIScale") 
         this.GuiObj.BackColor := Color_Bg
         WinSetTransparent(MenuTransparent, this.GuiObj)
@@ -515,7 +490,6 @@ class PieMenu {
         if IsObject(this.GuiObj)
             this.GuiObj.Destroy()
         if (this.CurrentSector != "Center" && this.CurrentSector != "") {
-            ; 动态调用外部引用进来的函数
             try %this.CurrentSector%()
             catch
                 ShowOSD("Function Loust: " . this.CurrentSector)
@@ -524,7 +498,7 @@ class PieMenu {
 }
 
 ; ------------------------------------------------------------------------------
-; [Module] 虚拟桌面与状态栏
+; [Module] WM & Bar
 ; ------------------------------------------------------------------------------
 SwitchDesktop(target, *) {
     global CurrentDesktop, Desktops, AlwaysVisible
@@ -549,7 +523,6 @@ SwitchDesktop(target, *) {
 MoveWindowToDesktop(target, *) {
     global CurrentDesktop, Desktops, AlwaysVisible
     
-    ; 严谨的 Try-Catch 获取窗口
     hwnd := 0
     try {
         hwnd := WinExist("A")
@@ -560,11 +533,9 @@ MoveWindowToDesktop(target, *) {
     if (!hwnd || (BarGui && hwnd == BarGui.Hwnd)) 
         return
 
-    ; 处理 Pin 状态
     if (AlwaysVisible.Has(hwnd)) 
         AlwaysVisible.Delete(hwnd)
 
-    ; 从所有桌面列表中移除
     Loop DesktopCount {
         d := A_Index
         if (Desktops.Has(d)) {
@@ -577,7 +548,6 @@ MoveWindowToDesktop(target, *) {
         }
     }
     
-    ; 加入目标桌面
     Desktops[target].Push(hwnd)
     
     if (target != CurrentDesktop) {
@@ -600,33 +570,25 @@ CreateStatusBar() {
             BarGui.Destroy()
     }
 
-    ; 创建 GUI
     BarGui := Gui("-Caption +AlwaysOnTop +ToolWindow +Owner +E0x08000000 -DPIScale")
     BarGui.BackColor := "181818"
-    ; --- 动态计算垂直居中坐标 ---
-    TextY := (BarHeight - 20) / 2   ; 文字的 Y 坐标
-    ProgY := (BarHeight - 6) / 2    ; 进度条的 Y 坐标
+    TextY := (BarHeight - 20) / 2 
+    ProgY := (BarHeight - 6) / 2
     
-    ; 左侧：桌面指示器
     BarGui.SetFont("s10 w600 c" . Color_Active , "Segoe UI")
     BarLeftText := BarGui.Add("Text", "x15 y" . TextY . " w300 h20 BackgroundTrans", "")
     
-    ; 中间：下班进度条
     ProgressWidth := 300
     ProgressX := (A_ScreenWidth / 2) - (ProgressWidth / 2)
     
-    ; 背景底槽 (使用 ProgY 替换 y10)
     BarGui.Add("Text", "x" ProgressX " y" . ProgY . " w" ProgressWidth " h6 Background333333", "") 
     
-    ; 进度实体 (紫色) (使用 ProgY 替换 y10)
     ProgressOptions := Format("x{1} y{2} w{3} h6 c{4} Background333333 +Smooth",ProgressX,ProgY,ProgressWidth,Color_Active )
     BarProgress := BarGui.Add("Progress",ProgressOptions, 0)
     
-    ; 右侧：时钟
     BarGui.SetFont("s10 w600 c" . Color_Active , "Segoe UI")
     BarRightText := BarGui.Add("Text", "x" . (A_ScreenWidth - 260 ) . " y" . TextY . " w250 h20 BackgroundTrans Right", "")
     
-    ; 显示 Bar
     BarGui.Show("x0 y0 w" . A_ScreenWidth . " h" . BarHeight . " NoActivate")
     WinSetTransparent(BarTransparent, BarGui.Hwnd)
 	
@@ -644,30 +606,45 @@ UpdateStatusBar() {
 
 UpdateClockAndProgress() {
     global BarRightText, BarProgress
-    global WorkStart, WorkEnd
+    global WorkStart, WorkEnd, WDayBar, WorkTime
+    
     if !IsObject(BarRightText)
         return
 
-    ; 更新时间
     try BarRightText.Value := FormatTime(, "yyyy-MM-dd   HH:mm")
 
-    ; --- 进度条逻辑 ---
     NowTime := A_Now
     TodayDate := FormatTime(NowTime, "yyyyMMdd")
-    StartTS := TodayDate . WorkStart . "00"
-    EndTS   := TodayDate . WorkEnd . "00"
-    
-    WDay := A_WDay ; 1=周日, 7=周六
+    WDay := A_WDay
+    StartTS := ""
+    EndTS := ""
+    ForceFull := false
+    if (WorkTime = "off") {
+        StartTS := TodayDate . "000000"
+        EndTS   := TodayDate . "235959"
+    } 
+    else {
+        StartTS := TodayDate . WorkStart . "00"
+        EndTS   := TodayDate . WorkEnd . "00"
+
+        if (WDay == 1 || WDay == 7) {
+            if (WDayBar = "off") {
+                ForceFull := true
+            }
+        }
+    }
     
     pct := 0
-    ; 周末显示满条 (100%)
-    if (WDay == 1 || WDay == 7) {
+    
+    if (ForceFull) {
         pct := 100
     } else {
         TotalSec := DateDiff(EndTS, StartTS, "Seconds")
         ElapsedSec := DateDiff(NowTime, StartTS, "Seconds")
         
-        if (ElapsedSec < 0) {
+        if (TotalSec <= 0) {
+            pct := 100 
+        } else if (ElapsedSec < 0) {
             pct := 0
         } else if (ElapsedSec > TotalSec) {
             pct := 100
@@ -740,7 +717,7 @@ GatherAllToCurrent(*) {
     ShowOSD("Gathered " . count . " Windows")
 }
 
-; 窗口平铺规则
+; Tile Rule
 TileCurrentDesktop(*) {
     global BarHeight, BarVisible
     windows := GetVisibleWindows()
@@ -796,7 +773,7 @@ TileCurrentDesktop(*) {
 }
 
 ; ------------------------------------------------------------------------------
-; [Module] 剪贴板与工具
+; [Module] Clipboard Tool and Others
 ; ------------------------------------------------------------------------------
 RecordClipboard() {
     global LastClipContent
@@ -817,7 +794,12 @@ ToggleVimWindow() {
         WinClose("ahk_pid " . CurrentVimPID)
         CurrentVimPID := 0
     } else {
-        RunCmd := Format('"{1}" "+$" "{2}"', VimPath, OutputFile)
+        if InStr(VimPath, "vim") {
+            RunCmd := Format('"{1}" "+$" "{2}"', VimPath, OutputFile)
+        } else {
+            RunCmd := Format('"{1}" "{2}"', VimPath, OutputFile)
+        }
+
         try {
             Run(RunCmd, , , &pid)
             CurrentVimPID := pid
@@ -874,7 +856,7 @@ ShowPowerMenu(*) {
 }
 
 ; ------------------------------------------------------------------------------
-; [Module] 系统辅助
+; [Module] Others 
 ; ------------------------------------------------------------------------------
 RestoreAndExit(*) {
     global BarGui
@@ -917,7 +899,6 @@ Explorer_GetSelection() {
 
     WinClass := WinGetClass(hwnd)
     
-    ; --- 情况 A: 桌面 (Progman / WorkerW) ---
     if (WinClass ~= "Progman|WorkerW") {
         try {
             oDesktop := ComObject("Shell.Application").Windows.Item(ComValue(19, 8))
@@ -929,7 +910,6 @@ Explorer_GetSelection() {
             return ""
         }
     }
-    ; --- 情况 B: 资源管理器 (CabinetWClass) ---
     else if (WinClass ~= "(Cabinet|Explore)WClass") {
         try {
             for window in ComObject("Shell.Application").Windows {
@@ -972,7 +952,7 @@ SetupTrayIcon() {
 }
 
 ; ------------------------------------------------------------------------------
-; 模块：KDE 交互 (Mouse Interaction)
+; [Module] Mouse Interaction
 ; ------------------------------------------------------------------------------
 
 !LButton:: {
@@ -1024,10 +1004,9 @@ SetupTrayIcon() {
     }
 }
 ; ------------------------------------------------------------------------------
-; 外部脚本引用 (External Buttons Include)
+; [Module] External Buttons Include
 ; ------------------------------------------------------------------------------
 
-; 使用 *i 忽略错误，确保 InitializeButtons 创建文件后重载能正常读取
 #Include "*i %A_ScriptDir%\Buttons\Top.ahk"
 #Include "*i %A_ScriptDir%\Buttons\TopRight.ahk"
 #Include "*i %A_ScriptDir%\Buttons\Right.ahk"
