@@ -11,7 +11,7 @@ SetTitleMatchMode(2)
 SetWinDelay(0)
 SetControlDelay(0)
 
-global Color_Bg, Color_Text, Color_Active, BarHeight, BarTransparent
+global Color_Bg, Color_Text, Color_Active, BarHeight, BarTransparent, BarFontSize
 global MenuSize, Radius, CenterZone, FontSize, FontSizeActive, MenuTransparent
 global ButtonDir, OutputDir, OutputFile, VimPath, TerminalExe
 global VimWinX, VimWinY, VimWinWidth, VimWinHeight
@@ -136,6 +136,8 @@ LoadOrInitConfig() {
         BarHeight=35
         ; Status Bar Transparency (0-255)
         BarTransparent=200
+        ; Status Bar FontSize
+        BarFontSize=10
         
         [PieMenu]
         ; Menu Diameter
@@ -153,8 +155,8 @@ LoadOrInitConfig() {
         ; Button Script Directory
         ButtonDir=Buttons
         ; Clipboard Recovery Output Directory
-        OutputDir=C:\Users\Administrator\Desktop
-        ; Vim Path
+        OutputDir=C:\Users\Administrator\Documents
+        ; Editor Path(Vim recommended)
         VimPath=C:\Windows\system32\notepad.exe
         ; Terminal Path
         TerminalExe=C:\Windows\system32\cmd.exe
@@ -179,7 +181,9 @@ LoadOrInitConfig() {
         ; Work Time Format HHmm
         WorkStart=0900
         WorkEnd=1745
+        ; Set weekends full bar or normal
         WDayBar=off
+        ; Set Work or full-day progress
         WorkTime=on
         )"
         
@@ -197,6 +201,7 @@ LoadOrInitConfig() {
     Color_Active    := IniRead(ConfigFile, "Visual", "Color_Active", "A020F0")
     BarHeight       := Integer(IniRead(ConfigFile, "Visual", "BarHeight", "28"))
     BarTransparent  := Integer(IniRead(ConfigFile, "Visual", "BarTransparent", "200"))
+    BarFontSize     := Integer(IniRead(ConfigFile, "Visual", "BarFontSize", "10"))
 
     ; --- PieMenu ---
     MenuSize        := Integer(IniRead(ConfigFile, "PieMenu", "MenuSize", "300"))
@@ -211,8 +216,8 @@ LoadOrInitConfig() {
     ButtonDir       := (bDirTemp ~= "^[a-zA-Z]:") ? bDirTemp : (A_ScriptDir . "\" . bDirTemp)
     OutputDir       := IniRead(ConfigFile, "Paths", "OutputDir", "C:\Users\Administrator\Documents")
     OutputFile      := OutputDir . "\CB.txt"
-    VimPath         := IniRead(ConfigFile, "Paths", "VimPath", "C:\Program Files\Vim\vim91\vim.exe")
-    TerminalExe     := IniRead(ConfigFile, "Paths", "TerminalExe", "C:\Soft\terminal\WindowsTerminal.exe")
+    VimPath         := IniRead(ConfigFile, "Paths", "VimPath", "C:\Windows\system32\notepad.exe")
+    TerminalExe     := IniRead(ConfigFile, "Paths", "TerminalExe", "C:\Windows\system32\cmd.exe")
 
     ; --- Layout ---
     VimWinX         := Integer(IniRead(ConfigFile, "Layout", "VimWinX", "400"))
@@ -563,38 +568,38 @@ MoveAndSwitch(target, *) {
 }
 
 CreateStatusBar() {
-    global BarTransparent, BarGui, BarLeftText, BarRightText, BarProgress, BarHeight
+    global BarTransparent, BarGui, BarLeftText, BarRightText, BarProgress, BarHeight, Color_Active, BarFontSize
 
     try {
-        if IsObject(BarGui)
+        if IsSet(BarGui) && IsObject(BarGui)
             BarGui.Destroy()
     }
 
+    local minNeededHeight := Round(BarFontSize * 2.5)
+    if !IsSet(BarHeight) || (BarHeight < minNeededHeight)
+        BarHeight := minNeededHeight
+    local padding := 15
+    local progressWidth := Round(A_ScreenWidth * 0.30)
+    local textBoxWidth := Round((A_ScreenWidth - progressWidth - (padding * 4)) / 2)
+    local textControlH := Round(BarFontSize * 2)
+    local textY := (BarHeight - textControlH) / 2
+    local progH := 6
+    local progY := (BarHeight - progH) / 2
+    local progressX := (A_ScreenWidth / 2) - (progressWidth / 2)
+    local rightTextX := A_ScreenWidth - textBoxWidth - padding
+
     BarGui := Gui("-Caption +AlwaysOnTop +ToolWindow +Owner +E0x08000000 -DPIScale")
     BarGui.BackColor := "181818"
-    TextY := (BarHeight - 20) / 2 
-    ProgY := (BarHeight - 6) / 2
-    
-    BarGui.SetFont("s10 w600 c" . Color_Active , "Segoe UI")
-    BarLeftText := BarGui.Add("Text", "x15 y" . TextY . " w300 h20 BackgroundTrans", "")
-    
-    ProgressWidth := 300
-    ProgressX := (A_ScreenWidth / 2) - (ProgressWidth / 2)
-    
-    BarGui.Add("Text", "x" ProgressX " y" . ProgY . " w" ProgressWidth " h6 Background333333", "") 
-    
-    ProgressOptions := Format("x{1} y{2} w{3} h6 c{4} Background333333 +Smooth",ProgressX,ProgY,ProgressWidth,Color_Active )
-    BarProgress := BarGui.Add("Progress",ProgressOptions, 0)
-    
-    BarGui.SetFont("s10 w600 c" . Color_Active , "Segoe UI")
-    BarRightText := BarGui.Add("Text", "x" . (A_ScreenWidth - 260 ) . " y" . TextY . " w250 h20 BackgroundTrans Right", "")
-    
+    BarGui.SetFont("s" . BarFontSize . " w600 c" . Color_Active, "Segoe UI")
+    BarLeftText := BarGui.Add("Text", "x" . padding . " y" . textY . " w" . textBoxWidth . " h" . textControlH . " BackgroundTrans", "")
+    BarGui.Add("Text", "x" . progressX . " y" . progY . " w" . progressWidth . " h" . progH . " Background333333", "") 
+    ProgressOptions := Format("x{1} y{2} w{3} h{4} c{5} Background333333 +Smooth", progressX, progY, progressWidth, progH, Color_Active)
+    BarProgress := BarGui.Add("Progress", ProgressOptions, 0)
+    BarRightText := BarGui.Add("Text", "x" . rightTextX . " y" . textY . " w" . textBoxWidth . " h" . textControlH . " BackgroundTrans Right", "")
     BarGui.Show("x0 y0 w" . A_ScreenWidth . " h" . BarHeight . " NoActivate")
-    WinSetTransparent(BarTransparent, BarGui.Hwnd)
-	
-}
 
-UpdateStatusBar() {
+    WinSetTransparent(BarTransparent, BarGui.Hwnd)
+}UpdateStatusBar() {
     global CurrentDesktop, DesktopCount, BarLeftText
     if !IsObject(BarLeftText)
         return
@@ -720,17 +725,24 @@ GatherAllToCurrent(*) {
 ; Tile Rule
 TileCurrentDesktop(*) {
     global BarHeight, BarVisible
-    windows := GetVisibleWindows()
+    
+    windows := GetVisibleWindow()
     count := windows.Length
+    
     if (count == 0) {
         ShowOSD("No Windows To Tile")
         return
     }
     ShowOSD("Tile: " . count)
-    MonitorGetWorkArea(1, &WL, &WT, &WR, &WB)
-    if (BarVisible)
+    
+    activeWin := WinExist("A")
+    targetMon := GetMonitorIndex(activeWin)
+    MonitorGetWorkArea(targetMon, &WL, &WT, &WR, &WB)
+    if (IsSet(BarVisible) && BarVisible && IsSet(BarHeight))
         WT += BarHeight
-    W := WR - WL, H := WB - WT 
+    
+    W := WR - WL
+    H := WB - WT 
     
     if (count == 1) {
         try WinRestore(windows[1]), WinMove(WL, WT, W, H, windows[1])
@@ -740,20 +752,17 @@ TileCurrentDesktop(*) {
         try WinRestore(windows[2]), WinMove(WL + W/2, WT, W/2, H, windows[2])
     }
     else if (count == 3) {
-
         try WinRestore(windows[1]), WinMove(WL, WT, W/2, H, windows[1])
         try WinRestore(windows[2]), WinMove(WL + W/2, WT, W/2, H/2, windows[2])
         try WinRestore(windows[3]), WinMove(WL + W/2, WT + H/2, W/2, H/2, windows[3])
     }
     else if (count == 5) {
-        colW := W / 3
-        halfH := H / 2
+        colW := W / 3, halfH := H / 2
         try WinRestore(windows[1]), WinMove(WL + colW, WT, colW, H, windows[1])
         try WinRestore(windows[2]), WinMove(WL, WT, colW, halfH, windows[2])
         try WinRestore(windows[3]), WinMove(WL, WT + halfH, colW, halfH, windows[3])
         try WinRestore(windows[4]), WinMove(WL + 2*colW, WT, colW, halfH, windows[4])
         try WinRestore(windows[5]), WinMove(WL + 2*colW, WT + halfH, colW, halfH, windows[5])
-
     }
     else if (Mod(count, 2) != 0) {
         try {
@@ -770,6 +779,63 @@ TileCurrentDesktop(*) {
             }
         }
     }
+}
+
+GetVisibleWindow() {
+    windows := []
+    ids := WinGetList(,, "Program Manager")
+    for this_id in ids {
+        try {
+            style := WinGetStyle(this_id)
+        } catch {
+            continue
+        }
+        if !(style & 0x10000000) 
+            continue
+            
+        exStyle := WinGetExStyle(this_id)
+        if (exStyle & 0x00000080)
+            continue
+            
+        isCloaked := 0
+        try {
+            DllCall("dwmapi\DwmGetWindowAttribute", "Ptr", this_id, "Int", 14, "Int*", &isCloaked, "Int", 4)
+            if (isCloaked)
+                continue
+        }
+        
+        title := WinGetTitle(this_id)
+        if (title == "")
+            continue
+            
+        WinGetPos(,, &w, &h, this_id)
+        if (w < 100 || h < 100)
+            continue
+            
+        windows.Push(this_id)
+    }
+    return windows
+}
+
+GetMonitorIndex(hwnd := 0) {
+    if !hwnd || !WinExist(hwnd) {
+        MouseGetPos(&mx, &my)
+        loop MonitorGetCount() {
+            MonitorGet(A_Index, &mL, &mT, &mR, &mB)
+            if (mx >= mL && mx < mR && my >= mT && my < mB)
+                return A_Index
+        }
+        return 1
+    }
+    
+    WinGetPos(&wx, &wy, &ww, &wh, hwnd)
+    cx := wx + (ww / 2), cy := wy + (wh / 2)
+    loop MonitorGetCount() {
+        MonitorGet(A_Index, &mL, &mT, &mR, &mB)
+        if (cx >= mL && cx < mR && cy >= mT && cy < mB)
+            return A_Index
+    }
+    return 1 
 }
 
 ; ------------------------------------------------------------------------------
@@ -957,6 +1023,13 @@ SetupTrayIcon() {
 
 !LButton:: {
     MouseGetPos(,, &hwnd)
+    
+    try {
+        WinActivate(hwnd)
+    } catch {
+        return
+    }
+
     if (WinGetMinMax(hwnd) == 1) {
         try {
             WinRestore(hwnd)
