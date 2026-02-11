@@ -16,7 +16,7 @@ global MenuSize, Radius, CenterZone, FontSize, FontSizeActive, MenuTransparent
 global ButtonDir, OutputDir, OutputFile, VimPath, TerminalExe
 global VimWinX, VimWinY, VimWinWidth, VimWinHeight
 global OSDHeight, OSDTransparent
-global WorkStart, WorkEnd, WDayBar, WorkTime
+global WorkStart, WorkEnd, WDayBar, WorkTime, Color_Task, TaskTimes
 global PieConfig
 global ConfigFile := A_ScriptDir . "\wm_config.ini"
 global CurrentDesktop := 1
@@ -185,6 +185,10 @@ LoadOrInitConfig() {
         WDayBar=off
         ; Set Work or full-day progress
         WorkTime=on
+        ; Set TaskBar Color
+        Color_Task=069700
+        ; Set TaskBar Time (D_HHMM_HHMM:day of week(1-7,Mon-Sun)and time range.Multiple entries can be specifide, separated by ;)
+        TaskTimes=1_1200_1300;2_1200_1300;3_1200_1300;4_1200_1300;5_1200_1300;6_1200_1300;7_1200_1300;2_1700_1745;3_0900_0920;
         )"
         
         try {
@@ -234,6 +238,8 @@ LoadOrInitConfig() {
     WorkEnd         := IniRead(ConfigFile, "WorkTime", "WorkEnd", "1745")
     WDayBar         := IniRead(ConfigFile, "WorkTime", "WDayBar", "off")
     WorkTime        := IniRead(ConfigFile, "WorkTime", "WorkTime", "on")
+    Color_Task      := IniRead(ConfigFile, "WorkTime", "Color_Task", "069700")
+    TaskTimes       := IniRead(ConfigFile, "WorkTime", "TaskTimes", "")
 }
 
 
@@ -568,14 +574,16 @@ MoveAndSwitch(target, *) {
 }
 
 CreateStatusBar() {
-    global BarTransparent, BarGui, BarLeftText, BarRightText, BarProgress, BarHeight, Color_Active, BarFontSize
+    global BarTransparent, BarGui, BarLeftText, BarRightText, BarProgress, BarHeight, BarFontSize
+    global Color_Active, Color_Task, TaskTimes 
+    global WorkStart, WorkEnd, WorkTime, WDayBar
 
     try {
         if IsSet(BarGui) && IsObject(BarGui)
             BarGui.Destroy()
     }
 
-    local minNeededHeight := Round(BarFontSize * 2.5)
+    local minNeededHeight := Round(BarFontSize * 2 + 5)
     if !IsSet(BarHeight) || (BarHeight < minNeededHeight)
         BarHeight := minNeededHeight
     local padding := 15
@@ -583,23 +591,102 @@ CreateStatusBar() {
     local textBoxWidth := Round((A_ScreenWidth - progressWidth - (padding * 4)) / 2)
     local textControlH := Round(BarFontSize * 2)
     local textY := (BarHeight - textControlH) / 2
-    local progH := 6
-    local progY := (BarHeight - progH) / 2
+    local progY := (BarHeight - 6) / 2 + 3 
+    local taskH := 4
+    local track1Y := progY - taskH - 2
+    local track2Y := track1Y - taskH - 1
     local progressX := (A_ScreenWidth / 2) - (progressWidth / 2)
     local rightTextX := A_ScreenWidth - textBoxWidth - padding
 
     BarGui := Gui("-Caption +AlwaysOnTop +ToolWindow +Owner +E0x08000000 -DPIScale")
     BarGui.BackColor := "181818"
     BarGui.SetFont("s" . BarFontSize . " w600 c" . Color_Active, "Segoe UI")
+    
     BarLeftText := BarGui.Add("Text", "x" . padding . " y" . textY . " w" . textBoxWidth . " h" . textControlH . " BackgroundTrans", "")
-    BarGui.Add("Text", "x" . progressX . " y" . progY . " w" . progressWidth . " h" . progH . " Background333333", "") 
-    ProgressOptions := Format("x{1} y{2} w{3} h{4} c{5} Background333333 +Smooth", progressX, progY, progressWidth, progH, Color_Active)
-    BarProgress := BarGui.Add("Progress", ProgressOptions, 0)
-    BarRightText := BarGui.Add("Text", "x" . rightTextX . " y" . textY . " w" . textBoxWidth . " h" . textControlH . " BackgroundTrans Right", "")
-    BarGui.Show("x0 y0 w" . A_ScreenWidth . " h" . BarHeight . " NoActivate")
+    
+    CalcMins(tStr) => Integer(SubStr(tStr, 1, 2)) * 60 + Integer(SubStr(tStr, 3, 2))
+    BaseStartMins := 0
+    BaseEndMins := 1439
+    IsWorkMode := false
+    if (WorkTime != "off") {
+        isWeekend := (A_WDay == 1 || A_WDay == 7)
+        if !(isWeekend && WDayBar == "off") {
+            IsWorkMode := true
+            BaseStartMins := CalcMins(WorkStart)
+            BaseEndMins   := CalcMins(WorkEnd)
+        }
+    }
+    
+    TotalRange := BaseEndMins - BaseStartMins
+    
+    if IsSet(TaskTimes) && TaskTimes != "" && TotalRange > 0 {
+        CurrentUserWDay := (A_WDay == 1) ? 7 : A_WDay - 1
+        DayTasks := []
 
+        Loop Parse, TaskTimes, ";" {
+            if (A_LoopField == "")
+                continue
+            parts := StrSplit(A_LoopField, "_") 
+            if (parts.Length == 3 && Integer(parts[1]) == CurrentUserWDay) {
+                s := CalcMins(parts[2])
+                e := CalcMins(parts[3])
+                
+                if (s < BaseStartMins)
+                    s := BaseStartMins
+                if (e > BaseEndMins)
+                    e := BaseEndMins
+                
+                if (e > s) {
+                    DayTasks.Push({Start: s, End: e, RawStart: CalcMins(parts[2])}) 
+                }
+            }
+        }
+        
+        if (DayTasks.Length > 1) {
+            Loop DayTasks.Length {
+                i := A_Index
+                Loop DayTasks.Length - i {
+                    j := A_Index
+                    if (DayTasks[j].RawStart > DayTasks[j+1].RawStart) {
+                        temp := DayTasks[j]
+                        DayTasks[j] := DayTasks[j+1]
+                        DayTasks[j+1] := temp
+                    }
+                }
+            }
+        }
+
+        lastEndTrack1 := -1
+        
+        for task in DayTasks {
+            offsetRatio := (task.Start - BaseStartMins) / TotalRange
+            widthRatio  := (task.End - task.Start) / TotalRange
+            mkX := Round(progressX + (progressWidth * offsetRatio))
+            mkW := Round(progressWidth * widthRatio)
+            mkW := Max(2, mkW)
+            useY := track1Y
+            if (task.Start < lastEndTrack1) {
+                useY := track2Y 
+            } else {
+                lastEndTrack1 := task.End
+            }
+
+            BarGui.Add("Text", Format("x{1} y{2} w{3} h{4} Background{5}", mkX, useY, mkW, taskH, Color_Task), "")
+        }
+    }
+
+    BarGui.Add("Text", "x" . progressX . " y" . progY . " w" . progressWidth . " h" . 6 . " Background333333", "") 
+    ProgressOptions := Format("x{1} y{2} w{3} h{4} c{5} Background333333 +Smooth", progressX, progY, progressWidth, 6, Color_Active)
+    BarProgress := BarGui.Add("Progress", ProgressOptions, 0)
+    
+    BarRightText := BarGui.Add("Text", "x" . rightTextX . " y" . textY . " w" . textBoxWidth . " h" . textControlH . " BackgroundTrans Right", "")
+    
+    BarGui.Show("x0 y0 w" . A_ScreenWidth . " h" . BarHeight . " NoActivate")
     WinSetTransparent(BarTransparent, BarGui.Hwnd)
-}UpdateStatusBar() {
+}
+
+
+UpdateStatusBar() {
     global CurrentDesktop, DesktopCount, BarLeftText
     if !IsObject(BarLeftText)
         return
@@ -612,9 +699,16 @@ CreateStatusBar() {
 UpdateClockAndProgress() {
     global BarRightText, BarProgress
     global WorkStart, WorkEnd, WDayBar, WorkTime
-    
+    static LastDay := ""
+
     if !IsObject(BarRightText)
         return
+
+    CurrentDay := FormatTime(, "yyyyMMdd")
+    if (LastDay != "" && LastDay != CurrentDay) {
+        CreateStatusBar() 
+    }
+    LastDay := CurrentDay
 
     try BarRightText.Value := FormatTime(, "yyyy-MM-dd   HH:mm")
 
@@ -624,6 +718,7 @@ UpdateClockAndProgress() {
     StartTS := ""
     EndTS := ""
     ForceFull := false
+    
     if (WorkTime = "off") {
         StartTS := TodayDate . "000000"
         EndTS   := TodayDate . "235959"
@@ -671,7 +766,6 @@ ToggleBar(*) {
     else
         BarGui.Hide()
 }
-
 
 TogglePin(*) {
     global AlwaysVisible
@@ -739,7 +833,7 @@ TileCurrentDesktop(*) {
     targetMon := GetMonitorIndex(activeWin)
     MonitorGetWorkArea(targetMon, &WL, &WT, &WR, &WB)
     if (IsSet(BarVisible) && BarVisible && IsSet(BarHeight))
-        WT += BarHeight
+        WT += BarHeight + 5
     
     W := WR - WL
     H := WB - WT 
@@ -1014,8 +1108,25 @@ Explorer_GetPath() {
 
 SetupTrayIcon() {
     A_TrayMenu.Delete()
+    A_TrayMenu.Add("Gather All Windows", GatherAllToCurrent)
+    A_TrayMenu.Add("Toggle Status Bar", ToggleBar)
+    A_TrayMenu.Add()
+    
+    Loop DesktopCount {
+        i := A_Index
+        A_TrayMenu.Add("Switch to Desktop " . i, SwitchDesktop.Bind(i))
+    }
+    
+    A_TrayMenu.Add()
+    A_TrayMenu.Add("Reload Script", (*) => Reload())
+
+UpdateTrayTip() {
+    A_IconTip := "Current Desktop: " . CurrentDesktop
+}
+    A_TrayMenu.Add()
     A_TrayMenu.Add("Restore & Exit", RestoreAndExit)
 }
+
 
 ; ------------------------------------------------------------------------------
 ; [Module] Mouse Interaction
