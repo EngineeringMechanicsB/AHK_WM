@@ -273,7 +273,7 @@ LoadOrInitConfig() {
         ; Main background color
         Background=0e050f
         ; Default text color
-        Text=744da9
+        Text=e5e9f0
         ; Highlight / accent color
         Active=744da9
         ; Task time block color
