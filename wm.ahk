@@ -2,62 +2,35 @@
 #SingleInstance Force
 #WinActivateForce
 
-; ==============================================================================
-;  WM Script - v2.1
-;  - 主显示器居中欢迎页 / 智能平铺(竖屏/标准/超宽屏) / 全部快捷键可配置
-;  - 配置文件全部 0-100 量纲(字号除外) / 修复置顶边框变窄 BUG
-;  - 移除 devmgmt.msc 和 ncpa.cpl 快捷键 / 配置文件结构重排
-; ==============================================================================
-
 SetWorkingDir(A_ScriptDir)
 CoordMode("Mouse", "Screen")
 SetTitleMatchMode(2)
 SetWinDelay(0)
 SetControlDelay(0)
 
-; ==============================================================================
-;  全局变量声明
-; ==============================================================================
-; --- Colors (主题/视觉) ---
+; ---- Globals ----
 global Color_Bg, Color_Text, Color_Active, Color_Task
 global Border_Drag_Color, Border_Pin_Color
 global PM_Bg, PM_BtnShutdown, PM_BtnSleep, PM_BtnReboot
-
-; --- 状态栏 ---
 global Bar_Height, Bar_Transparent, Bar_FontSize
 global Bar_MonitorIdx := 1
 global Bar_Visible    := true
 global Bar_Gui := "", Bar_LeftText := "", Bar_RightText := "", Bar_Progress := ""
-
-; --- 饼菜单 ---
 global Pie_Size, Pie_Radius, Pie_CenterZone
 global Pie_FontSize, Pie_FontSizeActive, Pie_Transparent
 global Pie_Config
-
-; --- 路径 ---
 global Path_Button, Path_Output, Path_OutputFile, Path_Vim, Path_Terminal
-
-; --- Vim 窗口布局 ---
 global Vim_X, Vim_Y, Vim_Width, Vim_Height
 global Vim_CurrentPID := 0
-
-; --- OSD ---
 global OSD_Height, OSD_Transparent, OSD_FontSize
-
-; --- 工作时间 ---
 global Work_Start, Work_End, Work_WeekendBar, Work_Mode, Work_TaskTimes
-
-; --- 主题 ---
 global ActiveTheme
-
-; --- 拖拽边框 ---
 global Border_Drag_Enable, Border_Drag_Thickness
 global Border_Drag_Offset, Border_Drag_OffsetTop, Border_Drag_Transparent
-
-; --- 置顶边框 ---
 global Border_Pin_Thickness, Border_Pin_Offset, Border_Pin_OffsetTop, Border_Pin_Transparent
+global WTM_BorderFocusColor, WTM_BorderUnfocusColor
+global WTM_BorderThickness, WTM_BorderOffset, WTM_BorderOpacity, WTM_SizeStep
 
-; --- 运行时状态 ---
 global ConfigDir  := EnvGet("USERPROFILE") . "\.config\AHK_WM"
 global ConfigFile := ConfigDir . "\wm_config.ini"
 global CurrentDesktop  := 1
@@ -66,8 +39,6 @@ global Desktops        := Map()
 global AlwaysVisible   := Map()
 global LastClipContent := ""
 global LayoutSnapshot  := Map()
-
-; --- 快捷键(从配置读取) ---
 global HK := Map()
 
 Pie_Config := Map(
@@ -75,80 +46,117 @@ Pie_Config := Map(
     "Down","↓", "DownLeft","↙", "Left","←", "TopLeft","↖", "Center","●"
 )
 
-; ==============================================================================
-;  内置主题
-; ==============================================================================
+; ---- Built-in themes ----
 global Themes := Map(
-    "nord",             Map("Color_Bg","2E3440", "Color_Text","D8DEE9", "Color_Active","88C0D0", "Color_Task","A3BE8C", "Border_Drag_Color","88C0D0", "Border_Pin_Color","BF616A", "PM_Bg","3B4252", "PM_BtnShutdown","BF616A", "PM_BtnSleep","5E81AC", "PM_BtnReboot","D08770"),
-    "tokyonight",       Map("Color_Bg","1A1B26", "Color_Text","C0CAF5", "Color_Active","7AA2F7", "Color_Task","9ECE6A", "Border_Drag_Color","7AA2F7", "Border_Pin_Color","F7768E", "PM_Bg","24283B", "PM_BtnShutdown","F7768E", "PM_BtnSleep","7AA2F7", "PM_BtnReboot","E0AF68"),
-    "dracula",          Map("Color_Bg","282A36", "Color_Text","F8F8F2", "Color_Active","BD93F9", "Color_Task","50FA7B", "Border_Drag_Color","8BE9FD", "Border_Pin_Color","FF5555", "PM_Bg","44475A", "PM_BtnShutdown","FF5555", "PM_BtnSleep","6272A4", "PM_BtnReboot","FFB86C"),
-    "gruvbox",          Map("Color_Bg","282828", "Color_Text","EBDBB2", "Color_Active","FABD2F", "Color_Task","B8BB26", "Border_Drag_Color","83A598", "Border_Pin_Color","FB4934", "PM_Bg","3C3836", "PM_BtnShutdown","FB4934", "PM_BtnSleep","458588", "PM_BtnReboot","FE8019"),
-    "monokai",          Map("Color_Bg","272822", "Color_Text","F8F8F2", "Color_Active","A6E22E", "Color_Task","FD971F", "Border_Drag_Color","66D9EF", "Border_Pin_Color","F92672", "PM_Bg","3E3D32", "PM_BtnShutdown","F92672", "PM_BtnSleep","66D9EF", "PM_BtnReboot","FD971F"),
-    "solarized-dark",   Map("Color_Bg","002B36", "Color_Text","839496", "Color_Active","268BD2", "Color_Task","859900", "Border_Drag_Color","2AA198", "Border_Pin_Color","DC322F", "PM_Bg","073642", "PM_BtnShutdown","DC322F", "PM_BtnSleep","268BD2", "PM_BtnReboot","CB4B16"),
-    "solarized-light",  Map("Color_Bg","FDF6E3", "Color_Text","657B83", "Color_Active","268BD2", "Color_Task","859900", "Border_Drag_Color","2AA198", "Border_Pin_Color","DC322F", "PM_Bg","EEE8D5", "PM_BtnShutdown","DC322F", "PM_BtnSleep","268BD2", "PM_BtnReboot","CB4B16"),
-    "catppuccin-mocha", Map("Color_Bg","1E1E2E", "Color_Text","CDD6F4", "Color_Active","CBA6F7", "Color_Task","A6E3A1", "Border_Drag_Color","89B4FA", "Border_Pin_Color","F38BA8", "PM_Bg","313244", "PM_BtnShutdown","F38BA8", "PM_BtnSleep","89B4FA", "PM_BtnReboot","FAB387"),
-    "catppuccin-latte", Map("Color_Bg","EFF1F5", "Color_Text","4C4F69", "Color_Active","8839EF", "Color_Task","40A02B", "Border_Drag_Color","1E66F5", "Border_Pin_Color","D20F39", "PM_Bg","E6E9EF", "PM_BtnShutdown","D20F39", "PM_BtnSleep","1E66F5", "PM_BtnReboot","FE640B"),
-    "onedark",          Map("Color_Bg","282C34", "Color_Text","ABB2BF", "Color_Active","61AFEF", "Color_Task","98C379", "Border_Drag_Color","56B6C2", "Border_Pin_Color","E06C75", "PM_Bg","3E4452", "PM_BtnShutdown","E06C75", "PM_BtnSleep","61AFEF", "PM_BtnReboot","D19A66"),
-    "ayu-dark",         Map("Color_Bg","0A0E14", "Color_Text","B3B1AD", "Color_Active","FFB454", "Color_Task","C2D94C", "Border_Drag_Color","59C2FF", "Border_Pin_Color","F07178", "PM_Bg","131721", "PM_BtnShutdown","F07178", "PM_BtnSleep","59C2FF", "PM_BtnReboot","FF8F40"),
-    "github-dark",      Map("Color_Bg","0D1117", "Color_Text","C9D1D9", "Color_Active","58A6FF", "Color_Task","3FB950", "Border_Drag_Color","58A6FF", "Border_Pin_Color","F85149", "PM_Bg","161B22", "PM_BtnShutdown","F85149", "PM_BtnSleep","58A6FF", "PM_BtnReboot","D29922"),
-    "rose-pine",        Map("Color_Bg","191724", "Color_Text","E0DEF4", "Color_Active","C4A7E7", "Color_Task","9CCFD8", "Border_Drag_Color","31748F", "Border_Pin_Color","EB6F92", "PM_Bg","1F1D2E", "PM_BtnShutdown","EB6F92", "PM_BtnSleep","31748F", "PM_BtnReboot","F6C177"),
-    "everforest",       Map("Color_Bg","2D353B", "Color_Text","D3C6AA", "Color_Active","A7C080", "Color_Task","DBBC7F", "Border_Drag_Color","7FBBB3", "Border_Pin_Color","E67E80", "PM_Bg","374145", "PM_BtnShutdown","E67E80", "PM_BtnSleep","7FBBB3", "PM_BtnReboot","E69875"),
-    "kanagawa",         Map("Color_Bg","1F1F28", "Color_Text","DCD7BA", "Color_Active","7E9CD8", "Color_Task","98BB6C", "Border_Drag_Color","7FB4CA", "Border_Pin_Color","E46876", "PM_Bg","2A2A37", "PM_BtnShutdown","E46876", "PM_BtnSleep","7E9CD8", "PM_BtnReboot","FFA066"),
-    "material-deep",    Map("Color_Bg","263238", "Color_Text","EEFFFF", "Color_Active","82AAFF", "Color_Task","C3E88D", "Border_Drag_Color","89DDFF", "Border_Pin_Color","F07178", "PM_Bg","37474F", "PM_BtnShutdown","F07178", "PM_BtnSleep","82AAFF", "PM_BtnReboot","F78C6C")
+    "nord",             Map("Color_Bg","2E3440","Color_Text","D8DEE9","Color_Active","88C0D0","Color_Task","A3BE8C","Border_Drag_Color","88C0D0","Border_Pin_Color","BF616A","PM_Bg","3B4252","PM_BtnShutdown","BF616A","PM_BtnSleep","5E81AC","PM_BtnReboot","D08770"),
+    "tokyonight",       Map("Color_Bg","1A1B26","Color_Text","C0CAF5","Color_Active","7AA2F7","Color_Task","9ECE6A","Border_Drag_Color","7AA2F7","Border_Pin_Color","F7768E","PM_Bg","24283B","PM_BtnShutdown","F7768E","PM_BtnSleep","7AA2F7","PM_BtnReboot","E0AF68"),
+    "dracula",          Map("Color_Bg","282A36","Color_Text","F8F8F2","Color_Active","BD93F9","Color_Task","50FA7B","Border_Drag_Color","8BE9FD","Border_Pin_Color","FF5555","PM_Bg","44475A","PM_BtnShutdown","FF5555","PM_BtnSleep","6272A4","PM_BtnReboot","FFB86C"),
+    "gruvbox",          Map("Color_Bg","282828","Color_Text","EBDBB2","Color_Active","FABD2F","Color_Task","B8BB26","Border_Drag_Color","83A598","Border_Pin_Color","FB4934","PM_Bg","3C3836","PM_BtnShutdown","FB4934","PM_BtnSleep","458588","PM_BtnReboot","FE8019"),
+    "monokai",          Map("Color_Bg","272822","Color_Text","F8F8F2","Color_Active","A6E22E","Color_Task","FD971F","Border_Drag_Color","66D9EF","Border_Pin_Color","F92672","PM_Bg","3E3D32","PM_BtnShutdown","F92672","PM_BtnSleep","66D9EF","PM_BtnReboot","FD971F"),
+    "solarized-dark",   Map("Color_Bg","002B36","Color_Text","839496","Color_Active","268BD2","Color_Task","859900","Border_Drag_Color","2AA198","Border_Pin_Color","DC322F","PM_Bg","073642","PM_BtnShutdown","DC322F","PM_BtnSleep","268BD2","PM_BtnReboot","CB4B16"),
+    "solarized-light",  Map("Color_Bg","FDF6E3","Color_Text","657B83","Color_Active","268BD2","Color_Task","859900","Border_Drag_Color","2AA198","Border_Pin_Color","DC322F","PM_Bg","EEE8D5","PM_BtnShutdown","DC322F","PM_BtnSleep","268BD2","PM_BtnReboot","CB4B16"),
+    "catppuccin-mocha", Map("Color_Bg","1E1E2E","Color_Text","CDD6F4","Color_Active","CBA6F7","Color_Task","A6E3A1","Border_Drag_Color","89B4FA","Border_Pin_Color","F38BA8","PM_Bg","313244","PM_BtnShutdown","F38BA8","PM_BtnSleep","89B4FA","PM_BtnReboot","FAB387"),
+    "catppuccin-latte", Map("Color_Bg","EFF1F5","Color_Text","4C4F69","Color_Active","8839EF","Color_Task","40A02B","Border_Drag_Color","1E66F5","Border_Pin_Color","D20F39","PM_Bg","E6E9EF","PM_BtnShutdown","D20F39","PM_BtnSleep","1E66F5","PM_BtnReboot","FE640B"),
+    "onedark",          Map("Color_Bg","282C34","Color_Text","ABB2BF","Color_Active","61AFEF","Color_Task","98C379","Border_Drag_Color","56B6C2","Border_Pin_Color","E06C75","PM_Bg","3E4452","PM_BtnShutdown","E06C75","PM_BtnSleep","61AFEF","PM_BtnReboot","D19A66"),
+    "ayu-dark",         Map("Color_Bg","0A0E14","Color_Text","B3B1AD","Color_Active","FFB454","Color_Task","C2D94C","Border_Drag_Color","59C2FF","Border_Pin_Color","F07178","PM_Bg","131721","PM_BtnShutdown","F07178","PM_BtnSleep","59C2FF","PM_BtnReboot","FF8F40"),
+    "github-dark",      Map("Color_Bg","0D1117","Color_Text","C9D1D9","Color_Active","58A6FF","Color_Task","3FB950","Border_Drag_Color","58A6FF","Border_Pin_Color","F85149","PM_Bg","161B22","PM_BtnShutdown","F85149","PM_BtnSleep","58A6FF","PM_BtnReboot","D29922"),
+    "rose-pine",        Map("Color_Bg","191724","Color_Text","E0DEF4","Color_Active","C4A7E7","Color_Task","9CCFD8","Border_Drag_Color","31748F","Border_Pin_Color","EB6F92","PM_Bg","1F1D2E","PM_BtnShutdown","EB6F92","PM_BtnSleep","31748F","PM_BtnReboot","F6C177"),
+    "everforest",       Map("Color_Bg","2D353B","Color_Text","D3C6AA","Color_Active","A7C080","Color_Task","DBBC7F","Border_Drag_Color","7FBBB3","Border_Pin_Color","E67E80","PM_Bg","374145","PM_BtnShutdown","E67E80","PM_BtnSleep","7FBBB3","PM_BtnReboot","E69875"),
+    "kanagawa",         Map("Color_Bg","1F1F28","Color_Text","DCD7BA","Color_Active","7E9CD8","Color_Task","98BB6C","Border_Drag_Color","7FB4CA","Border_Pin_Color","E46876","PM_Bg","2A2A37","PM_BtnShutdown","E46876","PM_BtnSleep","7E9CD8","PM_BtnReboot","FFA066"),
+    "material-deep",    Map("Color_Bg","263238","Color_Text","EEFFFF","Color_Active","82AAFF","Color_Task","C3E88D","Border_Drag_Color","89DDFF","Border_Pin_Color","F07178","PM_Bg","37474F","PM_BtnShutdown","F07178","PM_BtnSleep","82AAFF","PM_BtnReboot","F78C6C")
 )
 
-; ==============================================================================
-;  数值映射工具(0-100 -> 实际单位)
-; ==============================================================================
-; 透明度: 0-100 -> 0-255
+; ---- Scaling helpers: 0-100 -> real units ----
 Pct2Alpha(p) => Round(Max(0, Min(100, p+0)) * 255 / 100)
 
-; 屏幕百分比 -> 像素 (基于主显示器)
 GetPrimaryDim(&pw, &ph) {
     MonitorGetWorkArea(MonitorGetPrimary(), &l, &t, &r, &b)
     pw := r - l, ph := b - t
 }
-
-Pct2PxH(p) {  ; 高度方向
-    GetPrimaryDim(&pw, &ph)
-    return Round(p * ph / 100)
+Pct2PxH(p)   { 
+	GetPrimaryDim(&pw, &ph)
+	return Round(p * ph / 100)
 }
-Pct2PxW(p) {  ; 宽度方向
-    GetPrimaryDim(&pw, &ph)
-    return Round(p * pw / 100)
+Pct2PxW(p)   {
+	GetPrimaryDim(&pw, &ph)
+	return Round(p * pw / 100)
 }
-Pct2PxMin(p) {  ; 短边方向(用于饼菜单等正方形元素)
-    GetPrimaryDim(&pw, &ph)
-    return Round(p * Min(pw, ph) / 100)
+Pct2PxMin(p) {
+	GetPrimaryDim(&pw, &ph)
+	return Round(p * Min(pw, ph) / 100)
 }
-; 边框/小尺寸: 0-100 -> 0-20px
 Pct2Border(p) => Round(Max(0, Min(100, p+0)) * 20 / 100)
 
-; ==============================================================================
-;  初始化
-; ==============================================================================
-global IsFirstRun := false
+; ---- Hotkey notation conversion ----
+;  Natural form in config/help : "Alt+Shift+D" / "Ctrl+``" / "Alt+WheelUp"
+;  AHK form used internally    : "!+d" / "^``" / "!WheelUp"
+NormalizeHotkey(s) {
+    s := Trim(s)
+    if (s = "")
+        return ""
+    ; Already AHK form? leave as-is
+    if RegExMatch(s, "^[\!\^\+\#<>\*~\$]")
+        return s
+    mods := "", key := ""
+    parts := StrSplit(s, ["+", "-"])
+    for p in parts {
+        p := Trim(p)
+        if (p = "")
+            continue
+        switch StrLower(p) {
+            case "alt":             mods .= "!"
+            case "shift":           mods .= "+"
+            case "ctrl", "control": mods .= "^"
+            case "win", "lwin", "rwin": mods .= "#"
+            default:
+                key := p
+        }
+    }
+    if (StrLen(key) = 1)
+        key := StrLower(key)
+    return mods . key
+}
+
+PrettifyHotkey(s) {
+    s := Trim(s)
+    if (s = "")
+        return ""
+    mods := [], rest := s
+    while (StrLen(rest) > 0 && InStr("!+^#", SubStr(rest, 1, 1))) {
+        switch SubStr(rest, 1, 1) {
+            case "!": mods.Push("Alt")
+            case "+": mods.Push("Shift")
+            case "^": mods.Push("Ctrl")
+            case "#": mods.Push("Win")
+        }
+        rest := SubStr(rest, 2)
+    }
+    if (StrLen(rest) = 1)
+        rest := StrUpper(rest)
+    out := ""
+    for m in mods
+        out .= m . " + "
+    return out . rest
+}
+
+; ---- Initialization ----
 global WelcomeFlag := ConfigDir . "\welcome_shown.flag"
 
 LoadOrInitConfig()
 
-Loop DesktopCount {
+Loop DesktopCount
     Desktops[A_Index] := []
-}
 
 if !DirExist(Path_Output)
     DirCreate(Path_Output)
 if !DirExist(Path_Button)
     DirCreate(Path_Button)
 
-if InitializeButtons() {
+if InitializeButtons()
     Reload()
-}
 
 if !FileExist(WelcomeFlag) {
-    try {
-        FileAppend("shown", WelcomeFlag, "UTF-8")
-    }
+    try FileAppend("shown", WelcomeFlag, "UTF-8")
     WelcomeScreen.Show()
 }
 
@@ -159,16 +167,14 @@ SetTimer(UpdateClockAndProgress, 1000)
 SetupTrayIcon()
 OnClipboardChange(OnClipboardChanged)
 RegisterAllHotkeys()
-; ==============================================================================
-;  快捷键注册(全部从配置文件读取)
-; ==============================================================================
+
+; ---- Hotkey registration (all from config) ----
 RegisterAllHotkeys() {
     global HK
 
-    ; 帮助
     Hotkey(HK["Help"], ShowHelpGui)
 
-    ; 9 个虚拟桌面
+    ; 9 virtual desktops: Alt+N switch / Alt+Shift+N move / Ctrl+Alt+N move&switch
     pSwitch := HK["DesktopSwitchPrefix"]
     pMove   := HK["DesktopMovePrefix"]
     pBoth   := HK["DesktopMoveSwitchPrefix"]
@@ -179,57 +185,57 @@ RegisterAllHotkeys() {
         try Hotkey(pBoth   . i, MoveAndSwitch.Bind(i))
     }
 
-    ; 平铺/聚集/置顶/状态栏/退出
-    Hotkey(HK["TileSmart"],   TileCurrentMonitor)
-    Hotkey(HK["GatherAll"],   GatherAllToCurrent)
-    Hotkey(HK["TogglePin"],   TogglePin)
-    Hotkey(HK["ToggleBar"],   ToggleBar)
-    Hotkey(HK["Exit"],        RestoreAndExit)
+    Hotkey(HK["TileSmart"], TileCurrentMonitor)
+    Hotkey(HK["GatherAll"], GatherAllToCurrent)
+    Hotkey(HK["TogglePin"], TogglePin)
+    Hotkey(HK["ToggleBar"], ToggleBar)
+    Hotkey(HK["Exit"],      RestoreAndExit)
 
-    ; 鼠标下窗口操作
-    Hotkey(HK["CloseWindow"],      CloseWindowUnderMouse)
-    Hotkey(HK["CloseWindowAlt"],   CloseWindowUnderMouse)
-    Hotkey(HK["ToggleMaximize"],   ToggleMaximizeUnderMouse)
-    Hotkey(HK["ToggleTop"],        ToggleTopUnderMouse)
-    Hotkey(HK["HideWindow"],       HideUnderMouse)
+    Hotkey(HK["CloseWindow"],    CloseWindowUnderMouse)
+    Hotkey(HK["CloseWindowAlt"], CloseWindowUnderMouse)
+    Hotkey(HK["ToggleMaximize"], ToggleMaximizeUnderMouse)
+    ; Alt+T is context-sensitive: WTM-mode -> pin-exclude; otherwise -> ToggleOnTop
+    Hotkey(HK["ToggleTop"],      ToggleTopDispatch)
+    Hotkey(HK["HideWindow"],     HideUnderMouse)
 
-    ; 透明度
     Hotkey(HK["TransparencyUp"],   AdjustTransparency.Bind(20))
     Hotkey(HK["TransparencyDown"], AdjustTransparency.Bind(-20))
 
-    ; 复制组合(键盘+鼠标)
     Hotkey("~LButton & RButton", (*) => Send("^c"))
     Hotkey("~RButton & LButton", (*) => Send("^c"))
 
-    ; 启动器
     Hotkey(HK["LaunchTerminal"], LaunchTerminal)
     Hotkey(HK["EditFile"],       OpenWithVim)
     Hotkey(HK["PowerMenu"],      ShowPowerMenu)
 
-    ; 窗口对齐
     Hotkey(HK["SnapLeft"],  SnapWindow.Bind("Left"))
     Hotkey(HK["SnapRight"], SnapWindow.Bind("Right"))
     Hotkey(HK["SnapUp"],    SnapWindow.Bind("Up"))
     Hotkey(HK["SnapDown"],  SnapWindow.Bind("Down"))
 
-    ; 布局快照
     Hotkey(HK["SaveLayout"],    SaveLayout)
     Hotkey(HK["RestoreLayout"], RestoreLayout)
 
-    ; 重载
     Hotkey(HK["Reload"], (*) => Reload())
-
-    ; 剪贴板历史
     Hotkey(HK["ClipboardHistory"], (*) => ToggleVimWindow())
 
-    ; 饼菜单触发(组合键)
     Hotkey(HK["PieMenuTrigger"], (*) => PieMenu.Start())
     Hotkey("Space Up",   PieMenuExecute)
     Hotkey("RButton Up", PieMenuExecute)
 
-    ; 拖动/调整大小
     Hotkey(HK["DragMove"],   DragMoveHandler)
     Hotkey(HK["DragResize"], DragResizeHandler)
+
+    ; ---- WTM-mode hotkeys ----
+    Hotkey(HK["WTMToggle"],     (*) => WTM.Toggle())
+    Hotkey(HK["WTMFocusLeft"],  (*) => WTM.FocusDir("L"))
+    Hotkey(HK["WTMFocusDown"],  (*) => WTM.FocusDir("D"))
+    Hotkey(HK["WTMFocusUp"],    (*) => WTM.FocusDir("U"))
+    Hotkey(HK["WTMFocusRight"], (*) => WTM.FocusDir("R"))
+    Hotkey(HK["WTMMoveLeft"],   (*) => WTM.MoveDir("L"))
+    Hotkey(HK["WTMMoveDown"],   (*) => WTM.MoveDir("D"))
+    Hotkey(HK["WTMMoveUp"],     (*) => WTM.MoveDir("U"))
+    Hotkey(HK["WTMMoveRight"],  (*) => WTM.MoveDir("R"))
 }
 
 PieMenuExecute(*) {
@@ -237,9 +243,14 @@ PieMenuExecute(*) {
         PieMenu.Execute()
 }
 
-; ==============================================================================
-;  [模块] 配置文件
-; ==============================================================================
+ToggleTopDispatch(*) {
+    if WTM.Active
+        WTM.TogglePinExclude()
+    else
+        ToggleTopUnderMouse()
+}
+
+; ---- Config (load or initialize default) ----
 LoadOrInitConfig() {
     global
 
@@ -255,190 +266,148 @@ LoadOrInitConfig() {
         DefaultIni := "
         (
         ;==========================================================================
-        ;AHK WM Configuration
+        ; AHK WM Configuration
         ;==========================================================================
-        
+
         [General]
         ; custom / nord / tokyonight / dracula / gruvbox / monokai
         ; / solarized-dark / solarized-light / catppuccin-mocha / catppuccin-latte
         ; / onedark / ayu-dark / github-dark / rose-pine / everforest / kanagawa / material-deep
-        ; When NOT 'custom', built-in theme overrides color values in memory only.
-        ; Your [Visual] / [Border_*] / [PowerMenu] colors in this file are NEVER touched.
         ActiveTheme=custom
-        
-        ;--------------------------------------------------------------------------
-        ; Color Scheme (HEX RRGGBB; overridden by theme when ActiveTheme != custom)
-        ;--------------------------------------------------------------------------
+
         [Colors]
-        ; Main background color
         Background=0e050f
-        ; Default text color
         Text=e5e9f0
-        ; Highlight / accent color
         Active=744da9
-        ; Task time block color
         Task=CF8DC9
-        ; Drag/resize border color
         BorderDrag=A020F0
-        ; Pinned window persistent border color
         BorderPin=FF5555
-        ; Power menu background
         PowerMenuBg=2E3440
-        ; Power menu - shutdown button
         PowerBtnShutdown=B48EAD
-        ; Power menu - sleep button
         PowerBtnSleep=5E81AC
-        ; Power menu - reboot button
         PowerBtnReboot=BF616A
-        
-        ;--------------------------------------------------------------------------
-        ; Status Bar
-        ;--------------------------------------------------------------------------
+
         [StatusBar]
-        ; Height (screen height percentage 0-100)
         HeightPct=3
-        ; Opacity (0-100)
         Opacity=78
-        ; Font size (pixels)
         FontSize=10
-        ; Target monitor index (starting from 1)
         MonitorIdx=1
-        
-        ;--------------------------------------------------------------------------
-        ; Pie Menu
-        ;--------------------------------------------------------------------------
+
         [PieMenu]
-        ; Diameter (percentage of shorter screen edge 0-100)
         SizePct=28
-        ; Center dead zone (percentage of menu radius 0-100)
         CenterZonePct=27
-        ; Opacity (0-100)
         Opacity=78
-        ; Normal font size
         FontSize=14
-        ; Active item font size
         FontSizeActive=22
-        
-        ;--------------------------------------------------------------------------
-        ; OSD (On-Screen Display)
-        ;--------------------------------------------------------------------------
+
         [OSD]
-        ; Vertical position (distance from top in percentage 0-100)
         PositionPct=80
-        ; Opacity (0-100)
         Opacity=78
-        ; Font size
         FontSize=20
-        
-        ;--------------------------------------------------------------------------
-        ; Temporary border while dragging/resizing
-        ;--------------------------------------------------------------------------
+
         [BorderDrag]
-        ; Enable on/off
         Enable=on
-        ; Thickness (0-100 mapped to 0-20 pixels)
         Thickness=15
-        ; Global outward offset (0-100)
         Offset=0
-        ; Extra top offset (compensates DWM invisible border)
         OffsetTop=5
-        ; Opacity (0-100)
         Opacity=70
-        
-        ;--------------------------------------------------------------------------
-        ; Persistent border for pinned windows
-        ;--------------------------------------------------------------------------
+
         [BorderPin]
         Thickness=10
         Offset=0
         OffsetTop=5
         Opacity=78
-        
-        ;--------------------------------------------------------------------------
-        ; Paths
-        ;--------------------------------------------------------------------------
+
         [Paths]
-        ; Radial button script directory (relative/absolute)
         ButtonDir=Buttons
-        ; Clipboard history output directory
         OutputDir=C:\Users\Administrator\Documents
-        ; Editor (Vim recommended)
         VimPath=C:\Windows\system32\notepad.exe
-        ; Terminal executable
         TerminalExe=C:\Windows\system32\cmd.exe
-        
-        ;--------------------------------------------------------------------------
-        ; Vim Window Layout (all values are screen percentages 0-100)
-        ;--------------------------------------------------------------------------
+
         [VimLayout]
         XPct=20
         YPct=0
         WidthPct=52
         HeightPct=74
-        
-        ;--------------------------------------------------------------------------
-        ; Work Time Progress Bar
-        ;--------------------------------------------------------------------------
+
         [WorkTime]
-        ; Enable work-hour mode on/off (off=full-day progress)
         Mode=off
-        ; Show work-hour progress on weekends on/off
         WeekendBar=off
-        ; Work start/end time (HHmm)
         WorkStart=0900
         WorkEnd=1745
-        ; Task blocks: D_HHMM_HHMM (D=1-7 Monday-Sunday); separated by ;
         TaskTimes=1_1200_1300;2_1200_1300;3_1200_1300;4_1200_1300;5_1200_1300;6_1200_1300;7_1200_1300;2_1700_1745;3_0900_0920;
-        
+
+        [WTM]
+        ; Window Tile Manager mode (hyprland-like). Border / auto-tile params.
+        BorderFocusColor=A020F0
+        BorderUnfocusColor=555555
+        BorderThickness=8
+        BorderOffset=0
+        BorderOpacity=80
+        SizeStep=3
+
         ;--------------------------------------------------------------------------
-        ; Hotkeys (AutoHotkey syntax: ! Alt, ^ Ctrl, + Shift, # Win)
+        ; Hotkeys - natural language:  Alt / Shift / Ctrl / Win  joined by '+'
+        ; Examples:  Alt+Shift+D  /  Ctrl+``  /  Alt+WheelUp
+        ; For 1-9 desktop hotkeys, only the modifier prefix is configured here;
+        ; the trailing digit (1-9) is appended automatically by the script.
         ;--------------------------------------------------------------------------
         [Hotkeys]
-        ; --- Help / Exit / Reload ---
-        Help=!/
-        Exit=!F12
-        Reload=!r
-        
-        ; --- Virtual Desktop Prefixes (append 1-9) ---
-        DesktopSwitchPrefix=!
-        DesktopMovePrefix=!+
-        DesktopMoveSwitchPrefix=^!
-        
-        ; --- Window Management ---
-        TileSmart=!d
-        GatherAll=!+g
-        TogglePin=^!t
-        ToggleBar=^!b
-        SaveLayout=!+s
-        RestoreLayout=!+r
-        
-        ; --- Window Actions Under Cursor ---
-        CloseWindow=!q
-        CloseWindowAlt=!MButton
-        ToggleMaximize=!f
-        ToggleTop=!t
-        HideWindow=!w
-        TransparencyUp=!WheelUp
-        TransparencyDown=!WheelDown
-        
-        ; --- Window Snapping ---
-        SnapLeft=!Left
-        SnapRight=!Right
-        SnapUp=!Up
-        SnapDown=!Down
-        
-        ; --- Launchers ---
-        LaunchTerminal=!Enter
-        EditFile=!v
-        PowerMenu=!x
-        ClipboardHistory=^``
-        
-        ; --- Mouse Drag Actions ---
-        DragMove=!LButton
-        DragResize=!RButton
-        
-        ; --- Pie Menu Trigger (key combo) ---
+        Help=Alt+/
+        Exit=Alt+F12
+        Reload=Alt+R
+
+        ; Desktop prefixes:  <prefix> + digit (1-9)
+        DesktopSwitchPrefix=Alt
+        DesktopMovePrefix=Alt+Shift
+        DesktopMoveSwitchPrefix=Ctrl+Alt
+
+        ; Window management
+        TileSmart=Alt+D
+        GatherAll=Alt+Shift+G
+        TogglePin=Ctrl+Alt+T
+        ToggleBar=Ctrl+Alt+B
+        SaveLayout=Alt+Shift+S
+        RestoreLayout=Alt+Shift+R
+
+        ; Under-cursor actions
+        CloseWindow=Alt+Q
+        CloseWindowAlt=Alt+MButton
+        ToggleMaximize=Alt+F
+        ToggleTop=Alt+T
+        HideWindow=Alt+W
+        TransparencyUp=Alt+WheelUp
+        TransparencyDown=Alt+WheelDown
+
+        ; Window snapping
+        SnapLeft=Alt+Left
+        SnapRight=Alt+Right
+        SnapUp=Alt+Up
+        SnapDown=Alt+Down
+
+        ; Launchers
+        LaunchTerminal=Alt+Enter
+        EditFile=Alt+V
+        PowerMenu=Alt+X
+        ClipboardHistory=Ctrl+``
+
+        ; Mouse drag
+        DragMove=Alt+LButton
+        DragResize=Alt+RButton
+
+        ; Pie menu (raw AHK combo retained)
         PieMenuTrigger=~Space & RButton
+
+        ; WTM mode
+        WTMToggle=Alt+Shift+D
+        WTMFocusLeft=Alt+H
+        WTMFocusDown=Alt+J
+        WTMFocusUp=Alt+K
+        WTMFocusRight=Alt+L
+        WTMMoveLeft=Alt+Shift+H
+        WTMMoveDown=Alt+Shift+J
+        WTMMoveUp=Alt+Shift+K
+        WTMMoveRight=Alt+Shift+L
         )"
 
         try {
@@ -449,10 +418,8 @@ LoadOrInitConfig() {
         }
     }
 
-    ; --- 主题 ---
     ActiveTheme := IniRead(ConfigFile, "General", "ActiveTheme", "custom")
 
-    ; --- 颜色 ---
     Color_Bg          := IniRead(ConfigFile, "Colors", "Background",       "0e050f")
     Color_Text        := IniRead(ConfigFile, "Colors", "Text",             "744da9")
     Color_Active      := IniRead(ConfigFile, "Colors", "Active",           "744da9")
@@ -464,13 +431,11 @@ LoadOrInitConfig() {
     PM_BtnSleep       := IniRead(ConfigFile, "Colors", "PowerBtnSleep",    "5E81AC")
     PM_BtnReboot      := IniRead(ConfigFile, "Colors", "PowerBtnReboot",   "BF616A")
 
-    ; --- 状态栏 ---
     Bar_Height       := Pct2PxH(Integer(IniRead(ConfigFile, "StatusBar", "HeightPct",  "3")))
     Bar_Transparent  := Pct2Alpha(Integer(IniRead(ConfigFile, "StatusBar", "Opacity",  "78")))
     Bar_FontSize     := Integer(IniRead(ConfigFile, "StatusBar", "FontSize",   "10"))
     Bar_MonitorIdx   := Integer(IniRead(ConfigFile, "StatusBar", "MonitorIdx", "1"))
 
-    ; --- 饼菜单 ---
     Pie_Size           := Pct2PxMin(Integer(IniRead(ConfigFile, "PieMenu", "SizePct",       "28")))
     Pie_Radius         := Pie_Size / 2
     Pie_CenterZone     := Round(Pie_Radius * Integer(IniRead(ConfigFile, "PieMenu", "CenterZonePct", "27")) / 100)
@@ -478,25 +443,28 @@ LoadOrInitConfig() {
     Pie_FontSize       := Integer(IniRead(ConfigFile, "PieMenu", "FontSize",       "14"))
     Pie_FontSizeActive := Integer(IniRead(ConfigFile, "PieMenu", "FontSizeActive", "22"))
 
-    ; --- OSD ---
     OSD_Height       := Pct2PxH(Integer(IniRead(ConfigFile, "OSD", "PositionPct", "80")))
     OSD_Transparent  := Pct2Alpha(Integer(IniRead(ConfigFile, "OSD", "Opacity",   "78")))
     OSD_FontSize     := Integer(IniRead(ConfigFile, "OSD", "FontSize", "20"))
 
-    ; --- 拖动边框 ---
     Border_Drag_Enable      := IniRead(ConfigFile, "BorderDrag", "Enable",    "on")
     Border_Drag_Thickness   := Pct2Border(Integer(IniRead(ConfigFile, "BorderDrag", "Thickness", "15")))
     Border_Drag_Offset      := Pct2Border(Integer(IniRead(ConfigFile, "BorderDrag", "Offset",    "0")))
     Border_Drag_OffsetTop   := Pct2Border(Integer(IniRead(ConfigFile, "BorderDrag", "OffsetTop", "5")))
     Border_Drag_Transparent := Pct2Alpha(Integer(IniRead(ConfigFile, "BorderDrag", "Opacity",   "70")))
 
-    ; --- 置顶边框 ---
     Border_Pin_Thickness   := Pct2Border(Integer(IniRead(ConfigFile, "BorderPin", "Thickness", "10")))
     Border_Pin_Offset      := Pct2Border(Integer(IniRead(ConfigFile, "BorderPin", "Offset",    "0")))
     Border_Pin_OffsetTop   := Pct2Border(Integer(IniRead(ConfigFile, "BorderPin", "OffsetTop", "5")))
     Border_Pin_Transparent := Pct2Alpha(Integer(IniRead(ConfigFile, "BorderPin", "Opacity",   "78")))
 
-    ; --- 路径 ---
+    WTM_BorderFocusColor   := IniRead(ConfigFile, "WTM", "BorderFocusColor",   "A020F0")
+    WTM_BorderUnfocusColor := IniRead(ConfigFile, "WTM", "BorderUnfocusColor", "555555")
+    WTM_BorderThickness    := Pct2Border(Integer(IniRead(ConfigFile, "WTM", "BorderThickness", "8")))
+    WTM_BorderOffset       := Pct2Border(Integer(IniRead(ConfigFile, "WTM", "BorderOffset",    "0")))
+    WTM_BorderOpacity      := Pct2Alpha(Integer(IniRead(ConfigFile, "WTM", "BorderOpacity",   "80")))
+    WTM_SizeStep           := Integer(IniRead(ConfigFile, "WTM", "SizeStep", "3"))
+
     bDirTemp        := IniRead(ConfigFile, "Paths", "ButtonDir",  "Buttons")
     Path_Button     := (bDirTemp ~= "^[a-zA-Z]:") ? bDirTemp : (A_ScriptDir . "\" . bDirTemp)
     Path_Output     := IniRead(ConfigFile, "Paths", "OutputDir",   "C:\Users\Administrator\Documents")
@@ -504,20 +472,17 @@ LoadOrInitConfig() {
     Path_Vim        := IniRead(ConfigFile, "Paths", "VimPath",     "C:\Windows\system32\notepad.exe")
     Path_Terminal   := IniRead(ConfigFile, "Paths", "TerminalExe", "C:\Windows\system32\cmd.exe")
 
-    ; --- Vim 布局 ---
     Vim_X      := Pct2PxW(Integer(IniRead(ConfigFile, "VimLayout", "XPct",      "20")))
     Vim_Y      := Pct2PxH(Integer(IniRead(ConfigFile, "VimLayout", "YPct",      "0")))
     Vim_Width  := Pct2PxW(Integer(IniRead(ConfigFile, "VimLayout", "WidthPct",  "52")))
     Vim_Height := Pct2PxH(Integer(IniRead(ConfigFile, "VimLayout", "HeightPct", "74")))
 
-    ; --- 工作时间 ---
     Work_Mode       := IniRead(ConfigFile, "WorkTime", "Mode",       "on")
     Work_WeekendBar := IniRead(ConfigFile, "WorkTime", "WeekendBar", "off")
     Work_Start      := IniRead(ConfigFile, "WorkTime", "WorkStart",  "0900")
     Work_End        := IniRead(ConfigFile, "WorkTime", "WorkEnd",    "1745")
     Work_TaskTimes  := IniRead(ConfigFile, "WorkTime", "TaskTimes",  "")
 
-    ; --- 快捷键 ---
     HK := Map()
     hkKeys := ["Help","Exit","Reload",
                "DesktopSwitchPrefix","DesktopMovePrefix","DesktopMoveSwitchPrefix",
@@ -526,38 +491,65 @@ LoadOrInitConfig() {
                "TransparencyUp","TransparencyDown",
                "SnapLeft","SnapRight","SnapUp","SnapDown",
                "LaunchTerminal","EditFile","PowerMenu","ClipboardHistory",
-               "DragMove","DragResize","PieMenuTrigger"]
+               "DragMove","DragResize","PieMenuTrigger",
+               "WTMToggle","WTMFocusLeft","WTMFocusDown","WTMFocusUp","WTMFocusRight",
+               "WTMMoveLeft","WTMMoveDown","WTMMoveUp","WTMMoveRight"]
     hkDefaults := Map(
-        "Help","!/","Exit","!F12","Reload","!r",
-        "DesktopSwitchPrefix","!","DesktopMovePrefix","!+","DesktopMoveSwitchPrefix","^!",
-        "TileSmart","!d","GatherAll","!+g","TogglePin","^!t","ToggleBar","^!b",
-        "SaveLayout","!+s","RestoreLayout","!+r",
-        "CloseWindow","!q","CloseWindowAlt","!MButton","ToggleMaximize","!f",
-        "ToggleTop","!t","HideWindow","!w",
-        "TransparencyUp","!WheelUp","TransparencyDown","!WheelDown",
-        "SnapLeft","!Left","SnapRight","!Right","SnapUp","!Up","SnapDown","!Down",
-        "LaunchTerminal","!Enter","EditFile","!v","PowerMenu","!x","ClipboardHistory","^``",
-        "DragMove","!LButton","DragResize","!RButton","PieMenuTrigger","~Space & RButton"
+        "Help","Alt+/","Exit","Alt+F12","Reload","Alt+R",
+        "DesktopSwitchPrefix","Alt","DesktopMovePrefix","Alt+Shift","DesktopMoveSwitchPrefix","Ctrl+Alt",
+        "TileSmart","Alt+D","GatherAll","Alt+Shift+G","TogglePin","Ctrl+Alt+T","ToggleBar","Ctrl+Alt+B",
+        "SaveLayout","Alt+Shift+S","RestoreLayout","Alt+Shift+R",
+        "CloseWindow","Alt+Q","CloseWindowAlt","Alt+MButton","ToggleMaximize","Alt+F",
+        "ToggleTop","Alt+T","HideWindow","Alt+W",
+        "TransparencyUp","Alt+WheelUp","TransparencyDown","Alt+WheelDown",
+        "SnapLeft","Alt+Left","SnapRight","Alt+Right","SnapUp","Alt+Up","SnapDown","Alt+Down",
+        "LaunchTerminal","Alt+Enter","EditFile","Alt+V","PowerMenu","Alt+X","ClipboardHistory","Ctrl+``",
+        "DragMove","Alt+LButton","DragResize","Alt+RButton","PieMenuTrigger","~Space & RButton",
+        "WTMToggle","Alt+Shift+D",
+        "WTMFocusLeft","Alt+H","WTMFocusDown","Alt+J","WTMFocusUp","Alt+K","WTMFocusRight","Alt+L",
+        "WTMMoveLeft","Alt+Shift+H","WTMMoveDown","Alt+Shift+J",
+        "WTMMoveUp","Alt+Shift+K","WTMMoveRight","Alt+Shift+L"
     )
-    for k in hkKeys
-        HK[k] := IniRead(ConfigFile, "Hotkeys", k, hkDefaults[k])
-
-    ; --- 主题覆盖(仅内存, 不写文件) ---
-    if (ActiveTheme != "custom" && Themes.Has(ActiveTheme)) {
-        palette := Themes[ActiveTheme]
-        for key, val in palette {
-            try %key% := val
+    for k in hkKeys {
+        raw := IniRead(ConfigFile, "Hotkeys", k, hkDefaults[k])
+        ; Desktop prefixes need modifier-only output (no trailing key)
+        if InStr(k, "Prefix") {
+            HK[k] := NormalizeModifiersOnly(raw)
+        } else {
+            HK[k] := NormalizeHotkey(raw)
         }
     }
 
-    ; --- 校验 Bar_MonitorIdx ---
+    if (ActiveTheme != "custom" && Themes.Has(ActiveTheme)) {
+        palette := Themes[ActiveTheme]
+        for key, val in palette
+            try %key% := val
+    }
+
     if (Bar_MonitorIdx < 1 || Bar_MonitorIdx > MonitorGetCount())
         Bar_MonitorIdx := 1
 }
 
-; ==============================================================================
-;  [模块] DWM 可见矩形(补偿不可见边框)
-; ==============================================================================
+; Modifier-only normalizer: "Alt+Shift" -> "!+", "Ctrl+Alt" -> "^!"
+NormalizeModifiersOnly(s) {
+    s := Trim(s)
+    if (s = "")
+        return ""
+    if RegExMatch(s, "^[\!\^\+\#]+$")
+        return s
+    out := ""
+    for p in StrSplit(s, ["+", "-"]) {
+        switch StrLower(Trim(p)) {
+            case "alt":             out .= "!"
+            case "shift":           out .= "+"
+            case "ctrl", "control": out .= "^"
+            case "win", "lwin", "rwin": out .= "#"
+        }
+    }
+    return out
+}
+
+; ---- DWM visible rect (compensates invisible border) ----
 GetWindowVisualRect(hwnd, &x, &y, &w, &h) {
     rect := Buffer(16, 0)
     hr := DllCall("dwmapi\DwmGetWindowAttribute"
@@ -592,9 +584,7 @@ GetMonitorIndex(hwnd := 0) {
     return GetMonitorIndexAtPoint(wx + ww/2, wy + wh/2)
 }
 
-; ==============================================================================
-;  [模块] 帮助 GUI (动态从配置读取快捷键)
-; ==============================================================================
+; ---- Help GUI ----
 ShowHelpGui(*) {
     static helpGui := ""
     global HK
@@ -620,64 +610,65 @@ ShowHelpGui(*) {
     helpGui := Gui("-Caption +AlwaysOnTop +ToolWindow -DPIScale +Owner")
     helpGui.BackColor := Color_Bg
     helpGui.SetFont("s20 w700 c" . Color_Text, "Segoe UI")
-    helpGui.Add("Text", "x0 y25 w600 Center", "HELP")
+    helpGui.Add("Text", "x0 y20 w620 Center", "HELP")
     helpGui.SetFont("s10 w700 c" . Color_Active, "Segoe UI")
-    helpGui.Add("Text", "x0 y65 w600 Center", "AHK modifier symbols : !=Alt ^=Ctrl +=Shift #=Win")
+    helpGui.Add("Text", "x0 y60 w620 Center", "Natural-language hotkeys (Alt / Shift / Ctrl / Win + key)")
 
     helpGui.SetFont("s10 w600 c" . Color_Active)
-    helpGui.Add("Text", "x50 y95 w525 h5 0x10")
+    helpGui.Add("Text", "x50 y90 w545 h5 0x10")
 
-    ; 快捷键描述(从配置实时读取)
+    PrefP(k) => PrettifyHotkey(HK[k])
+    DesktopRange(p) => PrettifyHotkey(p) . " + 1-9"
+
     shortcuts := [
-        [HK["Help"],                                 "Show / Hide Help Menu"],
-        [HK["PieMenuTrigger"],                       "Pie Menu (Mouse)"],
-        [HK["DesktopSwitchPrefix"] . "1-9",          "Switch Desktop"],
-        [HK["DesktopMovePrefix"] . "1-9",            "Move Window to Desktop"],
-        [HK["DesktopMoveSwitchPrefix"] . "1-9",      "Move And Switch"],
-        [HK["DragMove"],                             "Drag Move Window"],
-        [HK["DragResize"],                           "Drag Resize Window"],
-        [HK["TransparencyUp"] . " / " . HK["TransparencyDown"], "Window Transparency"],
-        [HK["SnapLeft"] . " / " . HK["SnapRight"],   "Snap Left / Right"],
-        [HK["SnapUp"] . " / " . HK["SnapDown"],      "Maximize / Minimize"],
-        [HK["SaveLayout"] . " / " . HK["RestoreLayout"], "Save / Restore Layout"],
-        [HK["GatherAll"],                            "Gather All Windows"],
-        [HK["CloseWindow"],                          "Close Window"],
-        [HK["TileSmart"],                            "Smart Tile (current monitor)"],
-        [HK["HideWindow"],                           "Minimize Window"],
-        [HK["ToggleMaximize"],                       "Maximize / Restore"],
-        [HK["Reload"],                               "Reload Script"],
-        [HK["ToggleTop"],                            "Toggle OnTop (mouse)"],
-        [HK["TogglePin"],                            "Toggle Always Visible"],
-        [HK["ClipboardHistory"],                     "Clipboard History (Vim)"],
-        [HK["ToggleBar"],                            "Toggle Top Bar"],
-        [HK["EditFile"],                             "Edit Selected File"],
-        [HK["LaunchTerminal"],                       "Launch Terminal"],
-        [HK["Exit"],                                 "Safely Exit"],
-        [HK["PowerMenu"],                            "Power Menu"],
+        [PrefP("Help"),                       "Show / Hide Help Menu"],
+        [PrefP("PieMenuTrigger"),             "Pie Menu (Mouse)"],
+        [DesktopRange(HK["DesktopSwitchPrefix"]),     "Switch Desktop"],
+        [DesktopRange(HK["DesktopMovePrefix"]),       "Move Window to Desktop"],
+        [DesktopRange(HK["DesktopMoveSwitchPrefix"]), "Move And Switch"],
+        [PrefP("WTMToggle"),                  "Toggle WTM Tiling Mode"],
+        [PrefP("WTMFocusLeft") . " / J / K / L",      "WTM Focus (H/J/K/L)"],
+        [PrefP("WTMMoveLeft")  . " / J / K / L",      "WTM Move/Swap (Shift+HJKL)"],
+        [PrefP("DragMove"),                   "Drag Move Window"],
+        [PrefP("DragResize"),                 "Drag Resize Window"],
+        [PrefP("TransparencyUp") . " / " . PrefP("TransparencyDown"), "Window Transparency"],
+        [PrefP("SnapLeft") . " / " . PrefP("SnapRight"), "Snap Left / Right"],
+        [PrefP("SnapUp")   . " / " . PrefP("SnapDown"),  "Maximize / Minimize"],
+        [PrefP("SaveLayout") . " / " . PrefP("RestoreLayout"), "Save / Restore Layout"],
+        [PrefP("GatherAll"),                  "Gather All Windows"],
+        [PrefP("CloseWindow"),                "Close Window"],
+        [PrefP("TileSmart"),                  "Smart Tile (current monitor)"],
+        [PrefP("HideWindow"),                 "Minimize Window"],
+        [PrefP("ToggleMaximize"),             "Maximize / Restore"],
+        [PrefP("Reload"),                     "Reload Script"],
+        [PrefP("ToggleTop"),                  "Toggle OnTop (or WTM exclude)"],
+        [PrefP("TogglePin"),                  "Toggle Always Visible"],
+        [PrefP("ClipboardHistory"),           "Clipboard History (Vim)"],
+        [PrefP("ToggleBar"),                  "Toggle Top Bar"],
+        [PrefP("EditFile"),                   "Edit Selected File"],
+        [PrefP("LaunchTerminal"),             "Launch Terminal"],
+        [PrefP("Exit"),                       "Safely Exit"],
+        [PrefP("PowerMenu"),                  "Power Menu"]
     ]
 
-    helpGui.SetFont("s11 w400 c" . Color_Text)
+    helpGui.SetFont("s10 w400 c" . Color_Text)
     for i, item in shortcuts {
-        yPos := 115 + (i-1)*26
-        helpGui.Add("Text", "x60 y"  . yPos . " w200 c" . Color_Text, item[1])
-        helpGui.Add("Text", "x260 y" . yPos . " w300 +Right", item[2])
+        yPos := 110 + (i-1)*23
+        helpGui.Add("Text", "x60 y"  . yPos . " w240 c" . Color_Text, item[1])
+        helpGui.Add("Text", "x300 y" . yPos . " w300 +Right", item[2])
     }
 
     helpGui.Show("Center")
     SetTimer CloseWatcher, 50
 }
 
-; ==============================================================================
-;  [模块] 欢迎界面 (首次运行 / 主显示器居中)
-; ==============================================================================
+; ---- Welcome screen (first run, centered on primary monitor) ----
 class WelcomeScreen {
     static GuiObj := ""
 
     static Show() {
         if IsObject(this.GuiObj)
             return
-
-        ; 取主显示器矩形(避免文字跨屏)
         priIdx := MonitorGetPrimary()
         MonitorGet(priIdx, &mL, &mT, &mR, &mB)
         vx := mL, vy := mT, vw := mR - mL, vh := mB - mT
@@ -685,7 +676,6 @@ class WelcomeScreen {
         g := Gui("-Caption +AlwaysOnTop +ToolWindow -DPIScale +E0x08000000")
         g.BackColor := Color_Bg
         g.MarginX := 0, g.MarginY := 0
-
         cx := vw // 2
 
         g.SetFont("s64 w800 c" . Color_Active, "Segoe UI")
@@ -693,23 +683,22 @@ class WelcomeScreen {
 
         g.SetFont("s18 w400 c" . Color_Text, "Segoe UI")
         g.Add("Text", "x0 y" Round(vh*0.35) " w" vw " Center BackgroundTrans"
-            , "A AHK tiling window manager for Windows")
+            , "An AHK tiling window manager for Windows")
 
         g.Add("Text", "x" (cx-200) " y" Round(vh*0.40) " w400 h2 Background" Color_Active, "")
 
         g.SetFont("s13 w800 c" . Color_Text, "Consolas")
         infoLines := [
-            "  >  9 Virtual Desktops          " . HK["DesktopSwitchPrefix"] . "1-9",
-            "  >  Smart Tiling                " . HK["TileSmart"],
-            "  >  Pie Menu                    " . HK["PieMenuTrigger"],
-            "  >  Window Snap                 " . HK["SnapLeft"] . " etc.",
-            "  >  Layout Snapshot             " . HK["SaveLayout"] . " / " . HK["RestoreLayout"],
-            "  >  Help Menu                   " . HK["Help"]
+            "  >  9 Virtual Desktops          " . PrettifyHotkey(HK["DesktopSwitchPrefix"]) . " + 1-9",
+            "  >  Smart Tiling                " . PrettifyHotkey(HK["TileSmart"]),
+            "  >  WTM Mode (hyprland-like)    " . PrettifyHotkey(HK["WTMToggle"]),
+            "  >  Window Snap                 " . PrettifyHotkey(HK["SnapLeft"]) . " etc.",
+            "  >  Layout Snapshot             " . PrettifyHotkey(HK["SaveLayout"]) . " / " . PrettifyHotkey(HK["RestoreLayout"]),
+            "  >  Help Menu                   " . PrettifyHotkey(HK["Help"])
         ]
         yStart := Round(vh * 0.46)
-        for i, line in infoLines {
+        for i, line in infoLines
             g.Add("Text", "x" (cx-280) " y" (yStart + (i-1)*32) " w860 BackgroundTrans c" Color_Text, line)
-        }
 
         g.SetFont("s11 w400 c" . Color_Text, "Consolas")
         g.Add("Text", "x0 y" Round(vh*0.78) " w" vw " Center BackgroundTrans"
@@ -721,7 +710,7 @@ class WelcomeScreen {
 
         g.SetFont("s10 w400 c" . Color_Text, "Segoe UI")
         g.Add("Text", "x0 y" Round(vh*0.88) " w" vw " Center BackgroundTrans"
-            , "v2.1  ::  AutoHotkey v2")
+            , "v2.2  ::  AutoHotkey v2")
 
         g.SetFont("s11 w600 c" . Color_Active, "Segoe UI")
         hint := g.Add("Text", "x0 y" Round(vh*0.93) " w" vw " Center BackgroundTrans"
@@ -730,15 +719,10 @@ class WelcomeScreen {
         g.Show(Format("x{} y{} w{} h{} NoActivate", vx, vy, vw, vh))
         WinSetTransparent(245, g.Hwnd)
         this.GuiObj := g
-
-        ; 闪烁提示文本 (呼吸效果)
         this.HintCtrl := hint
         this.HintState := true
         SetTimer(ObjBindMethod(this, "Blink"), 600)
-
-        ; 关闭监听
         SetTimer(ObjBindMethod(this, "WaitClose"), 50)
-
     }
 
     static Blink() {
@@ -749,8 +733,6 @@ class WelcomeScreen {
         try {
             this.HintState := !this.HintState
             this.HintCtrl.SetFont(this.HintState ? "c" Color_Active : "c" Color_Text)
-        } catch {
-            ; ignore
         }
     }
 
@@ -760,26 +742,19 @@ class WelcomeScreen {
             return
         }
         if (GetKeyState("LButton","P") || GetKeyState("Escape","P")
-         || GetKeyState("Enter","P")  || GetKeyState("Space","P")) {
+         || GetKeyState("Enter","P")  || GetKeyState("Space","P"))
             this.Close()
-        }
     }
 
     static Close() {
         SetTimer(ObjBindMethod(this, "WaitClose"), 0)
         SetTimer(ObjBindMethod(this, "Blink"),     0)
-        try {
-            this.GuiObj.Destroy()
-        } catch {
-            ; ignore
-        }
+        try this.GuiObj.Destroy()
         this.GuiObj := ""
     }
 }
 
-; ==============================================================================
-;  [模块] 八方位按钮初始化
-; ==============================================================================
+; ---- Eight-direction button template init ----
 InitializeButtons() {
     dirs := ["Top","TopRight","Right","DownRight","Down","DownLeft","Left","TopLeft"]
     created := false
@@ -807,9 +782,7 @@ InitializeButtons() {
     return created
 }
 
-; ==============================================================================
-;  [模块] OSD
-; ==============================================================================
+; ---- OSD ----
 class OSD {
     static GuiObj := 0, Timer := 0
 
@@ -843,9 +816,7 @@ class OSD {
 }
 ShowOSD(text) => OSD.Show(text)
 
-; ==============================================================================
-;  [模块] 拖动边框
-; ==============================================================================
+; ---- Drag border (overlay during move/resize) ----
 class DragBorder {
     static Guis := []
 
@@ -856,7 +827,6 @@ class DragBorder {
         Loop 4 {
             g := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x20 -DPIScale")
             g.BackColor := Border_Drag_Color
-            ; 用足够大的初始尺寸创建窗口, 后续 WinMove 修改
             g.Show("NoActivate x-1000 y-1000 w10 h10")
             WinSetTransparent(Border_Drag_Transparent, g.Hwnd)
             this.Guis.Push(g)
@@ -874,7 +844,6 @@ class DragBorder {
         o  := Border_Drag_Offset
         ot := Border_Drag_OffsetTop
         x -= o, y -= (o + ot), w += 2*o, h += 2*o + ot
-        ; ★ 用 WinMove 而非 Show, 避免布局漂移
         try {
             WinMove(x,       y,       w, t, this.Guis[1].Hwnd)
             WinMove(x,       y+h-t,   w, t, this.Guis[2].Hwnd)
@@ -884,28 +853,23 @@ class DragBorder {
     }
 
     static Destroy() {
-        for g in this.Guis {
+        for g in this.Guis
             try g.Destroy()
-        }
         this.Guis := []
     }
 }
 
-; ==============================================================================
-;  [模块] 置顶持久边框 (修复变窄问题: 改用 WinMove)
-; ==============================================================================
+; ---- Pinned-window persistent border ----
 class PinBorder {
-    static Map     := Map()                              ; hwnd -> bar Gui
+    static Map     := Map()
     static TimerFn := ObjBindMethod(PinBorder, "Tick")
     static Started := false
 
     static Add(hwnd) {
         if this.Map.Has(hwnd)
             return
-        ; 单条横条 GUI
         g := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x20 -DPIScale")
         g.BackColor := Border_Pin_Color
-        ; ★ 用真实可见尺寸创建, 防止 layered window 内部 client 尺寸异常
         g.Show("NoActivate x-1000 y-1000 w200 h10")
         WinSetTransparent(Border_Pin_Transparent, g.Hwnd)
         this.Map[hwnd] := g
@@ -933,19 +897,16 @@ class PinBorder {
     }
 
     static Tick() {
-        ; 边条厚度 (用 Pin Thickness; 至少 3px 保证可见)
         t   := Max(3, Border_Pin_Thickness)
-        gap := Border_Pin_OffsetTop          ; 与窗口顶端的间隙
-
+        gap := Border_Pin_OffsetTop
         for hwnd, g in this.Map.Clone() {
             if !WinExist(hwnd) {
                 this.Remove(hwnd)
                 continue
             }
             try {
-                ; 最小化时隐藏
                 if (WinGetMinMax(hwnd) = -1) {
-                    try DllCall("ShowWindow", "Ptr", g.Hwnd, "Int", 0)   ; SW_HIDE
+                    try DllCall("ShowWindow", "Ptr", g.Hwnd, "Int", 0)
                     continue
                 }
                 if !GetWindowVisualRect(hwnd, &x, &y, &w, &h)
@@ -953,31 +914,19 @@ class PinBorder {
             } catch {
                 continue
             }
-
-            ; ★ 横条位于窗口"上方" (y - t - gap)
-            barX := x
-            barY := y - t - gap
-            barW := w
-            barH := t
-
             try {
-                ; 用 SetWindowPos 同时设位置/尺寸/Z序, 保证不会变窄, 且永远在最顶层
-                ; HWND_TOPMOST = -1, SWP_NOACTIVATE = 0x10, SWP_SHOWWINDOW = 0x40
+                ; HWND_TOPMOST=-1, SWP_NOACTIVATE=0x10, SWP_SHOWWINDOW=0x40
                 DllCall("SetWindowPos"
-                    , "Ptr", g.Hwnd
-                    , "Ptr", -1
-                    , "Int", barX, "Int", barY
-                    , "Int", barW, "Int", barH
+                    , "Ptr", g.Hwnd, "Ptr", -1
+                    , "Int", x, "Int", y - t - gap
+                    , "Int", w, "Int", t
                     , "UInt", 0x10 | 0x40)
-            } catch {
-                continue
             }
         }
     }
 }
-; ==============================================================================
-;  [模块] 鼠标下窗口操作
-; ==============================================================================
+
+; ---- Under-cursor window actions ----
 CloseWindowUnderMouse(*) {
     MouseGetPos(,, &hwnd)
     try {
@@ -985,6 +934,7 @@ CloseWindowUnderMouse(*) {
         PinBorder.Remove(hwnd)
         ShowOSD("Closing Window...")
     }
+    WTM.OnWindowChanged()
 }
 
 HideUnderMouse(*) {
@@ -993,6 +943,7 @@ HideUnderMouse(*) {
         WinMinimize(hwnd)
         ShowOSD("WinMinimized")
     }
+    WTM.OnWindowChanged()
 }
 
 ToggleMaximizeUnderMouse(*) {
@@ -1035,9 +986,7 @@ AdjustTransparency(amount, *) {
     }
 }
 
-; ==============================================================================
-;  [模块] 饼菜单
-; ==============================================================================
+; ---- Pie menu ----
 class PieMenu {
     static DirMap   := ["Right","DownRight","Down","DownLeft","Left","TopLeft","Top","TopRight"]
     static IsActive := false, GuiObj := "", Labels := Map()
@@ -1128,18 +1077,14 @@ class PieMenu {
         if IsObject(this.GuiObj)
             this.GuiObj.Destroy()
         if (this.CurrentSector != "Center" && this.CurrentSector != "") {
-            try {
-                %this.CurrentSector%()
-            } catch {
+            try %this.CurrentSector%()
+            catch
                 ShowOSD("Function Lost: " . this.CurrentSector)
-            }
         }
     }
 }
 
-; ==============================================================================
-;  [模块] 虚拟桌面
-; ==============================================================================
+; ---- Virtual desktops ----
 SwitchDesktop(target, *) {
     global CurrentDesktop, Desktops, AlwaysVisible
     if (target == CurrentDesktop) {
@@ -1148,21 +1093,19 @@ SwitchDesktop(target, *) {
     }
     Desktops[CurrentDesktop] := GetVisibleWindows()
     for hwnd in Desktops[CurrentDesktop] {
-        if !AlwaysVisible.Has(hwnd) {
+        if !AlwaysVisible.Has(hwnd)
             try WinMinimize(hwnd)
-        }
     }
-    for hwnd in Desktops[target] {
+    for hwnd in Desktops[target]
         try WinRestore(hwnd)
-    }
-    for hwnd, _ in AlwaysVisible {
+    for hwnd, _ in AlwaysVisible
         try WinRestore(hwnd)
-    }
 
     CurrentDesktop := target
     UpdateStatusBar()
     A_IconTip := "WM Script - Desktop " . CurrentDesktop
     ShowOSD("Desktop " . CurrentDesktop)
+    WTM.OnDesktopSwitched()
 }
 
 MoveWindowToDesktop(target, *) {
@@ -1196,6 +1139,7 @@ MoveWindowToDesktop(target, *) {
         try WinMinimize(hwnd)
         ShowOSD("Window -> Desktop " . target)
     }
+    WTM.OnWindowChanged()
 }
 
 MoveAndSwitch(target, *) {
@@ -1204,9 +1148,7 @@ MoveAndSwitch(target, *) {
     ShowOSD("Move And Switch -> " . target)
 }
 
-; ==============================================================================
-;  [模块] 状态栏
-; ==============================================================================
+; ---- Status bar ----
 CreateStatusBar() {
     global
 
@@ -1422,14 +1364,10 @@ GatherAllToCurrent(*) {
         }
     }
     ShowOSD("Gathered " . count . " Windows")
+    WTM.OnWindowChanged()
 }
 
-; ==============================================================================
-;  [模块] 智能平铺 - 三模式自适应
-;     1. 竖屏 (H > W)        : 纵向 N 等分
-;     2. 标准屏 (W/H ≤ 16:9)  : 经典布局
-;     3. 超宽屏 (W/H ≥ 32:9)  : 主窗口居中 16:9 + 两侧分列
-; ==============================================================================
+; ---- Smart tiling (vertical / standard / ultrawide) ----
 TileCurrentMonitor(*) {
     global Bar_Height, Bar_Visible, Bar_MonitorIdx
 
@@ -1451,7 +1389,6 @@ TileCurrentMonitor(*) {
         return
     }
 
-    ; 形态判定
     if (H > W)
         mode := "Vertical"
     else if (aspect >= 32/9 - 0.15)
@@ -1475,63 +1412,33 @@ PlaceWin(hwnd, x, y, w, h) {
     }
 }
 
-; ==============================================================================
-;  零空余网格: 自动算行列, 最后一行窗口拉满全宽
-;     例: n=7 → cols=3, rows=3
-;         row0: 3个 (各 W/3)
-;         row1: 3个 (各 W/3)
-;         row2: 1个 (占满 W)       ← 无空余
-;
-;     例: n=10 → cols=4, rows=3
-;         row0: 4个 (各 W/4)
-;         row1: 4个 (各 W/4)
-;         row2: 2个 (各 W/2)       ← 无空余
-;
-;     例: n=11 → cols=4, rows=3
-;         row0: 4个 (各 W/4)
-;         row1: 4个 (各 W/4)
-;         row2: 3个 (各 W/3)       ← 无空余
-; ==============================================================================
+; Zero-gap grid: auto rows/cols, last row stretches to fill width
 TileGrid(wins, X, Y, W, H, isVertical := false) {
     n := wins.Length
     if (n == 0)
         return
-
-    ; 单窗口: 铺满
     if (n == 1) {
         PlaceWin(wins[1], X, Y, W, H)
         return
     }
-
-    ; 竖屏模式: 行列互换 (行=水平方向, 列=垂直方向)
     if isVertical {
-        ; 竖屏: rows 代表横向分割数, cols 代表纵向分割数
         rows := Ceil(Sqrt(n))
         cols := Ceil(n / rows)
     } else {
         cols := Ceil(Sqrt(n))
         rows := Ceil(n / cols)
     }
-
     rowH := H / rows
     idx  := 1
-
     Loop rows {
         r := A_Index - 1
-        ; 本行有多少窗口
         remaining := n - (idx - 1)
         rowsLeft  := rows - r
-        ; ★ 核心: 本行窗口数 = Min(cols, 剩余窗口数)
-        ; 但要确保后续行也有窗口, 所以用 Ceil(remaining / rowsLeft) 来均匀分配
         thisCols := Min(cols, remaining)
-        ; 如果后面还有行, 保证每行至少 1 个
         if (rowsLeft > 1 && thisCols > remaining - (rowsLeft - 1))
             thisCols := remaining - (rowsLeft - 1)
-        ; 再兜底: 至少 1 个, 至多 cols 个
         thisCols := Max(1, Min(cols, thisCols))
-
         colW := W / thisCols
-
         Loop thisCols {
             c := A_Index - 1
             if (idx > n)
@@ -1542,11 +1449,9 @@ TileGrid(wins, X, Y, W, H, isVertical := false) {
     }
 }
 
-; --- 标准屏 ---
 TileNormal(wins, WL, WT, W, H) {
     n := wins.Length
-
-    ; 特殊布局: 3窗口 (左大右二分) / 5窗口 (中+四角)
+    ; Special-case layouts: 3 windows (left-big + right-split) / 5 windows (center + 4 corners)
     switch n {
         case 3:
             PlaceWin(wins[1], WL,        WT,        W/2, H)
@@ -1562,67 +1467,44 @@ TileNormal(wins, WL, WT, W, H) {
             PlaceWin(wins[5], WL + 2*colW,  WT + halfH, colW, halfH)
             return
     }
-
-    ; 通用零空余网格
     TileGrid(wins, WL, WT, W, H, false)
 }
 
-; --- 竖屏 ---
 TileVertical(wins, X, Y, W, H) {
     n := wins.Length
-
-    ; 1-3 个窗口: 纯纵向等分最合理
     if (n <= 3) {
         itemH := H / n
         for i, hwnd in wins
             PlaceWin(hwnd, X, Y + (i-1)*itemH, W, itemH)
         return
     }
-
-    ; 4+ 窗口: 用网格, 但标记竖屏模式使行列倾向纵向
     TileGrid(wins, X, Y, W, H, true)
 }
 
-; --- 超宽屏 ---
 TileUltrawide(wins, X, Y, W, H) {
     n := wins.Length
-
     if (n == 1) {
-        ; 单窗口: 居中 16:9
         mainW := Min(W, H * 16/9)
         PlaceWin(wins[1], X + (W - mainW)/2, Y, mainW, H)
         return
     }
-
     if (n == 2) {
-        ; 两窗口: 左右等分, 铺满
         PlaceWin(wins[1], X,       Y, W/2, H)
         PlaceWin(wins[2], X + W/2, Y, W/2, H)
         return
     }
-
-    ; 3+ 窗口: 三区域 (左列 | 中央主窗口 | 右列)
-    ; 主窗口宽度 = 16:9 但不超过 50%
     mainW := Min(H * 16/9, W * 0.5)
     sideW := (W - mainW) / 2
     mainX := X + sideW
-
-    ; 第一个窗口 = 主窗口
     PlaceWin(wins[1], mainX, Y, mainW, H)
-
-    ; 剩余窗口分左右
     leftCount  := Floor((n-1) / 2)
     rightCount := (n-1) - leftCount
-
-    ; 左侧: 用零空余网格填充
     if (leftCount > 0) {
         leftWins := []
         Loop leftCount
             leftWins.Push(wins[1 + A_Index])
         TileGrid(leftWins, X, Y, sideW, H, true)
     }
-
-    ; 右侧: 用零空余网格填充
     if (rightCount > 0) {
         rightWins := []
         Loop rightCount
@@ -1658,7 +1540,6 @@ GetVisibleWindow() {
         exStyle := WinGetExStyle(this_id)
         if (exStyle & 0x00000080)
             continue
-
         isCloaked := 0
         try {
             DllCall("dwmapi\DwmGetWindowAttribute"
@@ -1666,23 +1547,18 @@ GetVisibleWindow() {
             if isCloaked
                 continue
         }
-
         title := WinGetTitle(this_id)
         if (title == "")
             continue
-
         WinGetPos(,, &w, &h, this_id)
         if (w < 100 || h < 100)
             continue
-
         windows.Push(this_id)
     }
     return windows
 }
 
-; ==============================================================================
-;  [模块] 窗口对齐
-; ==============================================================================
+; ---- Window snapping ----
 SnapWindow(direction, *) {
     global Bar_Visible, Bar_Height, Bar_MonitorIdx
     hwnd := 0
@@ -1716,9 +1592,7 @@ SnapWindow(direction, *) {
     }
 }
 
-; ==============================================================================
-;  [模块] 布局快照
-; ==============================================================================
+; ---- Layout snapshot ----
 SaveLayout(*) {
     global LayoutSnapshot
     LayoutSnapshot := Map()
@@ -1750,9 +1624,7 @@ RestoreLayout(*) {
     ShowOSD("Layout Restored (" . n . ")")
 }
 
-; ==============================================================================
-;  [模块] 剪贴板 / Vim / 终端 / 电源
-; ==============================================================================
+; ---- Clipboard / Vim / Terminal / Power ----
 OnClipboardChanged(dataType) {
     if (dataType != 1)
         return
@@ -1778,7 +1650,6 @@ ToggleVimWindow() {
         Vim_CurrentPID := 0
         return
     }
-
     if InStr(Path_Vim, "vim")
         RunCmd := Format('"{1}" "+$" "{2}"', Path_Vim, Path_OutputFile)
     else
@@ -1810,11 +1681,9 @@ OpenWithVim(*) {
         ShowOSD("No File Selected")
         return
     }
-    try {
-        Run('"' . Path_Vim . '" "' . targetPath . '"')
-    } catch {
+    try Run('"' . Path_Vim . '" "' . targetPath . '"')
+    catch
         ShowOSD("Vim Launch Failed")
-    }
 }
 
 ShowPowerMenu(*) {
@@ -1843,9 +1712,7 @@ ShowPowerMenu(*) {
     pGui.Show("w500 h160")
 }
 
-; ==============================================================================
-;  [模块] 主题切换
-; ==============================================================================
+; ---- Theme switching ----
 ApplyTheme(themeName, *) {
     IniWrite(themeName, ConfigFile, "General", "ActiveTheme")
     ShowOSD("Theme: " . themeName)
@@ -1860,7 +1727,6 @@ ExportThemeToCustom(*) {
         return
     }
     palette := Themes[ActiveTheme]
-    ; 全部颜色都写到 [Colors] 节
     nameMap := Map(
         "Color_Bg",          "Background",
         "Color_Text",        "Text",
@@ -1883,13 +1749,12 @@ ExportThemeToCustom(*) {
     Reload()
 }
 
-; ==============================================================================
-;  [模块] 杂项 / 助手
-; ==============================================================================
+; ---- Misc helpers ----
 RestoreAndExit(*) {
     global Bar_Gui
     ShowOSD("Script Shutting Down ...")
     Sleep(500)
+    WTM.Deactivate()
     PinBorder.RemoveAll()
     if IsObject(Bar_Gui)
         Bar_Gui.Destroy()
@@ -1965,14 +1830,13 @@ Explorer_GetPath() {
     return ""
 }
 
-; ==============================================================================
-;  [模块] 托盘菜单
-; ==============================================================================
+; ---- Tray menu ----
 SetupTrayIcon() {
     global Themes, ActiveTheme
     A_TrayMenu.Delete()
     A_TrayMenu.Add("Gather All Windows", GatherAllToCurrent)
     A_TrayMenu.Add("Toggle Status Bar",  ToggleBar)
+    A_TrayMenu.Add("Toggle WTM Mode",    (*) => WTM.Toggle())
     A_TrayMenu.Add("Save Layout",        SaveLayout)
     A_TrayMenu.Add("Restore Layout",     RestoreLayout)
     A_TrayMenu.Add()
@@ -1992,10 +1856,10 @@ SetupTrayIcon() {
     }
 
     A_TrayMenu.Add()
-        A_TrayMenu.Add("Show Welcome", (*) => (
-                FileExist(WelcomeFlag) ? FileDelete(WelcomeFlag) : "",
-                        WelcomeScreen.Show()
-                            ))
+    A_TrayMenu.Add("Show Welcome", (*) => (
+            FileExist(WelcomeFlag) ? FileDelete(WelcomeFlag) : "",
+            WelcomeScreen.Show()
+        ))
     A_TrayMenu.Add("Open Config Folder",  (*) => Run('explorer.exe "' . ConfigDir . '"'))
     A_TrayMenu.Add("Reload Script",       (*) => Reload())
     A_TrayMenu.Add("Restore && Exit",     RestoreAndExit)
@@ -2003,18 +1867,14 @@ SetupTrayIcon() {
     A_IconTip := "WM Script - Desktop " . CurrentDesktop
 }
 
-; ==============================================================================
-;  [模块] 鼠标拖拽 / 调整大小
-; ==============================================================================
+; ---- Mouse drag move / resize ----
 DragMoveHandler(*) {
     MouseGetPos(,, &hwnd)
     if !hwnd
         return
-
     try WinActivate(hwnd)
-    catch  {
+    catch
         return
-    }
 
     if (WinGetMinMax(hwnd) == 1) {
         try {
@@ -2029,22 +1889,19 @@ DragMoveHandler(*) {
 
     MouseGetPos(&startX, &startY)
     try WinGetPos(&winX, &winY, &winW, &winH, hwnd)
-    catch {
+    catch
         return
-    }
 
     DragBorder.Show()
-
     while GetKeyState("LButton", "P") {
         MouseGetPos(&curX, &curY)
         try WinMove(winX + (curX - startX), winY + (curY - startY),,, hwnd)
-        catch {
+        catch
             break
-        }
         DragBorder.Update(hwnd)
     }
-
     DragBorder.Destroy()
+    WTM.OnWindowChanged()
 }
 
 DragResizeHandler(*) {
@@ -2055,9 +1912,8 @@ DragResizeHandler(*) {
         return
 
     try WinGetPos(&winX, &winY, &winW, &winH, hwnd)
-    catch {
+    catch
         return
-    }
     if (winW <= 0 || winH <= 0)
         return
 
@@ -2066,28 +1922,304 @@ DragResizeHandler(*) {
     isUp   := (startY - winY) / winH < 0.5
 
     DragBorder.Show()
-
     while GetKeyState("RButton", "P") {
         MouseGetPos(&curX, &curY)
         dX := curX - startX, dY := curY - startY
         nX := isLeft ? (winX+dX) : winX, nW := isLeft ? (winW-dX) : (winW+dX)
         nY := isUp   ? (winY+dY) : winY, nH := isUp   ? (winH-dY) : (winH+dY)
-
         if (nW > 50 && nH > 50) {
             try WinMove(nX, nY, nW, nH, hwnd)
-            catch {
+            catch
                 break
-             }
             DragBorder.Update(hwnd)
         }
     }
-
     DragBorder.Destroy()
+    WTM.OnWindowChanged()
 }
 
 ; ==============================================================================
-;  [模块] 八方位脚本引入
+;  WTM - Windows Tile Manager (hyprland-like dynamic tiling mode)
+;     - Toggle on/off (WTMToggle)
+;     - Stable TileOrder: existing windows keep slot; new ones append;
+;       gone/excluded ones drop out -> manual moves don't reshuffle layout
+;     - HJKL focus / Shift+HJKL swap
+;     - Alt+T excludes the focused / under-cursor window from tiling
+;     - Auto re-tile on add / remove / size change
 ; ==============================================================================
+class WTM {
+    static Active     := false
+    static TileOrder  := []
+    static Excluded   := Map()
+    static FocusHwnd  := 0
+    static BorderGuis := []
+    static _LastSig   := ""
+    static TickFn     := ObjBindMethod(WTM, "Tick")
+
+    static Toggle() {
+        if this.Active
+            this.Deactivate()
+        else
+            this.Activate()
+    }
+
+    static Activate() {
+        this.Active    := true
+        this.Excluded  := Map()
+        this.TileOrder := []
+        this._LastSig  := ""
+        this.CreateBorder()
+        this.RebuildOrder()
+        this.AutoTile()
+        SetTimer(this.TickFn, 150)
+        ShowOSD("WTM Mode: ON")
+    }
+
+    static Deactivate() {
+        this.Active := false
+        SetTimer(this.TickFn, 0)
+        this.DestroyBorder()
+        ShowOSD("WTM Mode: OFF")
+    }
+
+    static OnDesktopSwitched() {
+        if !this.Active
+            return
+        this.TileOrder := []
+        this.RebuildOrder()
+        this.AutoTile()
+    }
+
+    static OnWindowChanged() {
+        if !this.Active
+            return
+        this.AutoTile()
+    }
+
+    ; Stable order: keep existing slots; append newcomers; drop dead/excluded.
+    static RebuildOrder() {
+        alive := Map()
+        for hwnd in GetVisibleWindowsOnMonitor(GetMonitorIndex())
+            alive[hwnd] := true
+        newOrder := []
+        for hwnd in this.TileOrder {
+            if alive.Has(hwnd) && !this.Excluded.Has(hwnd) && WinExist(hwnd) {
+                newOrder.Push(hwnd)
+                alive.Delete(hwnd)
+            }
+        }
+        for hwnd, _ in alive {
+            if !this.Excluded.Has(hwnd)
+                newOrder.Push(hwnd)
+        }
+        this.TileOrder := newOrder
+    }
+
+    static AutoTile() {
+        global Bar_Height, Bar_Visible, Bar_MonitorIdx
+        this.RebuildOrder()
+        if (this.TileOrder.Length = 0)
+            return
+        mon := GetMonitorIndex()
+        MonitorGetWorkArea(mon, &WL, &WT, &WR, &WB)
+        if (Bar_Visible && mon = Bar_MonitorIdx)
+            WT += Bar_Height + 5
+        W := WR - WL, H := WB - WT
+        aspect := (H != 0) ? W / H : 1
+        if (H > W)
+            TileVertical(this.TileOrder, WL, WT, W, H)
+        else if (aspect >= 32/9 - 0.15)
+            TileUltrawide(this.TileOrder, WL, WT, W, H)
+        else
+            TileNormal(this.TileOrder, WL, WT, W, H)
+    }
+
+    static Tick() {
+        if !this.Active
+            return
+        ; Detect window add/remove/resize -> trigger auto re-tile
+        sig := ""
+        for hwnd in GetVisibleWindowsOnMonitor(GetMonitorIndex()) {
+            if this.Excluded.Has(hwnd)
+                continue
+            try {
+                WinGetPos(&x, &y, &w, &h, hwnd)
+                sig .= hwnd "|" w "x" h ";"
+            }
+        }
+        if (sig != this._LastSig) {
+            this._LastSig := sig
+            this.AutoTile()
+            ; refresh sig after retile to avoid endless loop
+            sig := ""
+            for hwnd in GetVisibleWindowsOnMonitor(GetMonitorIndex()) {
+                if this.Excluded.Has(hwnd)
+                    continue
+                try {
+                    WinGetPos(&x, &y, &w, &h, hwnd)
+                    sig .= hwnd "|" w "x" h ";"
+                }
+            }
+            this._LastSig := sig
+        }
+        ; Update focus border
+        try {
+            fh := WinGetID("A")
+            if (fh && fh != this.FocusHwnd) {
+                this.FocusHwnd := fh
+                this.RefreshBorder()
+            } else if (fh) {
+                this.RefreshBorder()
+            }
+        }
+    }
+
+    static FocusDir(dir) {
+        if !this.Active
+            return
+        this.RebuildOrder()
+        if (this.TileOrder.Length = 0)
+            return
+        cur := this.FocusHwnd ? this.FocusHwnd : this.TileOrder[1]
+        target := this._PickNeighbor(cur, dir)
+        if target {
+            try {
+                WinActivate(target)
+                this.FocusHwnd := target
+                this.RefreshBorder()
+            }
+        }
+    }
+
+    static MoveDir(dir) {
+        if !this.Active
+            return
+        this.RebuildOrder()
+        cur := this.FocusHwnd ? this.FocusHwnd : (this.TileOrder.Length ? this.TileOrder[1] : 0)
+        if !cur
+            return
+        target := this._PickNeighbor(cur, dir)
+        if !target
+            return
+        i1 := this._OrderIndex(cur)
+        i2 := this._OrderIndex(target)
+        if (i1 && i2) {
+            tmp := this.TileOrder[i1]
+            this.TileOrder[i1] := this.TileOrder[i2]
+            this.TileOrder[i2] := tmp
+            this.AutoTile()
+        }
+    }
+
+    static TogglePinExclude() {
+        ; Exclude / re-include the window under cursor (or focused) from tiling.
+        MouseGetPos(,, &hwnd)
+        if !hwnd {
+            try hwnd := WinGetID("A")
+        }
+        if !hwnd
+            return
+        if this.Excluded.Has(hwnd) {
+            this.Excluded.Delete(hwnd)
+            try WinSetAlwaysOnTop(0, hwnd)
+            ShowOSD("WTM Include")
+        } else {
+            this.Excluded[hwnd] := true
+            try WinSetAlwaysOnTop(1, hwnd)
+            ShowOSD("WTM Exclude (floating)")
+        }
+        this.RebuildOrder()
+        this.AutoTile()
+    }
+
+    static _OrderIndex(hwnd) {
+        for i, h in this.TileOrder
+            if (h = hwnd)
+                return i
+        return 0
+    }
+
+; Pick nearest neighbor in direction (L/R/U/D) using window centers.
+    static _PickNeighbor(hwnd, dir) {
+        if !WinExist(hwnd)
+            return 0
+        try WinGetPos(&cx, &cy, &cw, &ch, hwnd)
+        catch
+            return 0
+        ccx := cx + cw/2, ccy := cy + ch/2
+        best := 0, bestDist := 1.0e18
+        for h in this.TileOrder {
+            if (h = hwnd)
+                continue
+            try WinGetPos(&x, &y, &w, &h2, h)
+            catch
+                continue
+            tx := x + w/2, ty := y + h2/2
+            dx := tx - ccx, dy := ty - ccy
+
+            ; Direction filter: skip if neighbor is not on the requested side
+            skip := false
+            if      (dir = "L" && dx >= 0)
+                skip := true
+            else if (dir = "R" && dx <= 0)
+                skip := true
+            else if (dir = "U" && dy >= 0)
+                skip := true
+            else if (dir = "D" && dy <= 0)
+                skip := true
+            if skip
+                continue
+
+            dist := dx*dx + dy*dy
+            if (dist < bestDist) {
+                bestDist := dist
+                best := h
+            }
+        }
+        return best
+    }
+
+    static CreateBorder() {
+        this.DestroyBorder()
+        Loop 4 {
+            g := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x20 -DPIScale")
+            g.BackColor := WTM_BorderFocusColor
+            g.Show("NoActivate x-1000 y-1000 w10 h10")
+            WinSetTransparent(WTM_BorderOpacity, g.Hwnd)
+            this.BorderGuis.Push(g)
+        }
+    }
+
+    static DestroyBorder() {
+        for g in this.BorderGuis
+            try g.Destroy()
+        this.BorderGuis := []
+    }
+
+    static RefreshBorder() {
+        if (this.BorderGuis.Length != 4)
+            return
+        h := this.FocusHwnd
+        if !h || !WinExist(h) {
+            for g in this.BorderGuis
+                try WinMove(-2000, -2000, 1, 1, g.Hwnd)
+            return
+        }
+        if !GetWindowVisualRect(h, &x, &y, &w, &ht)
+            return
+        t  := Max(2, WTM_BorderThickness)
+        o  := WTM_BorderOffset
+        x -= o, y -= o, w += 2*o, ht += 2*o
+        try {
+            WinMove(x,        y,         w,  t, this.BorderGuis[1].Hwnd)
+            WinMove(x,        y+ht-t,    w,  t, this.BorderGuis[2].Hwnd)
+            WinMove(x,        y,         t, ht, this.BorderGuis[3].Hwnd)
+            WinMove(x+w-t,    y,         t, ht, this.BorderGuis[4].Hwnd)
+        }
+    }
+}
+
+; ---- External eight-direction button scripts ----
 #Include "*i %A_ScriptDir%\Buttons\Top.ahk"
 #Include "*i %A_ScriptDir%\Buttons\TopRight.ahk"
 #Include "*i %A_ScriptDir%\Buttons\Right.ahk"
