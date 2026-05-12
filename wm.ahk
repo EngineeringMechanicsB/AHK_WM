@@ -30,6 +30,14 @@ global Border_Drag_Offset, Border_Drag_OffsetTop, Border_Drag_Transparent
 global Border_Pin_Thickness, Border_Pin_Offset, Border_Pin_OffsetTop, Border_Pin_Transparent
 global WTM_BorderFocusColor, WTM_BorderUnfocusColor
 global WTM_BorderThickness, WTM_BorderOffset, WTM_BorderOpacity, WTM_SizeStep
+global WTM_Gap   ; 平铺窗口之间的间隙(像素)
+
+; 由 PlaceWin() 读取的临时间隙(仅 WTM 模式启用时设置, 普通 SmartTile 期间为 0)
+global CurrentTileGap := 0
+
+; 模块级 GUI 句柄, 便于在切换桌面时统一销毁
+global HelpGuiObj    := ""
+global PowerMenuObj  := ""
 
 global ConfigDir  := EnvGet("USERPROFILE") . "\.config\AHK_WM"
 global ConfigFile := ConfigDir . "\wm_config.ini"
@@ -47,23 +55,28 @@ Pie_Config := Map(
 )
 
 ; ---- Built-in themes ----
+; 每个主题新增 WTM_BorderFocusColor / WTM_BorderUnfocusColor 两个键, 并补充若干主流配色
 global Themes := Map(
-    "nord",             Map("Color_Bg","2E3440","Color_Text","D8DEE9","Color_Active","88C0D0","Color_Task","A3BE8C","Border_Drag_Color","88C0D0","Border_Pin_Color","BF616A","PM_Bg","3B4252","PM_BtnShutdown","BF616A","PM_BtnSleep","5E81AC","PM_BtnReboot","D08770"),
-    "tokyonight",       Map("Color_Bg","1A1B26","Color_Text","C0CAF5","Color_Active","7AA2F7","Color_Task","9ECE6A","Border_Drag_Color","7AA2F7","Border_Pin_Color","F7768E","PM_Bg","24283B","PM_BtnShutdown","F7768E","PM_BtnSleep","7AA2F7","PM_BtnReboot","E0AF68"),
-    "dracula",          Map("Color_Bg","282A36","Color_Text","F8F8F2","Color_Active","BD93F9","Color_Task","50FA7B","Border_Drag_Color","8BE9FD","Border_Pin_Color","FF5555","PM_Bg","44475A","PM_BtnShutdown","FF5555","PM_BtnSleep","6272A4","PM_BtnReboot","FFB86C"),
-    "gruvbox",          Map("Color_Bg","282828","Color_Text","EBDBB2","Color_Active","FABD2F","Color_Task","B8BB26","Border_Drag_Color","83A598","Border_Pin_Color","FB4934","PM_Bg","3C3836","PM_BtnShutdown","FB4934","PM_BtnSleep","458588","PM_BtnReboot","FE8019"),
-    "monokai",          Map("Color_Bg","272822","Color_Text","F8F8F2","Color_Active","A6E22E","Color_Task","FD971F","Border_Drag_Color","66D9EF","Border_Pin_Color","F92672","PM_Bg","3E3D32","PM_BtnShutdown","F92672","PM_BtnSleep","66D9EF","PM_BtnReboot","FD971F"),
-    "solarized-dark",   Map("Color_Bg","002B36","Color_Text","839496","Color_Active","268BD2","Color_Task","859900","Border_Drag_Color","2AA198","Border_Pin_Color","DC322F","PM_Bg","073642","PM_BtnShutdown","DC322F","PM_BtnSleep","268BD2","PM_BtnReboot","CB4B16"),
-    "solarized-light",  Map("Color_Bg","FDF6E3","Color_Text","657B83","Color_Active","268BD2","Color_Task","859900","Border_Drag_Color","2AA198","Border_Pin_Color","DC322F","PM_Bg","EEE8D5","PM_BtnShutdown","DC322F","PM_BtnSleep","268BD2","PM_BtnReboot","CB4B16"),
-    "catppuccin-mocha", Map("Color_Bg","1E1E2E","Color_Text","CDD6F4","Color_Active","CBA6F7","Color_Task","A6E3A1","Border_Drag_Color","89B4FA","Border_Pin_Color","F38BA8","PM_Bg","313244","PM_BtnShutdown","F38BA8","PM_BtnSleep","89B4FA","PM_BtnReboot","FAB387"),
-    "catppuccin-latte", Map("Color_Bg","EFF1F5","Color_Text","4C4F69","Color_Active","8839EF","Color_Task","40A02B","Border_Drag_Color","1E66F5","Border_Pin_Color","D20F39","PM_Bg","E6E9EF","PM_BtnShutdown","D20F39","PM_BtnSleep","1E66F5","PM_BtnReboot","FE640B"),
-    "onedark",          Map("Color_Bg","282C34","Color_Text","ABB2BF","Color_Active","61AFEF","Color_Task","98C379","Border_Drag_Color","56B6C2","Border_Pin_Color","E06C75","PM_Bg","3E4452","PM_BtnShutdown","E06C75","PM_BtnSleep","61AFEF","PM_BtnReboot","D19A66"),
-    "ayu-dark",         Map("Color_Bg","0A0E14","Color_Text","B3B1AD","Color_Active","FFB454","Color_Task","C2D94C","Border_Drag_Color","59C2FF","Border_Pin_Color","F07178","PM_Bg","131721","PM_BtnShutdown","F07178","PM_BtnSleep","59C2FF","PM_BtnReboot","FF8F40"),
-    "github-dark",      Map("Color_Bg","0D1117","Color_Text","C9D1D9","Color_Active","58A6FF","Color_Task","3FB950","Border_Drag_Color","58A6FF","Border_Pin_Color","F85149","PM_Bg","161B22","PM_BtnShutdown","F85149","PM_BtnSleep","58A6FF","PM_BtnReboot","D29922"),
-    "rose-pine",        Map("Color_Bg","191724","Color_Text","E0DEF4","Color_Active","C4A7E7","Color_Task","9CCFD8","Border_Drag_Color","31748F","Border_Pin_Color","EB6F92","PM_Bg","1F1D2E","PM_BtnShutdown","EB6F92","PM_BtnSleep","31748F","PM_BtnReboot","F6C177"),
-    "everforest",       Map("Color_Bg","2D353B","Color_Text","D3C6AA","Color_Active","A7C080","Color_Task","DBBC7F","Border_Drag_Color","7FBBB3","Border_Pin_Color","E67E80","PM_Bg","374145","PM_BtnShutdown","E67E80","PM_BtnSleep","7FBBB3","PM_BtnReboot","E69875"),
-    "kanagawa",         Map("Color_Bg","1F1F28","Color_Text","DCD7BA","Color_Active","7E9CD8","Color_Task","98BB6C","Border_Drag_Color","7FB4CA","Border_Pin_Color","E46876","PM_Bg","2A2A37","PM_BtnShutdown","E46876","PM_BtnSleep","7E9CD8","PM_BtnReboot","FFA066"),
-    "material-deep",    Map("Color_Bg","263238","Color_Text","EEFFFF","Color_Active","82AAFF","Color_Task","C3E88D","Border_Drag_Color","89DDFF","Border_Pin_Color","F07178","PM_Bg","37474F","PM_BtnShutdown","F07178","PM_BtnSleep","82AAFF","PM_BtnReboot","F78C6C")
+    "nord",             Map("Color_Bg","2E3440","Color_Text","D8DEE9","Color_Active","88C0D0","Color_Task","A3BE8C","Border_Drag_Color","88C0D0","Border_Pin_Color","BF616A","PM_Bg","3B4252","PM_BtnShutdown","BF616A","PM_BtnSleep","5E81AC","PM_BtnReboot","D08770","WTM_BorderFocusColor","88C0D0","WTM_BorderUnfocusColor","4C566A"),
+    "tokyonight",       Map("Color_Bg","1A1B26","Color_Text","C0CAF5","Color_Active","7AA2F7","Color_Task","9ECE6A","Border_Drag_Color","7AA2F7","Border_Pin_Color","F7768E","PM_Bg","24283B","PM_BtnShutdown","F7768E","PM_BtnSleep","7AA2F7","PM_BtnReboot","E0AF68","WTM_BorderFocusColor","7AA2F7","WTM_BorderUnfocusColor","414868"),
+    "dracula",          Map("Color_Bg","282A36","Color_Text","F8F8F2","Color_Active","BD93F9","Color_Task","50FA7B","Border_Drag_Color","8BE9FD","Border_Pin_Color","FF5555","PM_Bg","44475A","PM_BtnShutdown","FF5555","PM_BtnSleep","6272A4","PM_BtnReboot","FFB86C","WTM_BorderFocusColor","BD93F9","WTM_BorderUnfocusColor","44475A"),
+    "gruvbox",          Map("Color_Bg","282828","Color_Text","EBDBB2","Color_Active","FABD2F","Color_Task","B8BB26","Border_Drag_Color","83A598","Border_Pin_Color","FB4934","PM_Bg","3C3836","PM_BtnShutdown","FB4934","PM_BtnSleep","458588","PM_BtnReboot","FE8019","WTM_BorderFocusColor","FABD2F","WTM_BorderUnfocusColor","504945"),
+    "monokai",          Map("Color_Bg","272822","Color_Text","F8F8F2","Color_Active","A6E22E","Color_Task","FD971F","Border_Drag_Color","66D9EF","Border_Pin_Color","F92672","PM_Bg","3E3D32","PM_BtnShutdown","F92672","PM_BtnSleep","66D9EF","PM_BtnReboot","FD971F","WTM_BorderFocusColor","A6E22E","WTM_BorderUnfocusColor","49483E"),
+    "solarized-dark",   Map("Color_Bg","002B36","Color_Text","839496","Color_Active","268BD2","Color_Task","859900","Border_Drag_Color","2AA198","Border_Pin_Color","DC322F","PM_Bg","073642","PM_BtnShutdown","DC322F","PM_BtnSleep","268BD2","PM_BtnReboot","CB4B16","WTM_BorderFocusColor","268BD2","WTM_BorderUnfocusColor","586E75"),
+    "solarized-light",  Map("Color_Bg","FDF6E3","Color_Text","657B83","Color_Active","268BD2","Color_Task","859900","Border_Drag_Color","2AA198","Border_Pin_Color","DC322F","PM_Bg","EEE8D5","PM_BtnShutdown","DC322F","PM_BtnSleep","268BD2","PM_BtnReboot","CB4B16","WTM_BorderFocusColor","268BD2","WTM_BorderUnfocusColor","93A1A1"),
+    "catppuccin-mocha", Map("Color_Bg","1E1E2E","Color_Text","CDD6F4","Color_Active","CBA6F7","Color_Task","A6E3A1","Border_Drag_Color","89B4FA","Border_Pin_Color","F38BA8","PM_Bg","313244","PM_BtnShutdown","F38BA8","PM_BtnSleep","89B4FA","PM_BtnReboot","FAB387","WTM_BorderFocusColor","CBA6F7","WTM_BorderUnfocusColor","45475A"),
+    "catppuccin-latte", Map("Color_Bg","EFF1F5","Color_Text","4C4F69","Color_Active","8839EF","Color_Task","40A02B","Border_Drag_Color","1E66F5","Border_Pin_Color","D20F39","PM_Bg","E6E9EF","PM_BtnShutdown","D20F39","PM_BtnSleep","1E66F5","PM_BtnReboot","FE640B","WTM_BorderFocusColor","8839EF","WTM_BorderUnfocusColor","ACB0BE"),
+    "onedark",          Map("Color_Bg","282C34","Color_Text","ABB2BF","Color_Active","61AFEF","Color_Task","98C379","Border_Drag_Color","56B6C2","Border_Pin_Color","E06C75","PM_Bg","3E4452","PM_BtnShutdown","E06C75","PM_BtnSleep","61AFEF","PM_BtnReboot","D19A66","WTM_BorderFocusColor","61AFEF","WTM_BorderUnfocusColor","4B5263"),
+    "ayu-dark",         Map("Color_Bg","0A0E14","Color_Text","B3B1AD","Color_Active","FFB454","Color_Task","C2D94C","Border_Drag_Color","59C2FF","Border_Pin_Color","F07178","PM_Bg","131721","PM_BtnShutdown","F07178","PM_BtnSleep","59C2FF","PM_BtnReboot","FF8F40","WTM_BorderFocusColor","FFB454","WTM_BorderUnfocusColor","3D424D"),
+    "github-dark",      Map("Color_Bg","0D1117","Color_Text","C9D1D9","Color_Active","58A6FF","Color_Task","3FB950","Border_Drag_Color","58A6FF","Border_Pin_Color","F85149","PM_Bg","161B22","PM_BtnShutdown","F85149","PM_BtnSleep","58A6FF","PM_BtnReboot","D29922","WTM_BorderFocusColor","58A6FF","WTM_BorderUnfocusColor","30363D"),
+    "rose-pine",        Map("Color_Bg","191724","Color_Text","E0DEF4","Color_Active","C4A7E7","Color_Task","9CCFD8","Border_Drag_Color","31748F","Border_Pin_Color","EB6F92","PM_Bg","1F1D2E","PM_BtnShutdown","EB6F92","PM_BtnSleep","31748F","PM_BtnReboot","F6C177","WTM_BorderFocusColor","C4A7E7","WTM_BorderUnfocusColor","26233A"),
+    "everforest",       Map("Color_Bg","2D353B","Color_Text","D3C6AA","Color_Active","A7C080","Color_Task","DBBC7F","Border_Drag_Color","7FBBB3","Border_Pin_Color","E67E80","PM_Bg","374145","PM_BtnShutdown","E67E80","PM_BtnSleep","7FBBB3","PM_BtnReboot","E69875","WTM_BorderFocusColor","A7C080","WTM_BorderUnfocusColor","4F585E"),
+    "kanagawa",         Map("Color_Bg","1F1F28","Color_Text","DCD7BA","Color_Active","7E9CD8","Color_Task","98BB6C","Border_Drag_Color","7FB4CA","Border_Pin_Color","E46876","PM_Bg","2A2A37","PM_BtnShutdown","E46876","PM_BtnSleep","7E9CD8","PM_BtnReboot","FFA066","WTM_BorderFocusColor","7E9CD8","WTM_BorderUnfocusColor","363646"),
+    "material-deep",    Map("Color_Bg","263238","Color_Text","EEFFFF","Color_Active","82AAFF","Color_Task","C3E88D","Border_Drag_Color","89DDFF","Border_Pin_Color","F07178","PM_Bg","37474F","PM_BtnShutdown","F07178","PM_BtnSleep","82AAFF","PM_BtnReboot","F78C6C","WTM_BorderFocusColor","82AAFF","WTM_BorderUnfocusColor","546E7A"),
+    "nightfox",         Map("Color_Bg","192330","Color_Text","CDCECF","Color_Active","719CD6","Color_Task","81B29A","Border_Drag_Color","719CD6","Border_Pin_Color","C94F6D","PM_Bg","212E3F","PM_BtnShutdown","C94F6D","PM_BtnSleep","719CD6","PM_BtnReboot","F4A261","WTM_BorderFocusColor","719CD6","WTM_BorderUnfocusColor","39506D"),
+    "palenight",        Map("Color_Bg","292D3E","Color_Text","A6ACCD","Color_Active","82AAFF","Color_Task","C3E88D","Border_Drag_Color","82AAFF","Border_Pin_Color","FF5370","PM_Bg","343A4F","PM_BtnShutdown","FF5370","PM_BtnSleep","82AAFF","PM_BtnReboot","F78C6C","WTM_BorderFocusColor","82AAFF","WTM_BorderUnfocusColor","444A60"),
+    "horizon",          Map("Color_Bg","1C1E26","Color_Text","CBCED0","Color_Active","E95678","Color_Task","29D398","Border_Drag_Color","26BBD9","Border_Pin_Color","E95678","PM_Bg","232530","PM_BtnShutdown","E95678","PM_BtnSleep","26BBD9","PM_BtnReboot","FAB795","WTM_BorderFocusColor","E95678","WTM_BorderUnfocusColor","3D4055"),
+    "oxocarbon",        Map("Color_Bg","161616","Color_Text","F2F4F8","Color_Active","82CFFF","Color_Task","42BE65","Border_Drag_Color","82CFFF","Border_Pin_Color","FF7EB6","PM_Bg","262626","PM_BtnShutdown","FF7EB6","PM_BtnSleep","82CFFF","PM_BtnReboot","BE95FF","WTM_BorderFocusColor","82CFFF","WTM_BorderUnfocusColor","393939")
 )
 
 ; ---- Scaling helpers: 0-100 -> real units ----
@@ -73,28 +86,25 @@ GetPrimaryDim(&pw, &ph) {
     MonitorGetWorkArea(MonitorGetPrimary(), &l, &t, &r, &b)
     pw := r - l, ph := b - t
 }
-Pct2PxH(p)   { 
-	GetPrimaryDim(&pw, &ph)
-	return Round(p * ph / 100)
+Pct2PxH(p)   {
+    GetPrimaryDim(&pw, &ph)
+    return Round(p * ph / 100)
 }
 Pct2PxW(p)   {
-	GetPrimaryDim(&pw, &ph)
-	return Round(p * pw / 100)
+    GetPrimaryDim(&pw, &ph)
+    return Round(p * pw / 100)
 }
 Pct2PxMin(p) {
-	GetPrimaryDim(&pw, &ph)
-	return Round(p * Min(pw, ph) / 100)
+    GetPrimaryDim(&pw, &ph)
+    return Round(p * Min(pw, ph) / 100)
 }
 Pct2Border(p) => Round(Max(0, Min(100, p+0)) * 20 / 100)
 
 ; ---- Hotkey notation conversion ----
-;  Natural form in config/help : "Alt+Shift+D" / "Ctrl+``" / "Alt+WheelUp"
-;  AHK form used internally    : "!+d" / "^``" / "!WheelUp"
 NormalizeHotkey(s) {
     s := Trim(s)
     if (s = "")
         return ""
-    ; Already AHK form? leave as-is
     if RegExMatch(s, "^[\!\^\+\#<>\*~\$]")
         return s
     mods := "", key := ""
@@ -140,7 +150,8 @@ PrettifyHotkey(s) {
 }
 
 ; ---- Initialization ----
-global WelcomeFlag := ConfigDir . "\welcome_shown.flag"
+; 用 config 文件是否存在替代旧的 welcome_shown.flag 文件
+isFirstRun := !FileExist(ConfigFile)
 
 LoadOrInitConfig()
 
@@ -155,10 +166,8 @@ if !DirExist(Path_Button)
 if InitializeButtons()
     Reload()
 
-if !FileExist(WelcomeFlag) {
-    try FileAppend("shown", WelcomeFlag, "UTF-8")
+if isFirstRun
     WelcomeScreen.Show()
-}
 
 CreateStatusBar()
 UpdateStatusBar()
@@ -168,13 +177,12 @@ SetupTrayIcon()
 OnClipboardChange(OnClipboardChanged)
 RegisterAllHotkeys()
 
-; ---- Hotkey registration (all from config) ----
+; ---- Hotkey registration ----
 RegisterAllHotkeys() {
     global HK
 
     Hotkey(HK["Help"], ShowHelpGui)
 
-    ; 9 virtual desktops: Alt+N switch / Alt+Shift+N move / Ctrl+Alt+N move&switch
     pSwitch := HK["DesktopSwitchPrefix"]
     pMove   := HK["DesktopMovePrefix"]
     pBoth   := HK["DesktopMoveSwitchPrefix"]
@@ -194,7 +202,6 @@ RegisterAllHotkeys() {
     Hotkey(HK["CloseWindow"],    CloseWindowUnderMouse)
     Hotkey(HK["CloseWindowAlt"], CloseWindowUnderMouse)
     Hotkey(HK["ToggleMaximize"], ToggleMaximizeUnderMouse)
-    ; Alt+T is context-sensitive: WTM-mode -> pin-exclude; otherwise -> ToggleOnTop
     Hotkey(HK["ToggleTop"],      ToggleTopDispatch)
     Hotkey(HK["HideWindow"],     HideUnderMouse)
 
@@ -272,7 +279,8 @@ LoadOrInitConfig() {
         [General]
         ; custom / nord / tokyonight / dracula / gruvbox / monokai
         ; / solarized-dark / solarized-light / catppuccin-mocha / catppuccin-latte
-        ; / onedark / ayu-dark / github-dark / rose-pine / everforest / kanagawa / material-deep
+        ; / onedark / ayu-dark / github-dark / rose-pine / everforest / kanagawa
+        ; / material-deep / nightfox / palenight / horizon / oxocarbon
         ActiveTheme=custom
 
         [Colors]
@@ -338,31 +346,26 @@ LoadOrInitConfig() {
         TaskTimes=1_1200_1300;2_1200_1300;3_1200_1300;4_1200_1300;5_1200_1300;6_1200_1300;7_1200_1300;2_1700_1745;3_0900_0920;
 
         [WTM]
-        ; Window Tile Manager mode (hyprland-like). Border / auto-tile params.
         BorderFocusColor=A020F0
         BorderUnfocusColor=555555
         BorderThickness=8
         BorderOffset=0
         BorderOpacity=80
         SizeStep=3
+        Gap=10
 
         ;--------------------------------------------------------------------------
         ; Hotkeys - natural language:  Alt / Shift / Ctrl / Win  joined by '+'
-        ; Examples:  Alt+Shift+D  /  Ctrl+``  /  Alt+WheelUp
-        ; For 1-9 desktop hotkeys, only the modifier prefix is configured here;
-        ; the trailing digit (1-9) is appended automatically by the script.
         ;--------------------------------------------------------------------------
         [Hotkeys]
         Help=Alt+/
         Exit=Alt+F12
         Reload=Alt+R
 
-        ; Desktop prefixes:  <prefix> + digit (1-9)
         DesktopSwitchPrefix=Alt
         DesktopMovePrefix=Alt+Shift
         DesktopMoveSwitchPrefix=Ctrl+Alt
 
-        ; Window management
         TileSmart=Alt+D
         GatherAll=Alt+Shift+G
         TogglePin=Ctrl+Alt+T
@@ -370,7 +373,6 @@ LoadOrInitConfig() {
         SaveLayout=Alt+Shift+S
         RestoreLayout=Alt+Shift+R
 
-        ; Under-cursor actions
         CloseWindow=Alt+Q
         CloseWindowAlt=Alt+MButton
         ToggleMaximize=Alt+F
@@ -379,26 +381,21 @@ LoadOrInitConfig() {
         TransparencyUp=Alt+WheelUp
         TransparencyDown=Alt+WheelDown
 
-        ; Window snapping
         SnapLeft=Alt+Left
         SnapRight=Alt+Right
         SnapUp=Alt+Up
         SnapDown=Alt+Down
 
-        ; Launchers
         LaunchTerminal=Alt+Enter
         EditFile=Alt+V
         PowerMenu=Alt+X
         ClipboardHistory=Ctrl+``
 
-        ; Mouse drag
         DragMove=Alt+LButton
         DragResize=Alt+RButton
 
-        ; Pie menu (raw AHK combo retained)
         PieMenuTrigger=~Space & RButton
 
-        ; WTM mode
         WTMToggle=Alt+Shift+D
         WTMFocusLeft=Alt+H
         WTMFocusDown=Alt+J
@@ -464,6 +461,7 @@ LoadOrInitConfig() {
     WTM_BorderOffset       := Pct2Border(Integer(IniRead(ConfigFile, "WTM", "BorderOffset",    "0")))
     WTM_BorderOpacity      := Pct2Alpha(Integer(IniRead(ConfigFile, "WTM", "BorderOpacity",   "80")))
     WTM_SizeStep           := Integer(IniRead(ConfigFile, "WTM", "SizeStep", "3"))
+    WTM_Gap                := Max(0, Integer(IniRead(ConfigFile, "WTM", "Gap", "10")))
 
     bDirTemp        := IniRead(ConfigFile, "Paths", "ButtonDir",  "Buttons")
     Path_Button     := (bDirTemp ~= "^[a-zA-Z]:") ? bDirTemp : (A_ScriptDir . "\" . bDirTemp)
@@ -512,7 +510,6 @@ LoadOrInitConfig() {
     )
     for k in hkKeys {
         raw := IniRead(ConfigFile, "Hotkeys", k, hkDefaults[k])
-        ; Desktop prefixes need modifier-only output (no trailing key)
         if InStr(k, "Prefix") {
             HK[k] := NormalizeModifiersOnly(raw)
         } else {
@@ -530,7 +527,6 @@ LoadOrInitConfig() {
         Bar_MonitorIdx := 1
 }
 
-; Modifier-only normalizer: "Alt+Shift" -> "!+", "Ctrl+Alt" -> "^!"
 NormalizeModifiersOnly(s) {
     s := Trim(s)
     if (s = "")
@@ -549,7 +545,7 @@ NormalizeModifiersOnly(s) {
     return out
 }
 
-; ---- DWM visible rect (compensates invisible border) ----
+; ---- DWM visible rect ----
 GetWindowVisualRect(hwnd, &x, &y, &w, &h) {
     rect := Buffer(16, 0)
     hr := DllCall("dwmapi\DwmGetWindowAttribute"
@@ -584,26 +580,57 @@ GetMonitorIndex(hwnd := 0) {
     return GetMonitorIndexAtPoint(wx + ww/2, wy + wh/2)
 }
 
+; ---- 销毁脚本自身的瞬时 GUI (切换桌面前调用, 防止它们被错误地最小化) ----
+DestroyTransientGuis() {
+    global HelpGuiObj, PowerMenuObj
+    try {
+        if IsObject(HelpGuiObj) {
+            HelpGuiObj.Destroy()
+            HelpGuiObj := ""
+        }
+    }
+    try {
+        if IsObject(PowerMenuObj) {
+            PowerMenuObj.Destroy()
+            PowerMenuObj := ""
+        }
+    }
+    if PieMenu.IsActive {
+        PieMenu.IsActive := false
+        try SetTimer(PieMenu.TimerFn, 0)
+        try {
+            if IsObject(PieMenu.GuiObj)
+                PieMenu.GuiObj.Destroy()
+        }
+    }
+    try {
+        if IsObject(OSD.GuiObj) {
+            OSD.GuiObj.Destroy()
+            OSD.GuiObj := 0
+        }
+    }
+    try DragBorder.Destroy()
+}
+
 ; ---- Help GUI ----
 ShowHelpGui(*) {
-    static helpGui := ""
-    global HK
+    global HelpGuiObj, HK
 
     CloseWatcher() {
-        if !IsObject(helpGui) {
+        if !IsObject(HelpGuiObj) {
             SetTimer CloseWatcher, 0
             return
         }
         if GetKeyState("Escape", "P") || GetKeyState("LButton", "P") {
-            try helpGui.Destroy()
-            helpGui := ""
+            try HelpGuiObj.Destroy()
+            HelpGuiObj := ""
             SetTimer CloseWatcher, 0
         }
     }
 
-    if IsObject(helpGui) {
-        helpGui.Destroy()
-        helpGui := ""
+    if IsObject(HelpGuiObj) {
+        HelpGuiObj.Destroy()
+        HelpGuiObj := ""
         return
     }
 
@@ -659,10 +686,11 @@ ShowHelpGui(*) {
     }
 
     helpGui.Show("Center")
+    HelpGuiObj := helpGui
     SetTimer CloseWatcher, 50
 }
 
-; ---- Welcome screen (first run, centered on primary monitor) ----
+; ---- Welcome screen ----
 class WelcomeScreen {
     static GuiObj := ""
 
@@ -816,7 +844,7 @@ class OSD {
 }
 ShowOSD(text) => OSD.Show(text)
 
-; ---- Drag border (overlay during move/resize) ----
+; ---- Drag border ----
 class DragBorder {
     static Guis := []
 
@@ -859,7 +887,7 @@ class DragBorder {
     }
 }
 
-; ---- Pinned-window persistent border ----
+; ---- Pinned border ----
 class PinBorder {
     static Map     := Map()
     static TimerFn := ObjBindMethod(PinBorder, "Tick")
@@ -915,7 +943,6 @@ class PinBorder {
                 continue
             }
             try {
-                ; HWND_TOPMOST=-1, SWP_NOACTIVATE=0x10, SWP_SHOWWINDOW=0x40
                 DllCall("SetWindowPos"
                     , "Ptr", g.Hwnd, "Ptr", -1
                     , "Int", x, "Int", y - t - gap
@@ -1091,6 +1118,13 @@ SwitchDesktop(target, *) {
         ShowOSD("Desktop " . target)
         return
     }
+
+    ; 切换前: 先销毁脚本自身的瞬时 GUI 与 WTM 边框, 避免被错误地最小化
+    wasWTMActive := WTM.Active
+    if wasWTMActive
+        WTM.DestroyAllBorders()
+    DestroyTransientGuis()
+
     Desktops[CurrentDesktop] := GetVisibleWindows()
     for hwnd in Desktops[CurrentDesktop] {
         if !AlwaysVisible.Has(hwnd)
@@ -1105,7 +1139,10 @@ SwitchDesktop(target, *) {
     UpdateStatusBar()
     A_IconTip := "WM Script - Desktop " . CurrentDesktop
     ShowOSD("Desktop " . CurrentDesktop)
-    WTM.OnDesktopSwitched()
+
+    ; 切换后: 重建 WTM 边框
+    if wasWTMActive
+        WTM.OnDesktopSwitched()
 }
 
 MoveWindowToDesktop(target, *) {
@@ -1358,6 +1395,10 @@ GatherAllToCurrent(*) {
             winClass := WinGetClass(hwnd)
             if (winClass == "Progman" || winClass == "Shell_TrayWnd")
                 continue
+            ; 跳过脚本自身的 ToolWindow
+            ex := WinGetExStyle(hwnd)
+            if (ex & 0x80)
+                continue
             WinRestore(hwnd)
             Desktops[CurrentDesktop].Push(hwnd)
             count++
@@ -1367,7 +1408,7 @@ GatherAllToCurrent(*) {
     WTM.OnWindowChanged()
 }
 
-; ---- Smart tiling (vertical / standard / ultrawide) ----
+; ---- Smart tiling ----
 TileCurrentMonitor(*) {
     global Bar_Height, Bar_Visible, Bar_MonitorIdx
 
@@ -1406,13 +1447,18 @@ TileCurrentMonitor(*) {
 }
 
 PlaceWin(hwnd, x, y, w, h) {
+    global CurrentTileGap
+    ; 仅当 CurrentTileGap > 0 (WTM 模式平铺中) 才收缩窗口, 在窗口四周制造统一间隙
+    if (CurrentTileGap > 0) {
+        half := CurrentTileGap / 2
+        x += half, y += half, w -= CurrentTileGap, h -= CurrentTileGap
+    }
     try {
         WinRestore(hwnd)
-        WinMove(Round(x), Round(y), Round(w), Round(h), hwnd)
+        WinMove(Round(x), Round(y), Round(Max(50, w)), Round(Max(50, h)), hwnd)
     }
 }
 
-; Zero-gap grid: auto rows/cols, last row stretches to fill width
 TileGrid(wins, X, Y, W, H, isVertical := false) {
     n := wins.Length
     if (n == 0)
@@ -1451,7 +1497,6 @@ TileGrid(wins, X, Y, W, H, isVertical := false) {
 
 TileNormal(wins, WL, WT, W, H) {
     n := wins.Length
-    ; Special-case layouts: 3 windows (left-big + right-split) / 5 windows (center + 4 corners)
     switch n {
         case 3:
             PlaceWin(wins[1], WL,        WT,        W/2, H)
@@ -1687,10 +1732,10 @@ OpenWithVim(*) {
 }
 
 ShowPowerMenu(*) {
-    static pGui := ""
-    if IsObject(pGui) {
-        pGui.Destroy()
-        pGui := ""
+    global PowerMenuObj
+    if IsObject(PowerMenuObj) {
+        PowerMenuObj.Destroy()
+        PowerMenuObj := ""
         return
     }
     pGui := Gui("+AlwaysOnTop -Caption +ToolWindow +Owner")
@@ -1708,8 +1753,9 @@ ShowPowerMenu(*) {
     AddBtn(190, 70, "Sleep"
          , (*) => DllCall("PowrProf\SetSuspendState","Int",0,"Int",0,"Int",0), PM_BtnSleep)
     AddBtn(330, 70, "Reboot",   (*) => Shutdown(2), PM_BtnReboot)
-    pGui.OnEvent("Escape", (*) => (pGui.Destroy(), pGui := ""))
+    pGui.OnEvent("Escape", (*) => (pGui.Destroy(), PowerMenuObj := ""))
     pGui.Show("w500 h160")
+    PowerMenuObj := pGui
 }
 
 ; ---- Theme switching ----
@@ -1727,6 +1773,7 @@ ExportThemeToCustom(*) {
         return
     }
     palette := Themes[ActiveTheme]
+    ; [Colors] section keys
     nameMap := Map(
         "Color_Bg",          "Background",
         "Color_Text",        "Text",
@@ -1739,9 +1786,16 @@ ExportThemeToCustom(*) {
         "PM_BtnSleep",       "PowerBtnSleep",
         "PM_BtnReboot",      "PowerBtnReboot"
     )
+    ; [WTM] section keys (颜色相关)
+    wtmMap := Map(
+        "WTM_BorderFocusColor",   "BorderFocusColor",
+        "WTM_BorderUnfocusColor", "BorderUnfocusColor"
+    )
     for key, val in palette {
-        ini := nameMap.Has(key) ? nameMap[key] : key
-        IniWrite(val, ConfigFile, "Colors", ini)
+        if nameMap.Has(key)
+            IniWrite(val, ConfigFile, "Colors", nameMap[key])
+        else if wtmMap.Has(key)
+            IniWrite(val, ConfigFile, "WTM", wtmMap[key])
     }
     IniWrite("custom", ConfigFile, "General", "ActiveTheme")
     ShowOSD("Exported -> custom")
@@ -1778,6 +1832,11 @@ GetVisibleWindows() {
                 continue
             winClass := WinGetClass(hwnd)
             if (winClass == "Progman" || winClass == "Shell_TrayWnd")
+                continue
+            ; 跳过脚本自身的 ToolWindow (Help / 边框 / OSD / PieMenu / PinBorder ...)
+            ; 这样切换桌面时它们不会被误最小化, 并且也不会污染 Desktops[] 列表
+            ex := WinGetExStyle(hwnd)
+            if (ex & 0x80)
                 continue
             if (WinGetMinMax(hwnd) != -1)
                 windows.Push(hwnd)
@@ -1856,10 +1915,8 @@ SetupTrayIcon() {
     }
 
     A_TrayMenu.Add()
-    A_TrayMenu.Add("Show Welcome", (*) => (
-            FileExist(WelcomeFlag) ? FileDelete(WelcomeFlag) : "",
-            WelcomeScreen.Show()
-        ))
+    ; 直接展示欢迎页面 (不再依赖 flag 文件)
+    A_TrayMenu.Add("Show Welcome",        (*) => WelcomeScreen.Show())
     A_TrayMenu.Add("Open Config Folder",  (*) => Run('explorer.exe "' . ConfigDir . '"'))
     A_TrayMenu.Add("Reload Script",       (*) => Reload())
     A_TrayMenu.Add("Restore && Exit",     RestoreAndExit)
@@ -1940,19 +1997,20 @@ DragResizeHandler(*) {
 
 ; ==============================================================================
 ;  WTM - Windows Tile Manager (hyprland-like dynamic tiling mode)
-;     - Toggle on/off (WTMToggle)
-;     - Stable TileOrder: existing windows keep slot; new ones append;
-;       gone/excluded ones drop out -> manual moves don't reshuffle layout
-;     - HJKL focus / Shift+HJKL swap
-;     - Alt+T excludes the focused / under-cursor window from tiling
-;     - Auto re-tile on add / remove / size change
+;     - 每个被平铺窗口都常驻显示边框: 聚焦 -> WTM_BorderFocusColor
+;                                  非聚焦 -> WTM_BorderUnfocusColor
+;     - 平铺间隙: WTM_Gap (统一间隙, 边缘与窗口之间均生效)
+;     - Alt+T (WTM 模式下): 浮动窗口, 置顶 + 顶部 bar, 排除于平铺
+;     - Alt+HJKL 切换聚焦时, 鼠标光标自动跟随到目标窗口中心
+;     - Alt+Shift+HJKL 交换槽位, 光标跟随原窗口
 ; ==============================================================================
 class WTM {
     static Active     := false
     static TileOrder  := []
     static Excluded   := Map()
     static FocusHwnd  := 0
-    static BorderGuis := []
+    static BorderMap   := Map()    ; hwnd -> [g1,g2,g3,g4]
+    static BorderState := Map()    ; hwnd -> "focus" | "unfocus"
     static _LastSig   := ""
     static TickFn     := ObjBindMethod(WTM, "Tick")
 
@@ -1964,13 +2022,15 @@ class WTM {
     }
 
     static Activate() {
-        this.Active    := true
-        this.Excluded  := Map()
-        this.TileOrder := []
-        this._LastSig  := ""
-        this.CreateBorder()
+        this.Active      := true
+        this.Excluded    := Map()
+        this.TileOrder   := []
+        this.BorderMap   := Map()
+        this.BorderState := Map()
+        this._LastSig    := ""
         this.RebuildOrder()
         this.AutoTile()
+        this.RefreshBorder()
         SetTimer(this.TickFn, 150)
         ShowOSD("WTM Mode: ON")
     }
@@ -1978,7 +2038,7 @@ class WTM {
     static Deactivate() {
         this.Active := false
         SetTimer(this.TickFn, 0)
-        this.DestroyBorder()
+        this.DestroyAllBorders()
         ShowOSD("WTM Mode: OFF")
     }
 
@@ -1988,15 +2048,16 @@ class WTM {
         this.TileOrder := []
         this.RebuildOrder()
         this.AutoTile()
+        this.RefreshBorder()
     }
 
     static OnWindowChanged() {
         if !this.Active
             return
         this.AutoTile()
+        this.RefreshBorder()
     }
 
-    ; Stable order: keep existing slots; append newcomers; drop dead/excluded.
     static RebuildOrder() {
         alive := Map()
         for hwnd in GetVisibleWindowsOnMonitor(GetMonitorIndex())
@@ -2016,7 +2077,7 @@ class WTM {
     }
 
     static AutoTile() {
-        global Bar_Height, Bar_Visible, Bar_MonitorIdx
+        global Bar_Height, Bar_Visible, Bar_MonitorIdx, CurrentTileGap, WTM_Gap
         this.RebuildOrder()
         if (this.TileOrder.Length = 0)
             return
@@ -2025,6 +2086,14 @@ class WTM {
         if (Bar_Visible && mon = Bar_MonitorIdx)
             WT += Bar_Height + 5
         W := WR - WL, H := WB - WT
+
+        ; 应用 WTM 间隙: 外侧缩 g/2, 每窗口再向内缩 g/2 -> 整体均匀间隙 = g
+        g := Max(0, WTM_Gap)
+        if (g > 0) {
+            WL += g/2, WT += g/2, W -= g, H -= g
+        }
+        CurrentTileGap := g
+
         aspect := (H != 0) ? W / H : 1
         if (H > W)
             TileVertical(this.TileOrder, WL, WT, W, H)
@@ -2032,12 +2101,14 @@ class WTM {
             TileUltrawide(this.TileOrder, WL, WT, W, H)
         else
             TileNormal(this.TileOrder, WL, WT, W, H)
+
+        CurrentTileGap := 0
     }
 
     static Tick() {
         if !this.Active
             return
-        ; Detect window add/remove/resize -> trigger auto re-tile
+        ; 检测窗口增减/尺寸变化 -> 触发自动重排
         sig := ""
         for hwnd in GetVisibleWindowsOnMonitor(GetMonitorIndex()) {
             if this.Excluded.Has(hwnd)
@@ -2050,7 +2121,6 @@ class WTM {
         if (sig != this._LastSig) {
             this._LastSig := sig
             this.AutoTile()
-            ; refresh sig after retile to avoid endless loop
             sig := ""
             for hwnd in GetVisibleWindowsOnMonitor(GetMonitorIndex()) {
                 if this.Excluded.Has(hwnd)
@@ -2062,15 +2132,24 @@ class WTM {
             }
             this._LastSig := sig
         }
-        ; Update focus border
+        ; 跟踪聚焦窗口变化, 刷新边框
         try {
             fh := WinGetID("A")
             if (fh && fh != this.FocusHwnd) {
                 this.FocusHwnd := fh
-                this.RefreshBorder()
-            } else if (fh) {
-                this.RefreshBorder()
             }
+        }
+        this.RefreshBorder()
+    }
+
+    ; 移动鼠标光标到指定窗口中心
+    static _MoveCursorToWindow(hwnd) {
+        if !hwnd || !WinExist(hwnd)
+            return
+        try {
+            if !GetWindowVisualRect(hwnd, &x, &y, &w, &h)
+                WinGetPos(&x, &y, &w, &h, hwnd)
+            DllCall("SetCursorPos", "Int", x + w//2, "Int", y + h//2)
         }
     }
 
@@ -2086,6 +2165,7 @@ class WTM {
             try {
                 WinActivate(target)
                 this.FocusHwnd := target
+                this._MoveCursorToWindow(target)
                 this.RefreshBorder()
             }
         }
@@ -2108,11 +2188,14 @@ class WTM {
             this.TileOrder[i1] := this.TileOrder[i2]
             this.TileOrder[i2] := tmp
             this.AutoTile()
+            ; cur 已被重排到新位置, 让光标跟随它
+            this._MoveCursorToWindow(cur)
+            this.RefreshBorder()
         }
     }
 
+    ; WTM 模式下 Alt+T: 把窗口排除/纳入平铺, 排除时置顶并绘制顶部 bar
     static TogglePinExclude() {
-        ; Exclude / re-include the window under cursor (or focused) from tiling.
         MouseGetPos(,, &hwnd)
         if !hwnd {
             try hwnd := WinGetID("A")
@@ -2122,14 +2205,19 @@ class WTM {
         if this.Excluded.Has(hwnd) {
             this.Excluded.Delete(hwnd)
             try WinSetAlwaysOnTop(0, hwnd)
+            PinBorder.Remove(hwnd)
             ShowOSD("WTM Include")
         } else {
             this.Excluded[hwnd] := true
             try WinSetAlwaysOnTop(1, hwnd)
-            ShowOSD("WTM Exclude (floating)")
+            PinBorder.Add(hwnd)
+            ; 同时移除该窗口自身的平铺边框
+            this.RemoveBorder(hwnd)
+            ShowOSD("WTM Float (top + bar)")
         }
         this.RebuildOrder()
         this.AutoTile()
+        this.RefreshBorder()
     }
 
     static _OrderIndex(hwnd) {
@@ -2139,7 +2227,7 @@ class WTM {
         return 0
     }
 
-; Pick nearest neighbor in direction (L/R/U/D) using window centers.
+    ; 在指定方向(L/R/U/D)上找到窗口中心欧氏距离最近的邻居
     static _PickNeighbor(hwnd, dir) {
         if !WinExist(hwnd)
             return 0
@@ -2157,7 +2245,6 @@ class WTM {
             tx := x + w/2, ty := y + h2/2
             dx := tx - ccx, dy := ty - ccy
 
-            ; Direction filter: skip if neighbor is not on the requested side
             skip := false
             if      (dir = "L" && dx >= 0)
                 skip := true
@@ -2179,42 +2266,103 @@ class WTM {
         return best
     }
 
-    static CreateBorder() {
-        this.DestroyBorder()
+    ; ---- 边框管理: 每个被平铺窗口拥有 4 条边 GUI ----
+    static EnsureBorder(hwnd) {
+        if this.BorderMap.Has(hwnd)
+            return
+        guis := []
         Loop 4 {
             g := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x20 -DPIScale")
-            g.BackColor := WTM_BorderFocusColor
-            g.Show("NoActivate x-1000 y-1000 w10 h10")
+            g.BackColor := WTM_BorderUnfocusColor
+            g.Show("NoActivate x-2000 y-2000 w10 h10")
             WinSetTransparent(WTM_BorderOpacity, g.Hwnd)
-            this.BorderGuis.Push(g)
+            guis.Push(g)
         }
+        this.BorderMap[hwnd]   := guis
+        this.BorderState[hwnd] := "unfocus"
     }
 
-    static DestroyBorder() {
-        for g in this.BorderGuis
+    static RemoveBorder(hwnd) {
+        if !this.BorderMap.Has(hwnd)
+            return
+        for g in this.BorderMap[hwnd]
             try g.Destroy()
-        this.BorderGuis := []
+        this.BorderMap.Delete(hwnd)
+        if this.BorderState.Has(hwnd)
+            this.BorderState.Delete(hwnd)
+    }
+
+    static DestroyAllBorders() {
+        for hwnd, _ in this.BorderMap.Clone()
+            this.RemoveBorder(hwnd)
+        this.BorderMap   := Map()
+        this.BorderState := Map()
+    }
+
+    ; 设置某窗口 4 条边的颜色 (state="focus"|"unfocus"), 仅在状态变化时重绘
+    static _SetBorderColor(hwnd, state) {
+        if !this.BorderMap.Has(hwnd)
+            return
+        if (this.BorderState.Has(hwnd) && this.BorderState[hwnd] = state)
+            return
+        col := (state = "focus") ? WTM_BorderFocusColor : WTM_BorderUnfocusColor
+        for g in this.BorderMap[hwnd] {
+            try {
+                g.BackColor := col
+                WinRedraw(g.Hwnd)
+            }
+        }
+        this.BorderState[hwnd] := state
     }
 
     static RefreshBorder() {
-        if (this.BorderGuis.Length != 4)
+        if !this.Active
             return
-        h := this.FocusHwnd
-        if !h || !WinExist(h) {
-            for g in this.BorderGuis
-                try WinMove(-2000, -2000, 1, 1, g.Hwnd)
-            return
+        ; 清理已不在 TileOrder / 已销毁的窗口的边框
+        valid := Map()
+        for hwnd in this.TileOrder
+            valid[hwnd] := true
+        for hwnd, _ in this.BorderMap.Clone() {
+            if !valid.Has(hwnd) || !WinExist(hwnd)
+                this.RemoveBorder(hwnd)
         }
-        if !GetWindowVisualRect(h, &x, &y, &w, &ht)
-            return
-        t  := Max(2, WTM_BorderThickness)
-        o  := WTM_BorderOffset
-        x -= o, y -= o, w += 2*o, ht += 2*o
-        try {
-            WinMove(x,        y,         w,  t, this.BorderGuis[1].Hwnd)
-            WinMove(x,        y+ht-t,    w,  t, this.BorderGuis[2].Hwnd)
-            WinMove(x,        y,         t, ht, this.BorderGuis[3].Hwnd)
-            WinMove(x+w-t,    y,         t, ht, this.BorderGuis[4].Hwnd)
+
+        focusH := this.FocusHwnd
+        for hwnd in this.TileOrder {
+            if !WinExist(hwnd)
+                continue
+            ; 最小化窗口的边框暂时隐藏
+            try {
+                if (WinGetMinMax(hwnd) = -1) {
+                    if this.BorderMap.Has(hwnd) {
+                        for g in this.BorderMap[hwnd]
+                            try DllCall("ShowWindow", "Ptr", g.Hwnd, "Int", 0)
+                    }
+                    continue
+                }
+            } catch {
+                continue
+            }
+            this.EnsureBorder(hwnd)
+            if !GetWindowVisualRect(hwnd, &x, &y, &w, &ht)
+                continue
+            t := Max(2, WTM_BorderThickness)
+            o := WTM_BorderOffset
+            x -= o, y -= o, w += 2*o, ht += 2*o
+
+            this._SetBorderColor(hwnd, hwnd = focusH ? "focus" : "unfocus")
+
+            guis := this.BorderMap[hwnd]
+            try {
+                ; 先确保可见 (SW_SHOWNA = 8)
+                Loop 4
+                    DllCall("ShowWindow", "Ptr", guis[A_Index].Hwnd, "Int", 8)
+                ; HWND_TOPMOST=-1, SWP_NOACTIVATE=0x10, SWP_SHOWWINDOW=0x40
+                DllCall("SetWindowPos", "Ptr", guis[1].Hwnd, "Ptr", -1, "Int", x,        "Int", y,         "Int", w,  "Int", t,  "UInt", 0x10|0x40)
+                DllCall("SetWindowPos", "Ptr", guis[2].Hwnd, "Ptr", -1, "Int", x,        "Int", y+ht-t,    "Int", w,  "Int", t,  "UInt", 0x10|0x40)
+                DllCall("SetWindowPos", "Ptr", guis[3].Hwnd, "Ptr", -1, "Int", x,        "Int", y,         "Int", t,  "Int", ht, "UInt", 0x10|0x40)
+                DllCall("SetWindowPos", "Ptr", guis[4].Hwnd, "Ptr", -1, "Int", x+w-t,    "Int", y,         "Int", t,  "Int", ht, "UInt", 0x10|0x40)
+            }
         }
     }
 }
