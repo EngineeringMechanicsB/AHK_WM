@@ -30,12 +30,10 @@ global Border_Drag_Offset, Border_Drag_OffsetTop, Border_Drag_Transparent
 global Border_Pin_Thickness, Border_Pin_Offset, Border_Pin_OffsetTop, Border_Pin_Transparent
 global WTM_BorderFocusColor, WTM_BorderUnfocusColor
 global WTM_BorderThickness, WTM_BorderOffset, WTM_BorderOpacity, WTM_SizeStep
-global WTM_Gap   ; 平铺窗口之间的间隙(像素)
+global WTM_Gap
 
-; 由 PlaceWin() 读取的临时间隙(仅 WTM 模式启用时设置, 普通 SmartTile 期间为 0)
 global CurrentTileGap := 0
 
-; 模块级 GUI 句柄, 便于在切换桌面时统一销毁
 global HelpGuiObj    := ""
 global PowerMenuObj  := ""
 
@@ -55,7 +53,6 @@ Pie_Config := Map(
 )
 
 ; ---- Built-in themes ----
-; 每个主题新增 WTM_BorderFocusColor / WTM_BorderUnfocusColor 两个键, 并补充若干主流配色
 global Themes := Map(
     "nord",             Map("Color_Bg","2E3440","Color_Text","D8DEE9","Color_Active","88C0D0","Color_Task","A3BE8C","Border_Drag_Color","88C0D0","Border_Pin_Color","BF616A","PM_Bg","3B4252","PM_BtnShutdown","BF616A","PM_BtnSleep","5E81AC","PM_BtnReboot","D08770","WTM_BorderFocusColor","88C0D0","WTM_BorderUnfocusColor","4C566A"),
     "tokyonight",       Map("Color_Bg","1A1B26","Color_Text","C0CAF5","Color_Active","7AA2F7","Color_Task","9ECE6A","Border_Drag_Color","7AA2F7","Border_Pin_Color","F7768E","PM_Bg","24283B","PM_BtnShutdown","F7768E","PM_BtnSleep","7AA2F7","PM_BtnReboot","E0AF68","WTM_BorderFocusColor","7AA2F7","WTM_BorderUnfocusColor","414868"),
@@ -150,7 +147,6 @@ PrettifyHotkey(s) {
 }
 
 ; ---- Initialization ----
-; 用 config 文件是否存在替代旧的 welcome_shown.flag 文件
 isFirstRun := !FileExist(ConfigFile)
 
 LoadOrInitConfig()
@@ -227,8 +223,8 @@ RegisterAllHotkeys() {
     Hotkey(HK["ClipboardHistory"], (*) => ToggleVimWindow())
 
     Hotkey(HK["PieMenuTrigger"], (*) => PieMenu.Start())
-    Hotkey("Space Up",   PieMenuExecute)
-    Hotkey("RButton Up", PieMenuExecute)
+    Hotkey("~Space Up",   PieMenuExecute)
+    Hotkey("~RButton Up", PieMenuExecute)
 
     Hotkey(HK["DragMove"],   DragMoveHandler)
     Hotkey(HK["DragResize"], DragResizeHandler)
@@ -580,7 +576,6 @@ GetMonitorIndex(hwnd := 0) {
     return GetMonitorIndexAtPoint(wx + ww/2, wy + wh/2)
 }
 
-; ---- 销毁脚本自身的瞬时 GUI (切换桌面前调用, 防止它们被错误地最小化) ----
 DestroyTransientGuis() {
     global HelpGuiObj, PowerMenuObj
     try {
@@ -903,7 +898,7 @@ class PinBorder {
         this.Map[hwnd] := g
 
         if !this.Started {
-            SetTimer(this.TimerFn, 100)
+            SetTimer(this.TimerFn, 8)
             this.Started := true
         }
     }
@@ -1028,7 +1023,7 @@ class PieMenu {
         this.StartX := x, this.StartY := y
         this.CurrentSector := "Center", this.LastSector := ""
         this.CreateGui()
-        SetTimer(this.TimerFn, 10)
+        SetTimer(this.TimerFn, 8)
     }
 
     static CreateGui() {
@@ -1119,7 +1114,6 @@ SwitchDesktop(target, *) {
         return
     }
 
-    ; 切换前: 先销毁脚本自身的瞬时 GUI 与 WTM 边框, 避免被错误地最小化
     wasWTMActive := WTM.Active
     if wasWTMActive
         WTM.DestroyAllBorders()
@@ -1140,7 +1134,6 @@ SwitchDesktop(target, *) {
     A_IconTip := "WM Script - Desktop " . CurrentDesktop
     ShowOSD("Desktop " . CurrentDesktop)
 
-    ; 切换后: 重建 WTM 边框
     if wasWTMActive
         WTM.OnDesktopSwitched()
 }
@@ -1448,7 +1441,6 @@ TileCurrentMonitor(*) {
 
 PlaceWin(hwnd, x, y, w, h) {
     global CurrentTileGap
-    ; 仅当 CurrentTileGap > 0 (WTM 模式平铺中) 才收缩窗口, 在窗口四周制造统一间隙
     if (CurrentTileGap > 0) {
         half := CurrentTileGap / 2
         x += half, y += half, w -= CurrentTileGap, h -= CurrentTileGap
@@ -1786,7 +1778,6 @@ ExportThemeToCustom(*) {
         "PM_BtnSleep",       "PowerBtnSleep",
         "PM_BtnReboot",      "PowerBtnReboot"
     )
-    ; [WTM] section keys (颜色相关)
     wtmMap := Map(
         "WTM_BorderFocusColor",   "BorderFocusColor",
         "WTM_BorderUnfocusColor", "BorderUnfocusColor"
@@ -1833,8 +1824,6 @@ GetVisibleWindows() {
             winClass := WinGetClass(hwnd)
             if (winClass == "Progman" || winClass == "Shell_TrayWnd")
                 continue
-            ; 跳过脚本自身的 ToolWindow (Help / 边框 / OSD / PieMenu / PinBorder ...)
-            ; 这样切换桌面时它们不会被误最小化, 并且也不会污染 Desktops[] 列表
             ex := WinGetExStyle(hwnd)
             if (ex & 0x80)
                 continue
@@ -1887,41 +1876,6 @@ Explorer_GetPath() {
         }
     }
     return ""
-}
-
-; ---- Tray menu ----
-SetupTrayIcon() {
-    global Themes, ActiveTheme
-    A_TrayMenu.Delete()
-    A_TrayMenu.Add("Gather All Windows", GatherAllToCurrent)
-    A_TrayMenu.Add("Toggle Status Bar",  ToggleBar)
-    A_TrayMenu.Add("Toggle WTM Mode",    (*) => WTM.Toggle())
-    A_TrayMenu.Add("Save Layout",        SaveLayout)
-    A_TrayMenu.Add("Restore Layout",     RestoreLayout)
-    A_TrayMenu.Add()
-
-    themeMenu := Menu()
-    themeMenu.Add("custom (use [Colors])", ApplyTheme.Bind("custom"))
-    for name, _ in Themes
-        themeMenu.Add(name, ApplyTheme.Bind(name))
-    try themeMenu.Check(ActiveTheme = "custom" ? "custom (use [Colors])" : ActiveTheme)
-    A_TrayMenu.Add("Theme", themeMenu)
-    A_TrayMenu.Add("Export Theme -> custom", ExportThemeToCustom)
-    A_TrayMenu.Add()
-
-    Loop DesktopCount {
-        i := A_Index
-        A_TrayMenu.Add("Switch to Desktop " . i, SwitchDesktop.Bind(i))
-    }
-
-    A_TrayMenu.Add()
-    ; 直接展示欢迎页面 (不再依赖 flag 文件)
-    A_TrayMenu.Add("Show Welcome",        (*) => WelcomeScreen.Show())
-    A_TrayMenu.Add("Open Config Folder",  (*) => Run('explorer.exe "' . ConfigDir . '"'))
-    A_TrayMenu.Add("Reload Script",       (*) => Reload())
-    A_TrayMenu.Add("Restore && Exit",     RestoreAndExit)
-
-    A_IconTip := "WM Script - Desktop " . CurrentDesktop
 }
 
 ; ---- Mouse drag move / resize ----
@@ -1997,12 +1951,6 @@ DragResizeHandler(*) {
 
 ; ==============================================================================
 ;  WTM - Windows Tile Manager (hyprland-like dynamic tiling mode)
-;     - 每个被平铺窗口都常驻显示边框: 聚焦 -> WTM_BorderFocusColor
-;                                  非聚焦 -> WTM_BorderUnfocusColor
-;     - 平铺间隙: WTM_Gap (统一间隙, 边缘与窗口之间均生效)
-;     - Alt+T (WTM 模式下): 浮动窗口, 置顶 + 顶部 bar, 排除于平铺
-;     - Alt+HJKL 切换聚焦时, 鼠标光标自动跟随到目标窗口中心
-;     - Alt+Shift+HJKL 交换槽位, 光标跟随原窗口
 ; ==============================================================================
 class WTM {
     static Active     := false
@@ -2087,7 +2035,6 @@ class WTM {
             WT += Bar_Height + 5
         W := WR - WL, H := WB - WT
 
-        ; 应用 WTM 间隙: 外侧缩 g/2, 每窗口再向内缩 g/2 -> 整体均匀间隙 = g
         g := Max(0, WTM_Gap)
         if (g > 0) {
             WL += g/2, WT += g/2, W -= g, H -= g
@@ -2108,7 +2055,6 @@ class WTM {
     static Tick() {
         if !this.Active
             return
-        ; 检测窗口增减/尺寸变化 -> 触发自动重排
         sig := ""
         for hwnd in GetVisibleWindowsOnMonitor(GetMonitorIndex()) {
             if this.Excluded.Has(hwnd)
@@ -2132,7 +2078,6 @@ class WTM {
             }
             this._LastSig := sig
         }
-        ; 跟踪聚焦窗口变化, 刷新边框
         try {
             fh := WinGetID("A")
             if (fh && fh != this.FocusHwnd) {
@@ -2142,7 +2087,6 @@ class WTM {
         this.RefreshBorder()
     }
 
-    ; 移动鼠标光标到指定窗口中心
     static _MoveCursorToWindow(hwnd) {
         if !hwnd || !WinExist(hwnd)
             return
@@ -2188,13 +2132,11 @@ class WTM {
             this.TileOrder[i1] := this.TileOrder[i2]
             this.TileOrder[i2] := tmp
             this.AutoTile()
-            ; cur 已被重排到新位置, 让光标跟随它
             this._MoveCursorToWindow(cur)
             this.RefreshBorder()
         }
     }
 
-    ; WTM 模式下 Alt+T: 把窗口排除/纳入平铺, 排除时置顶并绘制顶部 bar
     static TogglePinExclude() {
         MouseGetPos(,, &hwnd)
         if !hwnd {
@@ -2211,7 +2153,6 @@ class WTM {
             this.Excluded[hwnd] := true
             try WinSetAlwaysOnTop(1, hwnd)
             PinBorder.Add(hwnd)
-            ; 同时移除该窗口自身的平铺边框
             this.RemoveBorder(hwnd)
             ShowOSD("WTM Float (top + bar)")
         }
@@ -2227,7 +2168,6 @@ class WTM {
         return 0
     }
 
-    ; 在指定方向(L/R/U/D)上找到窗口中心欧氏距离最近的邻居
     static _PickNeighbor(hwnd, dir) {
         if !WinExist(hwnd)
             return 0
@@ -2266,7 +2206,6 @@ class WTM {
         return best
     }
 
-    ; ---- 边框管理: 每个被平铺窗口拥有 4 条边 GUI ----
     static EnsureBorder(hwnd) {
         if this.BorderMap.Has(hwnd)
             return
@@ -2299,7 +2238,6 @@ class WTM {
         this.BorderState := Map()
     }
 
-    ; 设置某窗口 4 条边的颜色 (state="focus"|"unfocus"), 仅在状态变化时重绘
     static _SetBorderColor(hwnd, state) {
         if !this.BorderMap.Has(hwnd)
             return
@@ -2318,7 +2256,6 @@ class WTM {
     static RefreshBorder() {
         if !this.Active
             return
-        ; 清理已不在 TileOrder / 已销毁的窗口的边框
         valid := Map()
         for hwnd in this.TileOrder
             valid[hwnd] := true
@@ -2331,7 +2268,6 @@ class WTM {
         for hwnd in this.TileOrder {
             if !WinExist(hwnd)
                 continue
-            ; 最小化窗口的边框暂时隐藏
             try {
                 if (WinGetMinMax(hwnd) = -1) {
                     if this.BorderMap.Has(hwnd) {
@@ -2354,7 +2290,6 @@ class WTM {
 
             guis := this.BorderMap[hwnd]
             try {
-                ; 先确保可见 (SW_SHOWNA = 8)
                 Loop 4
                     DllCall("ShowWindow", "Ptr", guis[A_Index].Hwnd, "Int", 8)
                 ; HWND_TOPMOST=-1, SWP_NOACTIVATE=0x10, SWP_SHOWWINDOW=0x40
@@ -2365,6 +2300,40 @@ class WTM {
             }
         }
     }
+}
+
+; ---- Tray menu ----
+SetupTrayIcon() {
+    global Themes, ActiveTheme
+    A_TrayMenu.Delete()
+    A_TrayMenu.Add("Gather All Windows", GatherAllToCurrent)
+    A_TrayMenu.Add("Toggle Status Bar",  ToggleBar)
+    A_TrayMenu.Add("Toggle WTM Mode",    (*) => WTM.Toggle())
+    A_TrayMenu.Add("Save Layout",        SaveLayout)
+    A_TrayMenu.Add("Restore Layout",     RestoreLayout)
+    A_TrayMenu.Add()
+
+    themeMenu := Menu()
+    themeMenu.Add("custom (use [Colors])", ApplyTheme.Bind("custom"))
+    for name, _ in Themes
+        themeMenu.Add(name, ApplyTheme.Bind(name))
+    try themeMenu.Check(ActiveTheme = "custom" ? "custom (use [Colors])" : ActiveTheme)
+    A_TrayMenu.Add("Theme", themeMenu)
+    A_TrayMenu.Add("Export Theme -> custom", ExportThemeToCustom)
+    A_TrayMenu.Add()
+
+    Loop DesktopCount {
+        i := A_Index
+        A_TrayMenu.Add("Switch to Desktop " . i, SwitchDesktop.Bind(i))
+    }
+
+    A_TrayMenu.Add()
+    A_TrayMenu.Add("Show Welcome",        (*) => WelcomeScreen.Show())
+    A_TrayMenu.Add("Open Config Folder",  (*) => Run('explorer.exe "' . ConfigDir . '"'))
+    A_TrayMenu.Add("Reload Script",       (*) => Reload())
+    A_TrayMenu.Add("Restore && Exit",     RestoreAndExit)
+
+    A_IconTip := "AHK WM - Desktop " . CurrentDesktop
 }
 
 ; ---- External eight-direction button scripts ----
