@@ -34,6 +34,15 @@ global WTM_Gap
 
 global CurrentTileGap := 0
 
+; ---- New: tiling gap / GUI rounding / custom layout / window exclusion ----
+global Tile_Gap        := 8
+global GUI_Rounded     := "on"
+global GUI_CornerRadius := 12
+global LayoutRules     := Map()        ; windowCount -> [{x:{lo,hi}, y:{lo,hi}}, ...]
+global Excl_Titles     := []
+global Excl_Classes    := []
+global Excl_Processes  := []
+
 global HelpGuiObj    := ""
 global PowerMenuObj  := ""
 
@@ -97,6 +106,205 @@ Pct2PxMin(p) {
 }
 Pct2Border(p) => Round(Max(0, Min(100, p+0)) * 20 / 100)
 
+; ---- Lightweight logging (silent; avoids interrupting the user) ----
+WMLog(msg) {
+    global ConfigDir
+    try FileAppend(FormatTime(, "yyyy-MM-dd HH:mm:ss") . "  " . msg . "`r`n"
+                 , ConfigDir . "\wm.log", "UTF-8")
+}
+
+; ---- GUI rounded corners (unified) ----
+; 统一的圆角应用逻辑; 各 GUI 组件 .Show() 之后调用即可, 无需各自解析配置.
+RoundWindow(guiOrHwnd) {
+    global GUI_Rounded, GUI_CornerRadius
+    if (GUI_Rounded != "on")
+        return
+    hwnd := IsObject(guiOrHwnd) ? guiOrHwnd.Hwnd : guiOrHwnd
+    try {
+        WinGetPos(, , &w, &h, hwnd)
+        if (w <= 0 || h <= 0)
+            return
+        d := Max(0, GUI_CornerRadius) * 2     ; CreateRoundRectRgn 使用椭圆直径
+        if (d <= 0)
+            return
+        hRgn := DllCall("CreateRoundRectRgn"
+            , "Int", 0, "Int", 0, "Int", w + 1, "Int", h + 1
+            , "Int", d, "Int", d, "Ptr")
+        ; 成功后区域所有权转交系统, 无需手动释放
+        DllCall("SetWindowRgn", "Ptr", hwnd, "Ptr", hRgn, "Int", 1)
+    }
+}
+
+; ---- Window exclusion rules ----
+SplitExcludeList(str) {
+    out := []
+    for part in StrSplit(str, ";") {
+        part := Trim(part)
+        if (part != "")
+            out.Push(part)
+    }
+    return out
+}
+
+; 标题规则: 默认包含匹配(不区分大小写); re:正则; =精确匹配
+MatchTitleRule(text, rule) {
+    rule := Trim(rule)
+    if (rule = "")
+        return false
+    if (SubStr(rule, 1, 3) = "re:") {
+        try return (text ~= SubStr(rule, 4)) ? true : false
+        return false
+    }
+    if (SubStr(rule, 1, 1) = "=")
+        return (StrLower(text) = StrLower(SubStr(rule, 2)))
+    return InStr(text, rule, false) ? true : false
+}
+
+IsExcludedWindow(hwnd) {
+    global Excl_Titles, Excl_Classes, Excl_Processes
+    if (Excl_Titles.Length = 0 && Excl_Classes.Length = 0 && Excl_Processes.Length = 0)
+        return false
+    title := "", cls := "", proc := ""
+    try title := WinGetTitle(hwnd)
+    try cls   := WinGetClass(hwnd)
+    try proc  := WinGetProcessName(hwnd)
+    for rule in Excl_Titles
+        if MatchTitleRule(title, rule)
+            return true
+    for rule in Excl_Classes
+        if (cls != "" && StrLower(cls) = StrLower(Trim(rule)))
+            return true
+    for rule in Excl_Processes
+        if (proc != "" && StrLower(proc) = StrLower(Trim(rule)))
+            return true
+    return false
+}
+
+; ---- Custom tiling layout: parsing & application ----
+; 解析单个轴向表达式 -> {lo, hi} (0..1 的占比); 非法时抛出异常.
+ParseAxis(tok) {
+    tok := Trim(tok)
+    if (tok = "")
+        throw Error("empty axis")
+    if (tok = "1")
+        return {lo: 0.0, hi: 1.0}
+    if RegExMatch(tok, "^\((\d+)\s*-\s*(\d+)\)/(\d+)$", &m) {
+        a := Integer(m[1]), c := Integer(m[2]), b := Integer(m[3])
+        if (b <= 0 || a < 1 || c < 1 || a > c || c > b)
+            throw Error("bad range axis: " tok)
+        return {lo: (a - 1) / b, hi: c / b}
+    }
+    if RegExMatch(tok, "^(\d+)/(\d+)$", &m) {
+        a := Integer(m[1]), b := Integer(m[2])
+        if (b <= 0 || a < 1 || a > b)
+            throw Error("bad axis: " tok)
+        return {lo: (a - 1) / b, hi: a / b}
+    }
+    throw Error("unrecognized axis: " tok)
+}
+
+; 解析整段规则字符串 -> Map(N -> [{x,y}, ...]).  任一组非法则整组丢弃(回退默认).
+ParseLayoutRules(str) {
+    result := Map()
+    str := Trim(str)
+    if (str = "")
+        return result
+
+    groups := Map()    ; N -> Map(I -> {x, y})
+    bad    := Map()    ; N -> true
+
+    for clause in StrSplit(str, ";") {
+        clause := Trim(clause)
+        if (clause = "")
+            continue
+        f := StrSplit(clause, ",")
+        if (f.Length < 1 || !IsInteger(Trim(f[1]))) {
+            WMLog("Layout rule skipped (no valid N): " clause)
+            continue
+        }
+        N := Integer(Trim(f[1]))
+        if (N < 1) {
+            WMLog("Layout rule skipped (N < 1): " clause)
+            continue
+        }
+        if (f.Length != 4) {
+            bad[N] := true
+            WMLog("Layout group " N " invalid (field count): " clause)
+            continue
+        }
+        if !IsInteger(Trim(f[2])) {
+            bad[N] := true
+            WMLog("Layout group " N " invalid (I not integer): " clause)
+            continue
+        }
+        I := Integer(Trim(f[2]))
+        if (I < 1 || I > N) {
+            bad[N] := true
+            WMLog("Layout group " N " invalid (I out of range): " clause)
+            continue
+        }
+        try {
+            xr := ParseAxis(f[3])
+            yr := ParseAxis(f[4])
+        } catch as e {
+            bad[N] := true
+            WMLog("Layout group " N " invalid (" e.Message ")")
+            continue
+        }
+        if !groups.Has(N)
+            groups[N] := Map()
+        if groups[N].Has(I) {
+            bad[N] := true
+            WMLog("Layout group " N " invalid (duplicate window " I ")")
+            continue
+        }
+        groups[N][I] := {x: xr, y: yr}
+    }
+
+    for N, items in groups {
+        if bad.Has(N)
+            continue
+        complete := (items.Count = N)
+        if complete {
+            loop N {
+                if !items.Has(A_Index) {
+                    complete := false
+                    break
+                }
+            }
+        }
+        if !complete {
+            WMLog("Layout group " N " invalid (incomplete/duplicate window list)")
+            continue
+        }
+        arr := []
+        loop N
+            arr.Push(items[A_Index])
+        result[N] := arr
+    }
+    return result
+}
+
+; 若存在匹配当前窗口数量的自定义布局则应用并返回 true; 否则 false(交给默认逻辑).
+ApplyCustomLayout(wins, X, Y, W, H) {
+    global LayoutRules
+    n := wins.Length
+    if (n = 0 || !LayoutRules.Has(n))
+        return false
+    rules := LayoutRules[n]
+    for i, hwnd in wins {
+        if (i > rules.Length)
+            break
+        r  := rules[i]
+        wx := X + r.x.lo * W
+        ww := (r.x.hi - r.x.lo) * W
+        wy := Y + r.y.lo * H
+        wh := (r.y.hi - r.y.lo) * H
+        PlaceWin(hwnd, wx, wy, ww, wh)
+    }
+    return true
+}
+
 ; ---- Hotkey notation conversion ----
 NormalizeHotkey(s) {
     s := Trim(s)
@@ -147,6 +355,14 @@ PrettifyHotkey(s) {
 }
 
 ; ---- Initialization ----
+; 全局错误兜底: 单个窗口操作失败(句柄失效 / 窗口已关闭 / 跨线程等)只记录日志,
+; 不弹出打扰用户的错误窗口, 也不会中断整个 WM.
+OnError(WM_OnError)
+WM_OnError(err, mode) {
+    try WMLog("Runtime: " . (IsObject(err) ? err.Message : err))
+    return true     ; 抑制默认错误弹窗
+}
+
 isFirstRun := !FileExist(ConfigFile)
 
 LoadOrInitConfig()
@@ -159,11 +375,14 @@ if !DirExist(Path_Output)
 if !DirExist(Path_Button)
     DirCreate(Path_Button)
 
-if InitializeButtons()
-    Reload()
-
+; 注意: 首次运行会同时生成默认配置文件与八方向按钮脚本.
+; 旧逻辑在按钮脚本被创建后立即 Reload(), 导致重载后 isFirstRun 变为 false,
+; 欢迎页面被跳过. 这里改为首次运行优先显示欢迎页面, 不在首次运行时 Reload.
+buttonsCreated := InitializeButtons()
 if isFirstRun
     WelcomeScreen.Show()
+else if buttonsCreated
+    Reload()
 
 CreateStatusBar()
 UpdateStatusBar()
@@ -174,71 +393,95 @@ OnClipboardChange(OnClipboardChanged)
 RegisterAllHotkeys()
 
 ; ---- Hotkey registration ----
+; 所有依赖快捷键触发的功能: 当配置中的快捷键为空 / 缺失时, 该功能不会注册,
+; 即视为关闭. RegHotkey 负责跳过空快捷键并对注册失败做静默保护.
+RegHotkey(key, fn) {
+    global HK
+    if !HK.Has(key)
+        return false
+    combo := HK[key]
+    if (combo = "")
+        return false
+    try {
+        Hotkey(combo, fn)
+        return true
+    } catch as e {
+        WMLog("Hotkey register failed [" key "=" combo "]: " e.Message)
+        return false
+    }
+}
+
 RegisterAllHotkeys() {
     global HK
 
-    Hotkey(HK["Help"], ShowHelpGui)
+    RegHotkey("Help", ShowHelpGui)
 
-    pSwitch := HK["DesktopSwitchPrefix"]
-    pMove   := HK["DesktopMovePrefix"]
-    pBoth   := HK["DesktopMoveSwitchPrefix"]
+    pSwitch := HK.Has("DesktopSwitchPrefix")     ? HK["DesktopSwitchPrefix"]     : ""
+    pMove   := HK.Has("DesktopMovePrefix")       ? HK["DesktopMovePrefix"]       : ""
+    pBoth   := HK.Has("DesktopMoveSwitchPrefix") ? HK["DesktopMoveSwitchPrefix"] : ""
     Loop 9 {
         i := A_Index
-        try Hotkey(pSwitch . i, SwitchDesktop.Bind(i))
-        try Hotkey(pMove   . i, MoveWindowToDesktop.Bind(i))
-        try Hotkey(pBoth   . i, MoveAndSwitch.Bind(i))
+        if (pSwitch != "")
+            try Hotkey(pSwitch . i, SwitchDesktop.Bind(i))
+        if (pMove != "")
+            try Hotkey(pMove . i, MoveWindowToDesktop.Bind(i))
+        if (pBoth != "")
+            try Hotkey(pBoth . i, MoveAndSwitch.Bind(i))
     }
 
-    Hotkey(HK["TileSmart"], TileCurrentMonitor)
-    Hotkey(HK["GatherAll"], GatherAllToCurrent)
-    Hotkey(HK["TogglePin"], TogglePin)
-    Hotkey(HK["ToggleBar"], ToggleBar)
-    Hotkey(HK["Exit"],      RestoreAndExit)
+    RegHotkey("TileSmart", TileCurrentMonitor)
+    RegHotkey("GatherAll", GatherAllToCurrent)
+    RegHotkey("TogglePin", TogglePin)
+    RegHotkey("ToggleBar", ToggleBar)
+    RegHotkey("Exit",      RestoreAndExit)
 
-    Hotkey(HK["CloseWindow"],    CloseWindowUnderMouse)
-    Hotkey(HK["CloseWindowAlt"], CloseWindowUnderMouse)
-    Hotkey(HK["ToggleMaximize"], ToggleMaximizeUnderMouse)
-    Hotkey(HK["ToggleTop"],      ToggleTopDispatch)
-    Hotkey(HK["HideWindow"],     HideUnderMouse)
+    RegHotkey("CloseWindow",    CloseWindowDispatch)
+    RegHotkey("CloseWindowAlt", CloseWindowDispatch)
+    RegHotkey("ToggleMaximize", ToggleMaximizeUnderMouse)
+    RegHotkey("ToggleTop",      ToggleTopDispatch)
+    RegHotkey("HideWindow",     HideUnderMouse)
 
-    Hotkey(HK["TransparencyUp"],   AdjustTransparency.Bind(20))
-    Hotkey(HK["TransparencyDown"], AdjustTransparency.Bind(-20))
+    RegHotkey("TransparencyUp",   AdjustTransparency.Bind(20))
+    RegHotkey("TransparencyDown", AdjustTransparency.Bind(-20))
 
-    Hotkey("~LButton & RButton", (*) => Send("^c"))
-    Hotkey("~RButton & LButton", (*) => Send("^c"))
+    ; 固定的复制手势(不依赖配置)
+    try Hotkey("~LButton & RButton", (*) => Send("^c"))
+    try Hotkey("~RButton & LButton", (*) => Send("^c"))
 
-    Hotkey(HK["LaunchTerminal"], LaunchTerminal)
-    Hotkey(HK["EditFile"],       OpenWithVim)
-    Hotkey(HK["PowerMenu"],      ShowPowerMenu)
+    RegHotkey("LaunchTerminal", LaunchTerminal)
+    RegHotkey("EditFile",       OpenWithVim)
+    RegHotkey("PowerMenu",      ShowPowerMenu)
 
-    Hotkey(HK["SnapLeft"],  SnapWindow.Bind("Left"))
-    Hotkey(HK["SnapRight"], SnapWindow.Bind("Right"))
-    Hotkey(HK["SnapUp"],    SnapWindow.Bind("Up"))
-    Hotkey(HK["SnapDown"],  SnapWindow.Bind("Down"))
+    RegHotkey("SnapLeft",  SnapWindow.Bind("Left"))
+    RegHotkey("SnapRight", SnapWindow.Bind("Right"))
+    RegHotkey("SnapUp",    SnapWindow.Bind("Up"))
+    RegHotkey("SnapDown",  SnapWindow.Bind("Down"))
 
-    Hotkey(HK["SaveLayout"],    SaveLayout)
-    Hotkey(HK["RestoreLayout"], RestoreLayout)
+    RegHotkey("SaveLayout",    SaveLayout)
+    RegHotkey("RestoreLayout", RestoreLayout)
 
-    Hotkey(HK["Reload"], (*) => Reload())
-    Hotkey(HK["ClipboardHistory"], (*) => ToggleVimWindow())
+    RegHotkey("Reload", (*) => Reload())
+    RegHotkey("ClipboardHistory", (*) => ToggleVimWindow())
 
-    Hotkey(HK["PieMenuTrigger"], (*) => PieMenu.Start())
-    Hotkey("~Space Up",   PieMenuExecute)
-    Hotkey("~RButton Up", PieMenuExecute)
+    ; 饼菜单依赖触发键; 触发键为空时连同抬起执行键一起关闭
+    if RegHotkey("PieMenuTrigger", (*) => PieMenu.Start()) {
+        try Hotkey("~Space Up",   PieMenuExecute)
+        try Hotkey("~RButton Up", PieMenuExecute)
+    }
 
-    Hotkey(HK["DragMove"],   DragMoveHandler)
-    Hotkey(HK["DragResize"], DragResizeHandler)
+    RegHotkey("DragMove",   DragMoveHandler)
+    RegHotkey("DragResize", DragResizeHandler)
 
     ; ---- WTM-mode hotkeys ----
-    Hotkey(HK["WTMToggle"],     (*) => WTM.Toggle())
-    Hotkey(HK["WTMFocusLeft"],  (*) => WTM.FocusDir("L"))
-    Hotkey(HK["WTMFocusDown"],  (*) => WTM.FocusDir("D"))
-    Hotkey(HK["WTMFocusUp"],    (*) => WTM.FocusDir("U"))
-    Hotkey(HK["WTMFocusRight"], (*) => WTM.FocusDir("R"))
-    Hotkey(HK["WTMMoveLeft"],   (*) => WTM.MoveDir("L"))
-    Hotkey(HK["WTMMoveDown"],   (*) => WTM.MoveDir("D"))
-    Hotkey(HK["WTMMoveUp"],     (*) => WTM.MoveDir("U"))
-    Hotkey(HK["WTMMoveRight"],  (*) => WTM.MoveDir("R"))
+    RegHotkey("WTMToggle",     (*) => WTM.Toggle())
+    RegHotkey("WTMFocusLeft",  (*) => WTM.FocusDir("L"))
+    RegHotkey("WTMFocusDown",  (*) => WTM.FocusDir("D"))
+    RegHotkey("WTMFocusUp",    (*) => WTM.FocusDir("U"))
+    RegHotkey("WTMFocusRight", (*) => WTM.FocusDir("R"))
+    RegHotkey("WTMMoveLeft",   (*) => WTM.MoveDir("L"))
+    RegHotkey("WTMMoveDown",   (*) => WTM.MoveDir("D"))
+    RegHotkey("WTMMoveUp",     (*) => WTM.MoveDir("U"))
+    RegHotkey("WTMMoveRight",  (*) => WTM.MoveDir("R"))
 }
 
 PieMenuExecute(*) {
@@ -251,6 +494,14 @@ ToggleTopDispatch(*) {
         WTM.TogglePinExclude()
     else
         ToggleTopUnderMouse()
+}
+
+; WTM 模式下直接关闭聚焦窗口(不移动鼠标); 否则关闭光标下窗口.
+CloseWindowDispatch(*) {
+    if WTM.Active
+        WTM.CloseFocused()
+    else
+        CloseWindowUnderMouse()
 }
 
 ; ---- Config (load or initialize default) ----
@@ -349,6 +600,38 @@ LoadOrInitConfig() {
         BorderOpacity=80
         SizeStep=3
         Gap=10
+
+        [Layout]
+        ; 普通平铺(Alt+D)使用的窗口间隙(像素). WTM 间隙见 [WTM] Gap.
+        Gap=8
+        ; 自定义平铺布局规则.  格式:  N,I,X,Y  多条规则用分号 ; 分隔.
+        ;   N = 参与平铺的窗口总数
+        ;   I = 第几个窗口 (从 1 开始)
+        ;   X = 横向占用范围,  Y = 纵向占用范围
+        ; 坐标表达式:
+        ;   a/b      -> b 等分中的第 a 段       (如 1/2 左半边 / 上半边)
+        ;   (a-c)/b  -> b 等分中第 a 到第 c 段   (闭区间, 如 (2-4)/5)
+        ;   1        -> 占满整个轴向
+        ; 未配置当前窗口数量时, 回退到内置默认平铺逻辑; 非法规则会忽略该组并回退.
+        ; 示例(超宽屏 4 窗口):
+        ;   Rules=4,1,(2-4)/5,1;4,2,1/5,(1-2)/3;4,3,1/5,3/3;4,4,5/5,1
+        Rules=
+
+        [Exclude]
+        ; 被排除的窗口不参与平铺 / WTM 布局, 也不会被布局逻辑移动或缩放.
+        ; 多个规则用分号 ; 分隔.
+        ; 标题匹配:  默认"包含匹配"(不区分大小写);  re:正则  表示正则匹配;  =文本  表示精确匹配.
+        Titles=Picture-in-Picture
+        ; 窗口类名: 精确匹配(不区分大小写), 分号分隔.
+        Classes=
+        ; 进程名(exe): 精确匹配(不区分大小写), 分号分隔, 如  notepad.exe
+        Processes=
+
+        [GUI]
+        ; 全局 GUI 圆角(帮助菜单 / 状态栏 / 提示窗口 / 电源菜单等)统一开关 on/off,
+        ; 以及圆角半径(像素).
+        RoundedCorners=on
+        CornerRadius=12
 
         ;--------------------------------------------------------------------------
         ; Hotkeys - natural language:  Alt / Shift / Ctrl / Win  joined by '+'
@@ -458,6 +741,16 @@ LoadOrInitConfig() {
     WTM_BorderOpacity      := Pct2Alpha(Integer(IniRead(ConfigFile, "WTM", "BorderOpacity",   "80")))
     WTM_SizeStep           := Integer(IniRead(ConfigFile, "WTM", "SizeStep", "3"))
     WTM_Gap                := Max(0, Integer(IniRead(ConfigFile, "WTM", "Gap", "10")))
+
+    Tile_Gap         := Max(0, Integer(IniRead(ConfigFile, "Layout", "Gap", "8")))
+    LayoutRules      := ParseLayoutRules(IniRead(ConfigFile, "Layout", "Rules", ""))
+
+    Excl_Titles      := SplitExcludeList(IniRead(ConfigFile, "Exclude", "Titles",    ""))
+    Excl_Classes     := SplitExcludeList(IniRead(ConfigFile, "Exclude", "Classes",   ""))
+    Excl_Processes   := SplitExcludeList(IniRead(ConfigFile, "Exclude", "Processes", ""))
+
+    GUI_Rounded      := IniRead(ConfigFile, "GUI", "RoundedCorners", "on")
+    GUI_CornerRadius := Max(0, Integer(IniRead(ConfigFile, "GUI", "CornerRadius", "12")))
 
     bDirTemp        := IniRead(ConfigFile, "Paths", "ButtonDir",  "Buttons")
     Path_Button     := (bDirTemp ~= "^[a-zA-Z]:") ? bDirTemp : (A_ScriptDir . "\" . bDirTemp)
@@ -681,6 +974,7 @@ ShowHelpGui(*) {
     }
 
     helpGui.Show("Center")
+    RoundWindow(helpGui)
     HelpGuiObj := helpGui
     SetTimer CloseWatcher, 50
 }
@@ -831,6 +1125,7 @@ class OSD {
         g.GetPos(, , &gw, )
         g.Show(Format("NoActivate AutoSize x{} y{}", cx - gw//2, OSD_Height))
         WinSetTransparent(OSD_Transparent, g.Hwnd)
+        RoundWindow(g)
 
         this.GuiObj := g
         this.Timer  := () => (IsObject(OSD.GuiObj) ? (OSD.GuiObj.Destroy(), OSD.GuiObj := 0) : 0)
@@ -1282,6 +1577,7 @@ CreateStatusBar() {
 
     Bar_Gui.Show("x" barX " y" barY " w" barScreenWidth " h" Bar_Height " NoActivate")
     WinSetTransparent(Bar_Transparent, Bar_Gui.Hwnd)
+    RoundWindow(Bar_Gui)
 }
 
 UpdateStatusBar() {
@@ -1403,7 +1699,7 @@ GatherAllToCurrent(*) {
 
 ; ---- Smart tiling ----
 TileCurrentMonitor(*) {
-    global Bar_Height, Bar_Visible, Bar_MonitorIdx
+    global Bar_Height, Bar_Visible, Bar_MonitorIdx, CurrentTileGap, Tile_Gap, LayoutRules
 
     MouseGetPos(&mx, &my)
     targetMon := GetMonitorIndexAtPoint(mx, my)
@@ -1414,7 +1710,6 @@ TileCurrentMonitor(*) {
 
     W := WR - WL
     H := WB - WT
-    aspect := (H != 0) ? W / H : 1
 
     windows := GetVisibleWindowsOnMonitor(targetMon)
     n := windows.Length
@@ -1423,6 +1718,14 @@ TileCurrentMonitor(*) {
         return
     }
 
+    ; 窗口间隙: 外边距 + 每窗口由 PlaceWin 应用 (Alt+D 与 WTM 同样规则)
+    g := Max(0, Tile_Gap)
+    if (g > 0) {
+        WL += g/2, WT += g/2, W -= g, H -= g
+    }
+    CurrentTileGap := g
+
+    aspect := (H != 0) ? W / H : 1
     if (H > W)
         mode := "Vertical"
     else if (aspect >= 32/9 - 0.15)
@@ -1430,13 +1733,20 @@ TileCurrentMonitor(*) {
     else
         mode := "Normal"
 
-    ShowOSD("Tile [" . mode . "] [Mon " . targetMon . "]: " . n)
-
-    switch mode {
-        case "Vertical":  TileVertical(windows, WL, WT, W, H)
-        case "Ultrawide": TileUltrawide(windows, WL, WT, W, H)
-        default:          TileNormal(windows, WL, WT, W, H)
+    ; 优先使用用户自定义布局; 无匹配规则时回退默认逻辑
+    if LayoutRules.Has(n) {
+        ShowOSD("Tile [Custom] [Mon " . targetMon . "]: " . n)
+        ApplyCustomLayout(windows, WL, WT, W, H)
+    } else {
+        ShowOSD("Tile [" . mode . "] [Mon " . targetMon . "]: " . n)
+        switch mode {
+            case "Vertical":  TileVertical(windows, WL, WT, W, H)
+            case "Ultrawide": TileUltrawide(windows, WL, WT, W, H)
+            default:          TileNormal(windows, WL, WT, W, H)
+        }
     }
+
+    CurrentTileGap := 0
 }
 
 PlaceWin(hwnd, x, y, w, h) {
@@ -1589,6 +1899,8 @@ GetVisibleWindow() {
             continue
         WinGetPos(,, &w, &h, this_id)
         if (w < 100 || h < 100)
+            continue
+        if IsExcludedWindow(this_id)     ; 排除规则: 不参与平铺 / WTM 布局
             continue
         windows.Push(this_id)
     }
@@ -1747,6 +2059,7 @@ ShowPowerMenu(*) {
     AddBtn(330, 70, "Reboot",   (*) => Shutdown(2), PM_BtnReboot)
     pGui.OnEvent("Escape", (*) => (pGui.Destroy(), PowerMenuObj := ""))
     pGui.Show("w500 h160")
+    RoundWindow(pGui)
     PowerMenuObj := pGui
 }
 
@@ -1993,9 +2306,11 @@ class WTM {
     static OnDesktopSwitched() {
         if !this.Active
             return
-        this.TileOrder := []
+        ; 切换桌面后保持窗口位置不变: 仅重建顺序与边框, 不重新平铺.
+        ; 目标桌面的窗口在 SwitchDesktop 中被 WinRestore, Windows 会保留其原有位置.
         this.RebuildOrder()
-        this.AutoTile()
+        ; 刷新签名缓存, 避免 Tick 因可见窗口集合变化而触发重新平铺.
+        this._LastSig := this._Signature()
         this.RefreshBorder()
     }
 
@@ -2007,31 +2322,59 @@ class WTM {
     }
 
     static RebuildOrder() {
+        ; 跨所有显示器收集可平铺窗口(排除已浮动 / 配置排除 / 最小化的窗口),
+        ; 这样焦点 / 移动可以跨显示器, 平铺按显示器分组进行.
         alive := Map()
-        for hwnd in GetVisibleWindowsOnMonitor(GetMonitorIndex())
+        for hwnd in GetVisibleWindow() {
+            if this.Excluded.Has(hwnd)
+                continue
+            try {
+                if (WinGetMinMax(hwnd) = -1)     ; 跳过最小化窗口
+                    continue
+            } catch {
+                continue
+            }
             alive[hwnd] := true
+        }
         newOrder := []
         for hwnd in this.TileOrder {
-            if alive.Has(hwnd) && !this.Excluded.Has(hwnd) && WinExist(hwnd) {
+            if alive.Has(hwnd) && WinExist(hwnd) {
                 newOrder.Push(hwnd)
                 alive.Delete(hwnd)
             }
         }
-        for hwnd, _ in alive {
-            if !this.Excluded.Has(hwnd)
-                newOrder.Push(hwnd)
-        }
+        for hwnd, _ in alive
+            newOrder.Push(hwnd)
         this.TileOrder := newOrder
     }
 
     static AutoTile() {
-        global Bar_Height, Bar_Visible, Bar_MonitorIdx, CurrentTileGap, WTM_Gap
         this.RebuildOrder()
         if (this.TileOrder.Length = 0)
             return
-        mon := GetMonitorIndex()
-        MonitorGetWorkArea(mon, &WL, &WT, &WR, &WB)
-        if (Bar_Visible && mon = Bar_MonitorIdx)
+        ; 按窗口当前所在显示器分组, 各显示器分别平铺(多显示器支持)
+        groups := Map()
+        for hwnd in this.TileOrder {
+            m := 1
+            try m := GetMonitorIndex(hwnd)
+            if (m < 1)
+                m := 1
+            if !groups.Has(m)
+                groups[m] := []
+            groups[m].Push(hwnd)
+        }
+        for m, wins in groups
+            this._TileMonitor(m, wins)
+    }
+
+    static _TileMonitor(monIdx, wins) {
+        global Bar_Height, Bar_Visible, Bar_MonitorIdx, CurrentTileGap, WTM_Gap, LayoutRules
+        if (wins.Length = 0)
+            return
+        if (monIdx < 1 || monIdx > MonitorGetCount())
+            monIdx := 1
+        MonitorGetWorkArea(monIdx, &WL, &WT, &WR, &WB)
+        if (Bar_Visible && monIdx = Bar_MonitorIdx)
             WT += Bar_Height + 5
         W := WR - WL, H := WB - WT
 
@@ -2041,22 +2384,23 @@ class WTM {
         }
         CurrentTileGap := g
 
-        aspect := (H != 0) ? W / H : 1
-        if (H > W)
-            TileVertical(this.TileOrder, WL, WT, W, H)
-        else if (aspect >= 32/9 - 0.15)
-            TileUltrawide(this.TileOrder, WL, WT, W, H)
-        else
-            TileNormal(this.TileOrder, WL, WT, W, H)
+        ; 同样优先应用用户自定义布局, 无匹配时回退默认平铺
+        if !ApplyCustomLayout(wins, WL, WT, W, H) {
+            aspect := (H != 0) ? W / H : 1
+            if (H > W)
+                TileVertical(wins, WL, WT, W, H)
+            else if (aspect >= 32/9 - 0.15)
+                TileUltrawide(wins, WL, WT, W, H)
+            else
+                TileNormal(wins, WL, WT, W, H)
+        }
 
         CurrentTileGap := 0
     }
 
-    static Tick() {
-        if !this.Active
-            return
+    static _Signature() {
         sig := ""
-        for hwnd in GetVisibleWindowsOnMonitor(GetMonitorIndex()) {
+        for hwnd in GetVisibleWindow() {
             if this.Excluded.Has(hwnd)
                 continue
             try {
@@ -2064,19 +2408,17 @@ class WTM {
                 sig .= hwnd "|" w "x" h ";"
             }
         }
+        return sig
+    }
+
+    static Tick() {
+        if !this.Active
+            return
+        sig := this._Signature()
         if (sig != this._LastSig) {
             this._LastSig := sig
             this.AutoTile()
-            sig := ""
-            for hwnd in GetVisibleWindowsOnMonitor(GetMonitorIndex()) {
-                if this.Excluded.Has(hwnd)
-                    continue
-                try {
-                    WinGetPos(&x, &y, &w, &h, hwnd)
-                    sig .= hwnd "|" w "x" h ";"
-                }
-            }
-            this._LastSig := sig
+            this._LastSig := this._Signature()
         }
         try {
             fh := WinGetID("A")
@@ -2123,18 +2465,106 @@ class WTM {
         if !cur
             return
         target := this._PickNeighbor(cur, dir)
-        if !target
+        if !target {
+            ; 该方向在本显示器无相邻窗口: 尝试推到相邻显示器
+            adj := 0
+            try adj := this._AdjacentMonitor(GetMonitorIndex(cur), dir)
+            if adj {
+                this._MoveWindowToMonitor(cur, adj)
+                this.AutoTile()
+                this._MoveCursorToWindow(cur)
+                this.RefreshBorder()
+            }
             return
+        }
+        curMon := 1, tgtMon := 1
+        try curMon := GetMonitorIndex(cur)
+        try tgtMon := GetMonitorIndex(target)
         i1 := this._OrderIndex(cur)
         i2 := this._OrderIndex(target)
         if (i1 && i2) {
             tmp := this.TileOrder[i1]
             this.TileOrder[i1] := this.TileOrder[i2]
             this.TileOrder[i2] := tmp
-            this.AutoTile()
-            this._MoveCursorToWindow(cur)
-            this.RefreshBorder()
         }
+        ; 跨显示器交换时同时物理迁移窗口, 使分组平铺落到正确显示器
+        if (curMon != tgtMon) {
+            this._MoveWindowToMonitor(cur, tgtMon)
+            this._MoveWindowToMonitor(target, curMon)
+        }
+        this.AutoTile()
+        this._MoveCursorToWindow(cur)
+        this.RefreshBorder()
+    }
+
+    ; 将窗口中心移动到指定显示器工作区中心(随后由 AutoTile 重新平铺到位).
+    ; 使用工作区坐标, 兼容负坐标 / 不同分辨率 / 不同缩放.
+    static _MoveWindowToMonitor(hwnd, monIdx) {
+        if !hwnd || !WinExist(hwnd)
+            return
+        if (monIdx < 1 || monIdx > MonitorGetCount())
+            return
+        MonitorGetWorkArea(monIdx, &L, &T, &R, &B)
+        try {
+            WinGetPos(, , &w, &h, hwnd)
+            cx := L + (R - L) // 2, cy := T + (B - T) // 2
+            WinMove(cx - w // 2, cy - h // 2, , , hwnd)
+        }
+    }
+
+    ; 返回指定方向上相邻的显示器索引; 没有则返回 0.
+    static _AdjacentMonitor(monIdx, dir) {
+        if (monIdx < 1 || monIdx > MonitorGetCount())
+            monIdx := 1
+        MonitorGet(monIdx, &L, &T, &R, &B)
+        ccx := (L + R) // 2, ccy := (T + B) // 2
+        best := 0, bestDist := 1.0e18
+        loop MonitorGetCount() {
+            if (A_Index = monIdx)
+                continue
+            MonitorGet(A_Index, &l2, &t2, &r2, &b2)
+            mx := (l2 + r2) // 2, my := (t2 + b2) // 2
+            dx := mx - ccx, dy := my - ccy
+            skip := false
+            if      (dir = "L" && dx >= 0)
+                skip := true
+            else if (dir = "R" && dx <= 0)
+                skip := true
+            else if (dir = "U" && dy >= 0)
+                skip := true
+            else if (dir = "D" && dy <= 0)
+                skip := true
+            if skip
+                continue
+            dist := dx*dx + dy*dy
+            if (dist < bestDist) {
+                bestDist := dist
+                best := A_Index
+            }
+        }
+        return best
+    }
+
+    ; WTM 直接关闭聚焦窗口: 不依赖鼠标位置, 不移动鼠标, 句柄失效时静默失败.
+    static CloseFocused() {
+        if !this.Active
+            return
+        hwnd := this.FocusHwnd
+        if (!hwnd || !WinExist(hwnd)) {
+            try hwnd := WinGetID("A")
+        }
+        if (!hwnd || !WinExist(hwnd)) {
+            if (this.TileOrder.Length)
+                hwnd := this.TileOrder[1]
+        }
+        if (!hwnd || !WinExist(hwnd))
+            return
+        try {
+            WinClose(hwnd)
+            this.RemoveBorder(hwnd)
+            PinBorder.Remove(hwnd)
+        }
+        this.OnWindowChanged()
     }
 
     static TogglePinExclude() {
