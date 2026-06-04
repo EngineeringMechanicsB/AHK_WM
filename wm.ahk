@@ -38,10 +38,38 @@ global CurrentTileGap := 0
 global Tile_Gap        := 8
 global GUI_Rounded     := "on"
 global GUI_CornerRadius := 12
-global LayoutRules     := Map()        ; windowCount -> [{x:{lo,hi}, y:{lo,hi}}, ...]
+; Custom tiling rules: Map(monitorKey -> Map(N -> [{x:{lo,hi}, y:{lo,hi}}, ...]))
+; monitorKey is a 1-based monitor index or the wildcard "*".
+global LayoutRules     := Map()
 global Excl_Titles     := []
 global Excl_Classes    := []
 global Excl_Processes  := []
+
+; ---- Per-GUI rounded-corner overrides (each falls back to global [GUI]) ----
+global Help_Rounded, Help_Radius, PM_Rounded, PM_Radius
+global OSD_Rounded, OSD_Radius
+global Border_Drag_Rounded, Border_Drag_Radius
+global Border_Pin_Rounded, Border_Pin_Radius
+global WTM_BorderRounded, WTM_BorderRadius
+
+; ---- Help / Power menu sizing ----
+global Help_FontSize := 10, Help_Width := 620, Help_Height := 0, Help_Opacity := 255
+global PM_FontSize := 12, PM_Width := 500, PM_Height := 160, PM_Opacity := 255
+
+; ---- All-window-borders mode (toggle) ----
+global Color_BorderUnfocus := "555555"
+
+; ---- Tiling outer boundary (bar-reserved work area; protects Bar on negative gap) ----
+global TileBound_L := 0, TileBound_T := 0, TileBound_R := 0, TileBound_B := 0
+global TileBoundSet := false
+
+; ---- Virtual-desktop hide method & per-desktop focus memory ----
+global Desktop_HideMethod := "minimize"     ; "minimize" | "hide"
+global DesktopFocus := Map()                 ; desktop index -> last focused hwnd
+
+; ---- Bar instances (new fully-customizable bar system) ----
+global Bars := []
+global Bar_Cfg := Map()
 
 global HelpGuiObj    := ""
 global PowerMenuObj  := ""
@@ -85,6 +113,13 @@ global Themes := Map(
     "oxocarbon",        Map("Color_Bg","161616","Color_Text","F2F4F8","Color_Active","82CFFF","Color_Task","42BE65","Border_Drag_Color","82CFFF","Border_Pin_Color","FF7EB6","PM_Bg","262626","PM_BtnShutdown","FF7EB6","PM_BtnSleep","82CFFF","PM_BtnReboot","BE95FF","WTM_BorderFocusColor","82CFFF","WTM_BorderUnfocusColor","393939")
 )
 
+; Seed Color_BorderUnfocus (used by the all-window-borders mode) into every theme,
+; reusing each theme's existing WTM unfocused-border color so no preset is missing it.
+for _tname, _tmap in Themes {
+    if !_tmap.Has("Color_BorderUnfocus")
+        _tmap["Color_BorderUnfocus"] := _tmap.Has("WTM_BorderUnfocusColor") ? _tmap["WTM_BorderUnfocusColor"] : "555555"
+}
+
 ; ---- Scaling helpers: 0-100 -> real units ----
 Pct2Alpha(p) => Round(Max(0, Min(100, p+0)) * 255 / 100)
 
@@ -114,24 +149,29 @@ WMLog(msg) {
 }
 
 ; ---- GUI rounded corners (unified) ----
-; 统一的圆角应用逻辑; 各 GUI 组件 .Show() 之后调用即可, 无需各自解析配置.
+; Apply rounded corners to a GUI/HWND after .Show(). RoundWindow uses the global
+; [GUI] settings; RoundWindowEx lets a specific GUI override enable/radius.
 RoundWindow(guiOrHwnd) {
     global GUI_Rounded, GUI_CornerRadius
-    if (GUI_Rounded != "on")
+    RoundWindowEx(guiOrHwnd, GUI_Rounded, GUI_CornerRadius)
+}
+
+RoundWindowEx(guiOrHwnd, enabled, radius) {
+    if (enabled != "on")
         return
     hwnd := IsObject(guiOrHwnd) ? guiOrHwnd.Hwnd : guiOrHwnd
     try {
         WinGetPos(, , &w, &h, hwnd)
         if (w <= 0 || h <= 0)
             return
-        d := Max(0, GUI_CornerRadius) * 2     ; CreateRoundRectRgn 使用椭圆直径
+        d := Max(0, radius) * 2     ; CreateRoundRectRgn takes the ellipse diameter
         if (d <= 0)
             return
-        hRgn := DllCall("CreateRoundRectRgn"
+        hRgn := DllCall("Gdi32\CreateRoundRectRgn"
             , "Int", 0, "Int", 0, "Int", w + 1, "Int", h + 1
             , "Int", d, "Int", d, "Ptr")
-        ; 成功后区域所有权转交系统, 无需手动释放
-        DllCall("SetWindowRgn", "Ptr", hwnd, "Ptr", hRgn, "Int", 1)
+        ; Ownership transfers to the system on success; no manual release needed.
+        DllCall("User32\SetWindowRgn", "Ptr", hwnd, "Ptr", hRgn, "Int", 1)
     }
 }
 
@@ -203,67 +243,86 @@ ParseAxis(tok) {
     throw Error("unrecognized axis: " tok)
 }
 
-; 解析整段规则字符串 -> Map(N -> [{x,y}, ...]).  任一组非法则整组丢弃(回退默认).
+; Parse the whole rule string -> Map(monitorKey -> Map(N -> [{x,y}, ...])).
+; New 5-field format:  M,N,I,X,Y   (M = monitor index or "*" wildcard).
+; Legacy 4-field format:  N,I,X,Y  is accepted and treated as M = "*".
+; Any invalid (M,N) group is dropped wholesale (with a log) and falls back to default.
 ParseLayoutRules(str) {
     result := Map()
     str := Trim(str)
     if (str = "")
         return result
 
-    groups := Map()    ; N -> Map(I -> {x, y})
-    bad    := Map()    ; N -> true
+    groups := Map()    ; "M|N" -> Map(I -> {x, y})
+    counts := Map()    ; "M|N" -> N
+    monKey := Map()    ; "M|N" -> M
+    bad    := Map()    ; "M|N" -> true
 
     for clause in StrSplit(str, ";") {
         clause := Trim(clause)
         if (clause = "")
             continue
         f := StrSplit(clause, ",")
-        if (f.Length < 1 || !IsInteger(Trim(f[1]))) {
-            WMLog("Layout rule skipped (no valid N): " clause)
+        ; Normalize to M,N,I,X,Y: a 4-field clause is legacy (apply to all monitors).
+        if (f.Length = 4) {
+            f.InsertAt(1, "*")
+        } else if (f.Length != 5) {
+            WMLog("Layout rule skipped (field count): " clause)
             continue
         }
-        N := Integer(Trim(f[1]))
+        M := Trim(f[1])
+        if (M != "*" && !(IsInteger(M) && Integer(M) >= 1)) {
+            WMLog("Layout rule skipped (bad monitor '" M "'): " clause)
+            continue
+        }
+        if (M != "*")
+            M := Integer(M)
+        if !IsInteger(Trim(f[2])) {
+            WMLog("Layout rule skipped (N not integer): " clause)
+            continue
+        }
+        N := Integer(Trim(f[2]))
         if (N < 1) {
             WMLog("Layout rule skipped (N < 1): " clause)
             continue
         }
-        if (f.Length != 4) {
-            bad[N] := true
-            WMLog("Layout group " N " invalid (field count): " clause)
+        key := M "|" N
+        if !IsInteger(Trim(f[3])) {
+            bad[key] := true
+            WMLog("Layout group " key " invalid (I not integer): " clause)
             continue
         }
-        if !IsInteger(Trim(f[2])) {
-            bad[N] := true
-            WMLog("Layout group " N " invalid (I not integer): " clause)
-            continue
-        }
-        I := Integer(Trim(f[2]))
+        I := Integer(Trim(f[3]))
         if (I < 1 || I > N) {
-            bad[N] := true
-            WMLog("Layout group " N " invalid (I out of range): " clause)
+            bad[key] := true
+            WMLog("Layout group " key " invalid (I out of range): " clause)
             continue
         }
         try {
-            xr := ParseAxis(f[3])
-            yr := ParseAxis(f[4])
+            xr := ParseAxis(f[4])
+            yr := ParseAxis(f[5])
         } catch as e {
-            bad[N] := true
-            WMLog("Layout group " N " invalid (" e.Message ")")
+            bad[key] := true
+            WMLog("Layout group " key " invalid (" e.Message ")")
             continue
         }
-        if !groups.Has(N)
-            groups[N] := Map()
-        if groups[N].Has(I) {
-            bad[N] := true
-            WMLog("Layout group " N " invalid (duplicate window " I ")")
+        if !groups.Has(key) {
+            groups[key] := Map()
+            counts[key] := N
+            monKey[key] := M
+        }
+        if groups[key].Has(I) {
+            bad[key] := true
+            WMLog("Layout group " key " invalid (duplicate window " I ")")
             continue
         }
-        groups[N][I] := {x: xr, y: yr}
+        groups[key][I] := {x: xr, y: yr}
     }
 
-    for N, items in groups {
-        if bad.Has(N)
+    for key, items in groups {
+        if bad.Has(key)
             continue
+        N := counts[key]
         complete := (items.Count = N)
         if complete {
             loop N {
@@ -274,24 +333,39 @@ ParseLayoutRules(str) {
             }
         }
         if !complete {
-            WMLog("Layout group " N " invalid (incomplete/duplicate window list)")
+            WMLog("Layout group " key " invalid (incomplete/duplicate window list)")
             continue
         }
         arr := []
         loop N
             arr.Push(items[A_Index])
-        result[N] := arr
+        M := monKey[key]
+        if !result.Has(M)
+            result[M] := Map()
+        result[M][N] := arr
     }
     return result
 }
 
-; 若存在匹配当前窗口数量的自定义布局则应用并返回 true; 否则 false(交给默认逻辑).
-ApplyCustomLayout(wins, X, Y, W, H) {
+; Resolve the custom rule set for a monitor + window count.
+; Priority: exact monitor index -> "*" wildcard -> "" (no rule, use default tiling).
+GetCustomLayout(monIdx, n) {
     global LayoutRules
+    if (n < 1)
+        return ""
+    if (LayoutRules.Has(monIdx) && LayoutRules[monIdx].Has(n))
+        return LayoutRules[monIdx][n]
+    if (LayoutRules.Has("*") && LayoutRules["*"].Has(n))
+        return LayoutRules["*"][n]
+    return ""
+}
+
+; Apply a matching custom layout for the given monitor; return true if applied.
+ApplyCustomLayout(wins, X, Y, W, H, monIdx := 0) {
     n := wins.Length
-    if (n = 0 || !LayoutRules.Has(n))
+    rules := GetCustomLayout(monIdx, n)
+    if (rules = "")
         return false
-    rules := LayoutRules[n]
     for i, hwnd in wins {
         if (i > rules.Length)
             break
@@ -412,14 +486,14 @@ RegHotkey(key, fn) {
 }
 
 RegisterAllHotkeys() {
-    global HK
+    global HK, DesktopCount
 
     RegHotkey("Help", ShowHelpGui)
 
     pSwitch := HK.Has("DesktopSwitchPrefix")     ? HK["DesktopSwitchPrefix"]     : ""
     pMove   := HK.Has("DesktopMovePrefix")       ? HK["DesktopMovePrefix"]       : ""
     pBoth   := HK.Has("DesktopMoveSwitchPrefix") ? HK["DesktopMoveSwitchPrefix"] : ""
-    Loop 9 {
+    Loop DesktopCount {
         i := A_Index
         if (pSwitch != "")
             try Hotkey(pSwitch . i, SwitchDesktop.Bind(i))
@@ -440,6 +514,7 @@ RegisterAllHotkeys() {
     RegHotkey("ToggleMaximize", ToggleMaximizeUnderMouse)
     RegHotkey("ToggleTop",      ToggleTopDispatch)
     RegHotkey("HideWindow",     HideUnderMouse)
+    RegHotkey("ToggleAllBorders", (*) => AllBorders.Toggle())
 
     RegHotkey("TransparencyUp",   AdjustTransparency.Bind(20))
     RegHotkey("TransparencyDown", AdjustTransparency.Bind(-20))
@@ -537,12 +612,17 @@ LoadOrInitConfig() {
         Task=CF8DC9
         BorderDrag=A020F0
         BorderPin=FF5555
+        ; Unfocused border color for the "show all window borders" toggle (Alt+B).
+        ; Focused windows reuse BorderDrag.
+        BorderUnfocus=666666
         PowerMenuBg=2E3440
         PowerBtnShutdown=B48EAD
         PowerBtnSleep=5E81AC
         PowerBtnReboot=BF616A
 
         [StatusBar]
+        ; Legacy single-bar settings. Still used as the fallback bar and as defaults
+        ; (height / opacity / font / monitor) for the new [Bar] system below.
         HeightPct=3
         Opacity=78
         FontSize=10
@@ -559,6 +639,9 @@ LoadOrInitConfig() {
         PositionPct=80
         Opacity=78
         FontSize=20
+        ; RoundedCorners / CornerRadius inherit [GUI] when omitted.
+        ; RoundedCorners=on
+        ; CornerRadius=12
 
         [BorderDrag]
         Enable=on
@@ -566,12 +649,18 @@ LoadOrInitConfig() {
         Offset=0
         OffsetTop=5
         Opacity=70
+        ; Window drag border rounding (focused-style border). Inherits [GUI] if omitted.
+        RoundedCorners=on
+        CornerRadius=10
 
         [BorderPin]
         Thickness=10
         Offset=0
         OffsetTop=5
         Opacity=78
+        ; The pinned indicator is a single top strip and is never rounded.
+        RoundedCorners=off
+        CornerRadius=0
 
         [Paths]
         ButtonDir=Buttons
@@ -599,39 +688,110 @@ LoadOrInitConfig() {
         BorderOffset=0
         BorderOpacity=80
         SizeStep=3
+        ; Gap may be negative (windows draw closer / overlap, but never cover a bar).
         Gap=10
+        ; WTM window border rounding. Inherits [GUI] if omitted.
+        RoundedCorners=on
+        CornerRadius=10
 
         [Layout]
-        ; 普通平铺(Alt+D)使用的窗口间隙(像素). WTM 间隙见 [WTM] Gap.
+        ; Window gap (pixels) for smart tiling (Alt+D). WTM gap is [WTM] Gap.
+        ; May be negative: windows draw closer and may overlap, but never cross the
+        ; bar / work-area outer boundary.
         Gap=8
-        ; 自定义平铺布局规则.  格式:  N,I,X,Y  多条规则用分号 ; 分隔.
-        ;   N = 参与平铺的窗口总数
-        ;   I = 第几个窗口 (从 1 开始)
-        ;   X = 横向占用范围,  Y = 纵向占用范围
-        ; 坐标表达式:
-        ;   a/b      -> b 等分中的第 a 段       (如 1/2 左半边 / 上半边)
-        ;   (a-c)/b  -> b 等分中第 a 到第 c 段   (闭区间, 如 (2-4)/5)
-        ;   1        -> 占满整个轴向
-        ; 未配置当前窗口数量时, 回退到内置默认平铺逻辑; 非法规则会忽略该组并回退.
-        ; 示例(超宽屏 4 窗口):
-        ;   Rules=4,1,(2-4)/5,1;4,2,1/5,(1-2)/3;4,3,1/5,3/3;4,4,5/5,1
+        ; Custom tiling rules. Format:  M,N,I,X,Y   multiple rules separated by ';'.
+        ;   M = monitor index (1-based) or '*' for all monitors
+        ;   N = total number of tiled windows on that monitor
+        ;   I = which window (starting at 1)
+        ;   X = horizontal span,  Y = vertical span
+        ; Coordinate expressions:
+        ;   a/b      -> segment a of b equal parts   (e.g. 1/2 = left / top half)
+        ;   (a-c)/b  -> segments a..c of b parts      (inclusive, e.g. (2-4)/5)
+        ;   1        -> the whole axis
+        ; Priority: exact monitor match -> '*' wildcard -> built-in default tiling.
+        ; The legacy 4-field form  N,I,X,Y  is still accepted (treated as '*').
+        ; Invalid groups are ignored (and logged) and fall back to default tiling.
+        ; Example (monitor 1 three windows, monitor 2 single fullscreen):
+        ;   Rules=1,3,1,1/2,1;1,3,2,2/2,1/2;1,3,3,2/2,2/2;2,1,1,1,1
         Rules=
 
         [Exclude]
-        ; 被排除的窗口不参与平铺 / WTM 布局, 也不会被布局逻辑移动或缩放.
-        ; 多个规则用分号 ; 分隔.
-        ; 标题匹配:  默认"包含匹配"(不区分大小写);  re:正则  表示正则匹配;  =文本  表示精确匹配.
+        ; Excluded windows are skipped by tiling / WTM and are never moved or resized.
+        ; Multiple rules separated by ';'.
+        ; Title match: default "contains" (case-insensitive); re:regex = regex; =text = exact.
         Titles=Picture-in-Picture
-        ; 窗口类名: 精确匹配(不区分大小写), 分号分隔.
+        ; Window class: exact match (case-insensitive), ';' separated.
         Classes=
-        ; 进程名(exe): 精确匹配(不区分大小写), 分号分隔, 如  notepad.exe
+        ; Process name (exe): exact match (case-insensitive), ';' separated, e.g. notepad.exe
         Processes=
 
         [GUI]
-        ; 全局 GUI 圆角(帮助菜单 / 状态栏 / 提示窗口 / 电源菜单等)统一开关 on/off,
-        ; 以及圆角半径(像素).
+        ; Global GUI rounded corners (help menu / OSD / power menu / borders, etc.).
+        ; Each GUI section may override RoundedCorners / CornerRadius; otherwise it
+        ; inherits these global values. The top status bar is never rounded.
         RoundedCorners=on
         CornerRadius=12
+
+        [HelpMenu]
+        ; Help page (Alt+/). FontSize/Opacity exact; Width/Height best-effort scaling.
+        FontSize=10
+        Width=620
+        Height=0
+        Opacity=255
+        ; RoundedCorners / CornerRadius inherit [GUI] when omitted.
+        ; RoundedCorners=on
+        ; CornerRadius=12
+
+        [PowerMenu]
+        ; Power page (Alt+X). FontSize/Opacity exact; Width/Height scale the layout.
+        FontSize=12
+        Width=500
+        Height=160
+        Opacity=255
+        ; RoundedCorners=on
+        ; CornerRadius=12
+
+        [Desktops]
+        ; Number of virtual desktops (1-9; switch hotkeys map to digits 1-9).
+        Count=9
+        ; How windows on inactive desktops are hidden: minimize | hide.
+        ; "hide" keeps focus stable and avoids taskbar flicker. All windows are shown
+        ; again on exit. Focus is preserved when switching away and back.
+        HideMethod=minimize
+
+        [Bar]
+        ; Fully customizable status bar(s). Leave 'instances' empty to use a single
+        ; bar built from [StatusBar] (monitor / height / opacity / font).
+        ; Widget toggles:
+        desktops=true
+        time=true
+        date=true
+        progress=true
+        ; Time / date formats (AutoHotkey FormatTime patterns).
+        time_format=HH:mm
+        date_format=yyyy-MM-dd
+        ; Free custom content (empty = hidden). custom_icon can be a symbol or emoji.
+        custom_text=
+        custom_icon=
+        ; Desktop labels (comma separated). Falls back to numbers if count mismatches.
+        ; e.g. desktop_labels=work,code,web,chat,media
+        desktop_labels=
+        ; Symbols wrapping the current desktop label.
+        current_desktop_left=[
+        current_desktop_right=]
+        ; Desktop display mode: all | current | occupied
+        desktop_display_mode=all
+        ; Default bar edge + distance from the screen edge (used when 'instances' empty).
+        position=top
+        offset=0
+        ; Multiple bars: M:pos:offset; ...  (M = monitor index or '*'). One bar per
+        ; monitor; extras are ignored with a log warning. e.g. instances=1:top:0;2:left:8
+        instances=
+        ; Internal element layout: element:expr; ...  expr uses the tiling fractions
+        ; (a/b or (a-c)/b) along the bar's main axis (x for horizontal, y for vertical).
+        ; Elements: desktops, time, date, progress, custom_text, custom_icon.
+        ; e.g. layout=desktops:1/5;custom_text:3/5;time:5/5
+        layout=
 
         ;--------------------------------------------------------------------------
         ; Hotkeys - natural language:  Alt / Shift / Ctrl / Win  joined by '+'
@@ -657,6 +817,8 @@ LoadOrInitConfig() {
         ToggleMaximize=Alt+F
         ToggleTop=Alt+T
         HideWindow=Alt+W
+        ; Toggle borders on every window (focused = BorderDrag, others = BorderUnfocus).
+        ToggleAllBorders=Alt+B
         TransparencyUp=Alt+WheelUp
         TransparencyDown=Alt+WheelDown
 
@@ -740,9 +902,11 @@ LoadOrInitConfig() {
     WTM_BorderOffset       := Pct2Border(Integer(IniRead(ConfigFile, "WTM", "BorderOffset",    "0")))
     WTM_BorderOpacity      := Pct2Alpha(Integer(IniRead(ConfigFile, "WTM", "BorderOpacity",   "80")))
     WTM_SizeStep           := Integer(IniRead(ConfigFile, "WTM", "SizeStep", "3"))
-    WTM_Gap                := Max(0, Integer(IniRead(ConfigFile, "WTM", "Gap", "10")))
+    ; Gap may be negative (windows draw closer / overlap); not clamped to >= 0.
+    WTM_Gap                := Integer(IniRead(ConfigFile, "WTM", "Gap", "10"))
 
-    Tile_Gap         := Max(0, Integer(IniRead(ConfigFile, "Layout", "Gap", "8")))
+    ; Gap may be negative (windows draw closer / overlap); not clamped to >= 0.
+    Tile_Gap         := Integer(IniRead(ConfigFile, "Layout", "Gap", "8"))
     LayoutRules      := ParseLayoutRules(IniRead(ConfigFile, "Layout", "Rules", ""))
 
     Excl_Titles      := SplitExcludeList(IniRead(ConfigFile, "Exclude", "Titles",    ""))
@@ -751,6 +915,72 @@ LoadOrInitConfig() {
 
     GUI_Rounded      := IniRead(ConfigFile, "GUI", "RoundedCorners", "on")
     GUI_CornerRadius := Max(0, Integer(IniRead(ConfigFile, "GUI", "CornerRadius", "12")))
+
+    ; Per-GUI rounded-corner overrides. Each defaults to the global [GUI] values so a
+    ; section that omits the keys simply inherits the global setting.
+    Help_Rounded := IniRead(ConfigFile, "HelpMenu", "RoundedCorners", GUI_Rounded)
+    Help_Radius  := Max(0, Integer(IniRead(ConfigFile, "HelpMenu", "CornerRadius", GUI_CornerRadius)))
+    PM_Rounded   := IniRead(ConfigFile, "PowerMenu", "RoundedCorners", GUI_Rounded)
+    PM_Radius    := Max(0, Integer(IniRead(ConfigFile, "PowerMenu", "CornerRadius", GUI_CornerRadius)))
+    OSD_Rounded  := IniRead(ConfigFile, "OSD", "RoundedCorners", GUI_Rounded)
+    OSD_Radius   := Max(0, Integer(IniRead(ConfigFile, "OSD", "CornerRadius", GUI_CornerRadius)))
+
+    Border_Drag_Rounded := IniRead(ConfigFile, "BorderDrag", "RoundedCorners", GUI_Rounded)
+    Border_Drag_Radius  := Max(0, Integer(IniRead(ConfigFile, "BorderDrag", "CornerRadius", "10")))
+    Border_Pin_Rounded  := IniRead(ConfigFile, "BorderPin", "RoundedCorners", "off")  ; pin strip: never rounded
+    Border_Pin_Radius   := Max(0, Integer(IniRead(ConfigFile, "BorderPin", "CornerRadius", "0")))
+    WTM_BorderRounded   := IniRead(ConfigFile, "WTM", "RoundedCorners", GUI_Rounded)
+    WTM_BorderRadius    := Max(0, Integer(IniRead(ConfigFile, "WTM", "CornerRadius", "10")))
+
+    ; Help menu sizing (FontSize/Opacity exact; Width/Height best-effort scaling).
+    Help_FontSize := Integer(IniRead(ConfigFile, "HelpMenu", "FontSize", "10"))
+    Help_Width    := Integer(IniRead(ConfigFile, "HelpMenu", "Width",    "620"))
+    Help_Height   := Integer(IniRead(ConfigFile, "HelpMenu", "Height",   "0"))
+    Help_Opacity  := Integer(IniRead(ConfigFile, "HelpMenu", "Opacity",  "255"))
+
+    ; Power menu sizing.
+    PM_FontSize := Integer(IniRead(ConfigFile, "PowerMenu", "FontSize", "12"))
+    PM_Width    := Integer(IniRead(ConfigFile, "PowerMenu", "Width",    "500"))
+    PM_Height   := Integer(IniRead(ConfigFile, "PowerMenu", "Height",   "160"))
+    PM_Opacity  := Integer(IniRead(ConfigFile, "PowerMenu", "Opacity",  "255"))
+
+    ; All-window-borders mode: unfocused border color (focused reuses BorderDrag).
+    Color_BorderUnfocus := IniRead(ConfigFile, "Colors", "BorderUnfocus", "555555")
+
+    ; Virtual-desktop count and hide method.
+    DesktopCount := Integer(IniRead(ConfigFile, "Desktops", "Count", "9"))
+    if (DesktopCount < 1)
+        DesktopCount := 1
+    if (DesktopCount > 9)
+        DesktopCount := 9                ; switch hotkeys map to digits 1-9
+    Desktop_HideMethod := StrLower(IniRead(ConfigFile, "Desktops", "HideMethod", "minimize"))
+    if !(Desktop_HideMethod = "minimize" || Desktop_HideMethod = "hide")
+        Desktop_HideMethod := "minimize"
+
+    ; ---- Bar configuration (new fully-customizable bar system) ----
+    Bar_Cfg := Map()
+    Bar_Cfg["desktops"]     := (StrLower(IniRead(ConfigFile, "Bar", "desktops", "true")) = "true")
+    Bar_Cfg["time"]         := (StrLower(IniRead(ConfigFile, "Bar", "time",     "true")) = "true")
+    Bar_Cfg["date"]         := (StrLower(IniRead(ConfigFile, "Bar", "date",     "true")) = "true")
+    Bar_Cfg["progress"]     := (StrLower(IniRead(ConfigFile, "Bar", "progress", "true")) = "true")
+    Bar_Cfg["time_format"]  := IniRead(ConfigFile, "Bar", "time_format", "HH:mm")
+    Bar_Cfg["date_format"]  := IniRead(ConfigFile, "Bar", "date_format", "yyyy-MM-dd")
+    Bar_Cfg["custom_text"]  := IniRead(ConfigFile, "Bar", "custom_text", "")
+    Bar_Cfg["custom_icon"]  := IniRead(ConfigFile, "Bar", "custom_icon", "")
+    Bar_Cfg["cur_left"]     := IniRead(ConfigFile, "Bar", "current_desktop_left",  "[")
+    Bar_Cfg["cur_right"]    := IniRead(ConfigFile, "Bar", "current_desktop_right", "]")
+    Bar_Cfg["display_mode"] := StrLower(IniRead(ConfigFile, "Bar", "desktop_display_mode", "all"))
+    Bar_Cfg["position"]     := StrLower(IniRead(ConfigFile, "Bar", "position", "top"))
+    Bar_Cfg["offset"]       := Integer(IniRead(ConfigFile, "Bar", "offset", "0"))
+    Bar_Cfg["instances"]    := IniRead(ConfigFile, "Bar", "instances", "")
+    Bar_Cfg["layout"]       := ParseBarLayout(IniRead(ConfigFile, "Bar", "layout", ""))
+    barLabelsRaw := IniRead(ConfigFile, "Bar", "desktop_labels", "")
+    barLabels := []
+    if (Trim(barLabelsRaw) != "") {
+        for lbl in StrSplit(barLabelsRaw, ",")
+            barLabels.Push(Trim(lbl))
+    }
+    Bar_Cfg["desktop_labels"] := barLabels
 
     bDirTemp        := IniRead(ConfigFile, "Paths", "ButtonDir",  "Buttons")
     Path_Button     := (bDirTemp ~= "^[a-zA-Z]:") ? bDirTemp : (A_ScriptDir . "\" . bDirTemp)
@@ -775,6 +1005,7 @@ LoadOrInitConfig() {
                "DesktopSwitchPrefix","DesktopMovePrefix","DesktopMoveSwitchPrefix",
                "TileSmart","GatherAll","TogglePin","ToggleBar","SaveLayout","RestoreLayout",
                "CloseWindow","CloseWindowAlt","ToggleMaximize","ToggleTop","HideWindow",
+               "ToggleAllBorders",
                "TransparencyUp","TransparencyDown",
                "SnapLeft","SnapRight","SnapUp","SnapDown",
                "LaunchTerminal","EditFile","PowerMenu","ClipboardHistory",
@@ -787,7 +1018,7 @@ LoadOrInitConfig() {
         "TileSmart","Alt+D","GatherAll","Alt+Shift+G","TogglePin","Ctrl+Alt+T","ToggleBar","Ctrl+Alt+B",
         "SaveLayout","Alt+Shift+S","RestoreLayout","Alt+Shift+R",
         "CloseWindow","Alt+Q","CloseWindowAlt","Alt+MButton","ToggleMaximize","Alt+F",
-        "ToggleTop","Alt+T","HideWindow","Alt+W",
+        "ToggleTop","Alt+T","HideWindow","Alt+W","ToggleAllBorders","Alt+B",
         "TransparencyUp","Alt+WheelUp","TransparencyDown","Alt+WheelDown",
         "SnapLeft","Alt+Left","SnapRight","Alt+Right","SnapUp","Alt+Up","SnapDown","Alt+Down",
         "LaunchTerminal","Alt+Enter","EditFile","Alt+V","PowerMenu","Alt+X","ClipboardHistory","Ctrl+``",
@@ -903,6 +1134,7 @@ DestroyTransientGuis() {
 ; ---- Help GUI ----
 ShowHelpGui(*) {
     global HelpGuiObj, HK
+    global Help_FontSize, Help_Width, Help_Opacity, Help_Rounded, Help_Radius
 
     CloseWatcher() {
         if !IsObject(HelpGuiObj) {
@@ -922,15 +1154,22 @@ ShowHelpGui(*) {
         return
     }
 
+    ; Two independent scales: font scale (fsc) honors the configured FontSize and drives
+    ; text + vertical rhythm; width scale (wsc) stretches the columns horizontally.
+    fsc  := Help_FontSize / 10.0
+    wsc  := Help_Width / 620.0
+    fullW := Round(620 * wsc)
+    rowH  := Round(23 * fsc)
+
     helpGui := Gui("-Caption +AlwaysOnTop +ToolWindow -DPIScale +Owner")
     helpGui.BackColor := Color_Bg
-    helpGui.SetFont("s20 w700 c" . Color_Text, "Segoe UI")
-    helpGui.Add("Text", "x0 y20 w620 Center", "HELP")
-    helpGui.SetFont("s10 w700 c" . Color_Active, "Segoe UI")
-    helpGui.Add("Text", "x0 y60 w620 Center", "Natural-language hotkeys (Alt / Shift / Ctrl / Win + key)")
+    helpGui.SetFont("s" Round(20*fsc) " w700 c" . Color_Text, "Segoe UI")
+    helpGui.Add("Text", "x0 y" Round(20*fsc) " w" fullW " Center", "HELP")
+    helpGui.SetFont("s" Help_FontSize " w700 c" . Color_Active, "Segoe UI")
+    helpGui.Add("Text", "x0 y" Round(60*fsc) " w" fullW " Center", "Natural-language hotkeys (Alt / Shift / Ctrl / Win + key)")
 
-    helpGui.SetFont("s10 w600 c" . Color_Active)
-    helpGui.Add("Text", "x50 y90 w545 h5 0x10")
+    helpGui.SetFont("s" Help_FontSize " w600 c" . Color_Active)
+    helpGui.Add("Text", "x" Round(50*wsc) " y" Round(90*fsc) " w" Round(545*wsc) " h5 0x10")
 
     PrefP(k) => PrettifyHotkey(HK[k])
     DesktopRange(p) => PrettifyHotkey(p) . " + 1-9"
@@ -944,6 +1183,7 @@ ShowHelpGui(*) {
         [PrefP("WTMToggle"),                  "Toggle WTM Tiling Mode"],
         [PrefP("WTMFocusLeft") . " / J / K / L",      "WTM Focus (H/J/K/L)"],
         [PrefP("WTMMoveLeft")  . " / J / K / L",      "WTM Move/Swap (Shift+HJKL)"],
+        [PrefP("ToggleAllBorders"),           "Toggle All Window Borders"],
         [PrefP("DragMove"),                   "Drag Move Window"],
         [PrefP("DragResize"),                 "Drag Resize Window"],
         [PrefP("TransparencyUp") . " / " . PrefP("TransparencyDown"), "Window Transparency"],
@@ -966,15 +1206,17 @@ ShowHelpGui(*) {
         [PrefP("PowerMenu"),                  "Power Menu"]
     ]
 
-    helpGui.SetFont("s10 w400 c" . Color_Text)
+    helpGui.SetFont("s" Help_FontSize " w400 c" . Color_Text)
+    rowsStart := Round(110 * fsc)
     for i, item in shortcuts {
-        yPos := 110 + (i-1)*23
-        helpGui.Add("Text", "x60 y"  . yPos . " w240 c" . Color_Text, item[1])
-        helpGui.Add("Text", "x300 y" . yPos . " w300 +Right", item[2])
+        yPos := rowsStart + (i-1)*rowH
+        helpGui.Add("Text", "x" Round(60*wsc)  " y" yPos " w" Round(240*wsc) " c" . Color_Text, item[1])
+        helpGui.Add("Text", "x" Round(300*wsc) " y" yPos " w" Round(300*wsc) " +Right", item[2])
     }
 
     helpGui.Show("Center")
-    RoundWindow(helpGui)
+    try WinSetTransparent(Help_Opacity, helpGui.Hwnd)
+    RoundWindowEx(helpGui, Help_Rounded, Help_Radius)
     HelpGuiObj := helpGui
     SetTimer CloseWatcher, 50
 }
@@ -1125,7 +1367,7 @@ class OSD {
         g.GetPos(, , &gw, )
         g.Show(Format("NoActivate AutoSize x{} y{}", cx - gw//2, OSD_Height))
         WinSetTransparent(OSD_Transparent, g.Hwnd)
-        RoundWindow(g)
+        RoundWindowEx(g, OSD_Rounded, OSD_Radius)
 
         this.GuiObj := g
         this.Timer  := () => (IsObject(OSD.GuiObj) ? (OSD.GuiObj.Destroy(), OSD.GuiObj := 0) : 0)
@@ -1134,46 +1376,109 @@ class OSD {
 }
 ShowOSD(text) => OSD.Show(text)
 
-; ---- Drag border ----
+; ==============================================================================
+;  BorderFrame - a single hollow-frame border window (replaces the old 4-rect
+;  approach). One GUI per bordered window; its region is an outer rounded rect
+;  minus an inner rounded rect, so the frame keeps clean, unbroken rounded
+;  corners. Radius 0 yields a sharp rectangular frame (no visual/perf change).
+; ==============================================================================
+class BorderFrame {
+    Gui   := ""
+    Color := ""
+    LastW := -1, LastH := -1, LastT := -1, LastR := -1
+
+    __New(color, opacity) {
+        g := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x20 -DPIScale")
+        g.BackColor := color
+        g.Show("NoActivate x-3000 y-3000 w10 h10")
+        try WinSetTransparent(opacity, g.Hwnd)
+        this.Gui   := g
+        this.Color := color
+    }
+
+    SetColor(color) {
+        if (this.Color = color)
+            return
+        try {
+            this.Gui.BackColor := color
+            WinRedraw(this.Gui.Hwnd)
+        }
+        this.Color := color
+    }
+
+    ; Position the frame around the given rect; (re)build the region on size change.
+    Place(x, y, w, h, thickness, radius, opacity) {
+        if !IsObject(this.Gui)
+            return
+        t := Max(1, Round(thickness))
+        w := Round(Max(t*2 + 1, w)), h := Round(Max(t*2 + 1, h))
+        try DllCall("SetWindowPos", "Ptr", this.Gui.Hwnd, "Ptr", -1
+            , "Int", Round(x), "Int", Round(y), "Int", w, "Int", h
+            , "UInt", 0x10 | 0x40)   ; HWND_TOPMOST | SWP_NOACTIVATE | SWP_SHOWWINDOW
+        this._ApplyRegion(w, h, t, Max(0, Round(radius)))
+    }
+
+    _ApplyRegion(w, h, t, radius) {
+        ; Skip region rebuilds when geometry is unchanged (cheap drag-loop updates).
+        if (w = this.LastW && h = this.LastH && t = this.LastT && radius = this.LastR)
+            return
+        this.LastW := w, this.LastH := h, this.LastT := t, this.LastR := radius
+        d := radius * 2
+        if (d > 0) {
+            outer := DllCall("Gdi32\CreateRoundRectRgn", "Int",0,"Int",0,"Int",w+1,"Int",h+1,"Int",d,"Int",d,"Ptr")
+            id    := Max(0, d - t*2)
+            inner := DllCall("Gdi32\CreateRoundRectRgn", "Int",t,"Int",t,"Int",w-t+1,"Int",h-t+1,"Int",id,"Int",id,"Ptr")
+        } else {
+            outer := DllCall("Gdi32\CreateRectRgn", "Int",0,"Int",0,"Int",w,"Int",h,"Ptr")
+            inner := DllCall("Gdi32\CreateRectRgn", "Int",t,"Int",t,"Int",w-t,"Int",h-t,"Ptr")
+        }
+        DllCall("Gdi32\CombineRgn", "Ptr",outer, "Ptr",outer, "Ptr",inner, "Int",4)   ; RGN_DIFF
+        DllCall("Gdi32\DeleteObject", "Ptr", inner)
+        ; SetWindowRgn takes ownership of 'outer'; do not delete it here.
+        try DllCall("User32\SetWindowRgn", "Ptr", this.Gui.Hwnd, "Ptr", outer, "Int", 1)
+    }
+
+    Hide() {
+        if IsObject(this.Gui)
+            try DllCall("ShowWindow", "Ptr", this.Gui.Hwnd, "Int", 0)   ; SW_HIDE
+    }
+
+    Destroy() {
+        if IsObject(this.Gui)
+            try this.Gui.Destroy()
+        this.Gui := ""
+    }
+}
+
+; ---- Drag border (now a single rounded frame) ----
 class DragBorder {
-    static Guis := []
+    static Frame := ""
 
     static Show() {
         if (Border_Drag_Enable != "on")
             return
         this.Destroy()
-        Loop 4 {
-            g := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x20 -DPIScale")
-            g.BackColor := Border_Drag_Color
-            g.Show("NoActivate x-1000 y-1000 w10 h10")
-            WinSetTransparent(Border_Drag_Transparent, g.Hwnd)
-            this.Guis.Push(g)
-        }
+        this.Frame := BorderFrame(Border_Drag_Color, Border_Drag_Transparent)
     }
 
     static Update(hwnd) {
-        if (this.Guis.Length != 4)
+        if !IsObject(this.Frame)
             return
         if !hwnd || !WinExist(hwnd)
             return
         if !GetWindowVisualRect(hwnd, &x, &y, &w, &h)
             return
-        t  := Border_Drag_Thickness
         o  := Border_Drag_Offset
         ot := Border_Drag_OffsetTop
         x -= o, y -= (o + ot), w += 2*o, h += 2*o + ot
-        try {
-            WinMove(x,       y,       w, t, this.Guis[1].Hwnd)
-            WinMove(x,       y+h-t,   w, t, this.Guis[2].Hwnd)
-            WinMove(x,       y,       t, h, this.Guis[3].Hwnd)
-            WinMove(x+w-t,   y,       t, h, this.Guis[4].Hwnd)
-        }
+        rad := (Border_Drag_Rounded = "on") ? Border_Drag_Radius : 0
+        this.Frame.Place(x, y, w, h, Border_Drag_Thickness, rad, Border_Drag_Transparent)
     }
 
     static Destroy() {
-        for g in this.Guis
-            try g.Destroy()
-        this.Guis := []
+        if IsObject(this.Frame)
+            this.Frame.Destroy()
+        this.Frame := ""
     }
 }
 
@@ -1402,8 +1707,31 @@ class PieMenu {
 }
 
 ; ---- Virtual desktops ----
+; Hide / show a window according to the configured method:
+;   "minimize" (default) -> WinMinimize / WinRestore
+;   "hide"               -> raw ShowWindow SW_HIDE / SW_SHOWNA (no taskbar flicker)
+; Raw DllCalls on the explicit HWND avoid needing DetectHiddenWindows.
+HideWin(hwnd) {
+    global Desktop_HideMethod
+    if (Desktop_HideMethod = "hide"){
+        try DllCall("ShowWindow", "Ptr", hwnd, "Int", 0)    ; SW_HIDE
+	}
+    else{
+        try WinMinimize(hwnd)
+		}
+}
+ShowWin(hwnd) {
+    global Desktop_HideMethod
+    if (Desktop_HideMethod = "hide"){
+        try DllCall("ShowWindow", "Ptr", hwnd, "Int", 8)    ; SW_SHOWNA (show, no activate)
+	}
+    else{
+        try WinRestore(hwnd)
+	}
+}
+
 SwitchDesktop(target, *) {
-    global CurrentDesktop, Desktops, AlwaysVisible
+    global CurrentDesktop, Desktops, AlwaysVisible, DesktopFocus
     if (target == CurrentDesktop) {
         ShowOSD("Desktop " . target)
         return
@@ -1412,33 +1740,48 @@ SwitchDesktop(target, *) {
     wasWTMActive := WTM.Active
     if wasWTMActive
         WTM.DestroyAllBorders()
+    if AllBorders.Active
+        AllBorders.DestroyAll()       ; clear borders so none linger on the old desktop
     DestroyTransientGuis()
+
+    ; Remember which window was focused on the desktop we are leaving.
+    curFocus := 0
+    try curFocus := WinExist("A")
+    if curFocus
+        DesktopFocus[CurrentDesktop] := curFocus
 
     Desktops[CurrentDesktop] := GetVisibleWindows()
     for hwnd in Desktops[CurrentDesktop] {
         if !AlwaysVisible.Has(hwnd)
-            try WinMinimize(hwnd)
+            HideWin(hwnd)
     }
     for hwnd in Desktops[target]
-        try WinRestore(hwnd)
+        ShowWin(hwnd)
     for hwnd, _ in AlwaysVisible
-        try WinRestore(hwnd)
+        ShowWin(hwnd)
 
     CurrentDesktop := target
     UpdateStatusBar()
     A_IconTip := "WM Script - Desktop " . CurrentDesktop
     ShowOSD("Desktop " . CurrentDesktop)
 
+    ; Restore focus to whatever was active on the target desktop, so switching away and
+    ; back keeps the same focused window instead of letting Windows pick arbitrarily.
+    if (DesktopFocus.Has(target) && DesktopFocus[target] && WinExist(DesktopFocus[target]))
+        try WinActivate(DesktopFocus[target])
+
     if wasWTMActive
         WTM.OnDesktopSwitched()
+    if AllBorders.Active
+        AllBorders.Rebuild()          ; redraw borders for the new desktop's windows
 }
 
 MoveWindowToDesktop(target, *) {
-    global CurrentDesktop, Desktops, AlwaysVisible, Bar_Gui
+    global CurrentDesktop, Desktops, AlwaysVisible
 
     hwnd := 0
     try hwnd := WinExist("A")
-    if (!hwnd || (Bar_Gui && hwnd == Bar_Gui.Hwnd))
+    if (!hwnd || IsBarWindow(hwnd))
         return
 
     if AlwaysVisible.Has(hwnd) {
@@ -1461,7 +1804,7 @@ MoveWindowToDesktop(target, *) {
     Desktops[target].Push(hwnd)
 
     if (target != CurrentDesktop) {
-        try WinMinimize(hwnd)
+        HideWin(hwnd)
         ShowOSD("Window -> Desktop " . target)
     }
     WTM.OnWindowChanged()
@@ -1473,186 +1816,458 @@ MoveAndSwitch(target, *) {
     ShowOSD("Move And Switch -> " . target)
 }
 
-; ---- Status bar ----
-CreateStatusBar() {
-    global
+; ==============================================================================
+;  Status Bar - fully customizable. A BarInstance is one strip on one monitor
+;  edge (top/bottom/left/right). Multiple instances may exist (one per monitor).
+;  Widgets, formats, desktop labels, display mode, position, offset and the
+;  internal element layout are all driven by the [Bar] config (see Bar_Cfg).
+; ==============================================================================
 
-    try {
-        if IsSet(Bar_Gui) && IsObject(Bar_Gui)
-            Bar_Gui.Destroy()
+; True unless the value reads as an "off" sentinel; used for custom_text/icon content.
+BarShown(str) {
+    s := StrLower(Trim(str))
+    return !(s = "" || s = "false" || s = "off" || s = "0")
+}
+BarFlag(key) {
+    global Bar_Cfg
+    return (Bar_Cfg.Has(key) && Bar_Cfg[key])
+}
+
+; Parse "element:expr;..." into Map(element -> {lo,hi}) reusing ParseAxis fractions.
+ParseBarLayout(str) {
+    m := Map()
+    for clause in StrSplit(str, ";") {
+        clause := Trim(clause)
+        if (clause = "")
+            continue
+        p := StrSplit(clause, ":")
+        if (p.Length != 2)
+            continue
+        try {
+            m[StrLower(Trim(p[1]))] := ParseAxis(p[2])
+        } catch as e {
+            WMLog("Bar layout segment invalid (" e.Message "): " clause)
+        }
     }
+    return m
+}
 
-    MonitorGet(Bar_MonitorIdx, &mL, &mT, &mR, &mB)
-    barScreenWidth := mR - mL
-    barX := mL, barY := mT
-
-    local minNeededHeight := Round(Bar_FontSize * 2 + 5)
-    if (Bar_Height < minNeededHeight)
-        Bar_Height := minNeededHeight
-    local padding       := 15
-    local progressWidth := Round(barScreenWidth * 0.30)
-    local textBoxWidth  := Round((barScreenWidth - progressWidth - padding*4) / 2)
-    local textControlH  := Round(Bar_FontSize * 2)
-    local textY         := (Bar_Height - textControlH) / 2
-    local progY         := (Bar_Height - 6) / 2 + 3
-    local taskH         := 4
-    local track1Y       := progY - taskH - 2
-    local track2Y       := track1Y - taskH - 1
-    local progressX     := (barScreenWidth / 2) - (progressWidth / 2)
-    local rightTextX    := barScreenWidth - textBoxWidth - padding
-
-    Bar_Gui := Gui("-Caption +AlwaysOnTop +ToolWindow +Owner +E0x08000000 -DPIScale")
-    Bar_Gui.BackColor := Color_Bg
-    Bar_Gui.SetFont("s" . Bar_FontSize . " w600 c" . Color_Active, "Segoe UI")
-
-    Bar_LeftText := Bar_Gui.Add("Text"
-        , "x" padding " y" textY " w" textBoxWidth " h" textControlH " BackgroundTrans", "")
-
-    CalcMins(tStr) => Integer(SubStr(tStr, 1, 2)) * 60 + Integer(SubStr(tStr, 3, 2))
-    BaseStartMins := 0, BaseEndMins := 1439
+; ---- Work-time helpers (shared by every bar's progress widget) ----
+WorkRangeMins(&baseStart, &baseEnd) {
+    global Work_Mode, Work_WeekendBar, Work_Start, Work_End
+    baseStart := 0, baseEnd := 1439
     if (Work_Mode != "off") {
         isWeekend := (A_WDay == 1 || A_WDay == 7)
-        if !(isWeekend && Work_WeekendBar == "off") {
-            BaseStartMins := CalcMins(Work_Start)
-            BaseEndMins   := CalcMins(Work_End)
+        if !(isWeekend && Work_WeekendBar = "off") {
+            baseStart := Integer(SubStr(Work_Start, 1, 2)) * 60 + Integer(SubStr(Work_Start, 3, 2))
+            baseEnd   := Integer(SubStr(Work_End,   1, 2)) * 60 + Integer(SubStr(Work_End,   3, 2))
         }
     }
-    TotalRange := BaseEndMins - BaseStartMins
+}
 
-    if (Work_TaskTimes != "" && TotalRange > 0) {
-        CurrentUserWDay := (A_WDay == 1) ? 7 : A_WDay - 1
-        DayTasks := []
-
-        Loop Parse, Work_TaskTimes, ";" {
-            if (A_LoopField == "")
-                continue
-            parts := StrSplit(A_LoopField, "_")
-            if (parts.Length == 3 && Integer(parts[1]) == CurrentUserWDay) {
-                rs := CalcMins(parts[2]), re := CalcMins(parts[3])
-                s  := Max(rs, BaseStartMins), e := Min(re, BaseEndMins)
-                if (e > s)
-                    DayTasks.Push({Start: s, End: e, RawStart: rs})
-            }
+WorkDayTasks(baseStart, baseEnd) {
+    global Work_TaskTimes
+    out := []
+    if (Work_TaskTimes = "" || baseEnd - baseStart <= 0)
+        return out
+    userWDay := (A_WDay == 1) ? 7 : A_WDay - 1
+    Loop Parse, Work_TaskTimes, ";" {
+        if (A_LoopField = "")
+            continue
+        parts := StrSplit(A_LoopField, "_")
+        if (parts.Length == 3 && Integer(parts[1]) == userWDay) {
+            rs := Integer(SubStr(parts[2],1,2))*60 + Integer(SubStr(parts[2],3,2))
+            re := Integer(SubStr(parts[3],1,2))*60 + Integer(SubStr(parts[3],3,2))
+            s := Max(rs, baseStart), e := Min(re, baseEnd)
+            if (e > s)
+                out.Push({Start:s, End:e, RawStart:rs})
         }
-
-        if (DayTasks.Length > 1) {
-            Loop DayTasks.Length {
-                i := A_Index
-                Loop DayTasks.Length - i {
-                    j := A_Index
-                    if (DayTasks[j].RawStart > DayTasks[j+1].RawStart) {
-                        temp := DayTasks[j]
-                        DayTasks[j]   := DayTasks[j+1]
-                        DayTasks[j+1] := temp
-                    }
+    }
+    if (out.Length > 1) {
+        Loop out.Length {
+            i := A_Index
+            Loop out.Length - i {
+                j := A_Index
+                if (out[j].RawStart > out[j+1].RawStart) {
+                    tmp := out[j], out[j] := out[j+1], out[j+1] := tmp
                 }
             }
         }
+    }
+    return out
+}
 
-        lastEndTrack1 := -1
-        for task in DayTasks {
-            offsetRatio := (task.Start - BaseStartMins) / TotalRange
-            widthRatio  := (task.End - task.Start) / TotalRange
-            mkX := Round(progressX + (progressWidth * offsetRatio))
-            mkW := Max(2, Round(progressWidth * widthRatio))
-            useY := track1Y
-            if (task.Start < lastEndTrack1)
-                useY := track2Y
-            else
-                lastEndTrack1 := task.End
-            Bar_Gui.Add("Text"
-                , Format("x{1} y{2} w{3} h{4} Background{5}", mkX, useY, mkW, taskH, Color_Task), "")
+WorkPercent() {
+    global Work_Mode, Work_WeekendBar, Work_Start, Work_End
+    NowTime := A_Now, TodayDate := FormatTime(NowTime, "yyyyMMdd"), WDay := A_WDay
+    if (Work_Mode = "off") {
+        StartTS := TodayDate "000000", EndTS := TodayDate "235959", ForceFull := false
+    } else {
+        StartTS := TodayDate Work_Start "00", EndTS := TodayDate Work_End "00"
+        ForceFull := ((WDay == 1 || WDay == 7) && Work_WeekendBar = "off")
+    }
+    if ForceFull
+        return 100
+    TotalSec   := DateDiff(EndTS, StartTS, "Seconds")
+    ElapsedSec := DateDiff(NowTime, StartTS, "Seconds")
+    if (TotalSec <= 0)
+        return 100
+    if (ElapsedSec < 0)
+        return 0
+    if (ElapsedSec > TotalSec)
+        return 100
+    return (ElapsedSec / TotalSec) * 100
+}
+
+class BarInstance {
+    Mon := 1, Pos := "top", Offset := 0, Thick := 30
+    Gui := "", Visible := true
+    DesktopsCtrl := "", TimeCtrl := "", DateCtrl := "", Progress := ""
+    ProgX := 0, ProgY := 0, ProgW := 0
+
+    __New(mon, pos, offset) {
+        this.Mon := mon, this.Pos := pos, this.Offset := offset
+        this.Build()
+    }
+
+    IsHorizontal() => (this.Pos = "top" || this.Pos = "bottom")
+
+    ; Resolve an element's main-axis segment {lo,hi}: layout override else default.
+    _Seg(name) {
+        global Bar_Cfg
+        layout := Bar_Cfg["layout"]
+        if layout.Has(name)
+            return layout[name]
+        defaults := Map(
+            "desktops",    {lo:0.00, hi:0.30},
+            "custom_icon", {lo:0.30, hi:0.35},
+            "custom_text", {lo:0.35, hi:0.48},
+            "progress",    {lo:0.40, hi:0.62},
+            "date",        {lo:0.64, hi:0.82},
+            "time",        {lo:0.82, hi:1.00}
+        )
+        return defaults.Has(name) ? defaults[name] : {lo:0.0, hi:1.0}
+    }
+
+    _Opt(x, y, w, h, align) {
+        return Format("x{} y{} w{} h{} BackgroundTrans {}", Round(x), Round(y), Round(w), Round(h), align)
+    }
+
+    Build() {
+        global Color_Bg, Color_Active, Bar_FontSize, Bar_Height, Bar_Transparent
+        if (this.Mon < 1 || this.Mon > MonitorGetCount())
+            this.Mon := 1
+        MonitorGet(this.Mon, &mL, &mT, &mR, &mB)
+        monW := mR - mL, monH := mB - mT
+
+        thick := Bar_Height
+        minThick := Round(Bar_FontSize * 2 + 5)
+        if (thick < minThick)
+            thick := minThick
+        this.Thick := thick
+        off := this.Offset
+
+        switch this.Pos {
+            case "bottom": bx := mL,                by := mB - thick - off, bw := monW,  bh := thick
+            case "left":   bx := mL + off,          by := mT,               bw := thick, bh := monH
+            case "right":  bx := mR - thick - off,  by := mT,               bw := thick, bh := monH
+            default:       bx := mL,                by := mT + off,         bw := monW,  bh := thick  ; top
+        }
+
+        g := Gui("-Caption +AlwaysOnTop +ToolWindow +Owner +E0x08000000 -DPIScale")
+        g.BackColor := Color_Bg
+        g.SetFont("s" Bar_FontSize " w600 c" Color_Active, "Segoe UI")
+        this.Gui := g
+
+        horiz := this.IsHorizontal()
+        L := horiz ? bw : bh    ; main-axis length
+        T := horiz ? bh : bw    ; cross-axis thickness
+        this._BuildElements(L, T, horiz)
+
+        g.Show(Format("x{} y{} w{} h{} NoActivate", bx, by, bw, bh))
+        WinSetTransparent(Bar_Transparent, g.Hwnd)
+        ; The bar is intentionally never rounded (a single-edge strip; see Bug.md sec 4).
+        this.UpdateDesktops()
+    }
+
+    _BuildElements(L, T, horiz) {
+        global Bar_Cfg, Bar_FontSize
+        g := this.Gui
+        fontH := Round(Bar_FontSize * 2)
+        pad := 6
+
+        elements := []
+        if BarFlag("desktops")
+            elements.Push("desktops")
+        if BarShown(Bar_Cfg["custom_icon"])
+            elements.Push("custom_icon")
+        if BarShown(Bar_Cfg["custom_text"])
+            elements.Push("custom_text")
+        if BarFlag("progress")
+            elements.Push("progress")
+        if BarFlag("date")
+            elements.Push("date")
+        if BarFlag("time")
+            elements.Push("time")
+
+        for el in elements {
+            seg := this._Seg(el)
+            s   := seg.lo * L
+            segLen := Max(10, (seg.hi - seg.lo) * L)
+            if horiz {
+                cx := s, cy := (T - fontH) // 2, cw := segLen, ch := fontH
+            } else {
+                cx := pad, cy := s, cw := T - 2*pad, ch := fontH
+            }
+            switch el {
+                case "desktops":
+                    this.DesktopsCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), "")
+                case "custom_icon":
+                    g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), Bar_Cfg["custom_icon"])
+                case "custom_text":
+                    g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), Bar_Cfg["custom_text"])
+                case "date":
+                    this.DateCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), "")
+                case "time":
+                    this.TimeCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), "")
+                case "progress":
+                    this._BuildProgress(s, segLen, T, horiz)
+            }
         }
     }
 
-    Bar_Gui.Add("Text"
-        , "x" progressX " y" progY " w" progressWidth " h6 Background333333", "")
-    Bar_Progress := Bar_Gui.Add("Progress"
-        , Format("x{1} y{2} w{3} h6 c{4} Background333333 +Smooth"
-                , progressX, progY, progressWidth, Color_Active), 0)
+    _BuildProgress(mainStart, mainLen, T, horiz) {
+        global Color_Active
+        g := this.Gui
+        bar := 6
+        if horiz {
+            px := mainStart, py := (T - bar) // 2 + 3, pw := mainLen, ph := bar
+            g.Add("Text", Format("x{} y{} w{} h{} Background333333", Round(px), Round(py), Round(pw), ph), "")
+            this.Progress := g.Add("Progress"
+                , Format("x{} y{} w{} h{} c{} Background333333 +Smooth", Round(px), Round(py), Round(pw), ph, Color_Active), 0)
+            this.ProgX := px, this.ProgW := pw, this.ProgY := py
+            this._BuildTaskMarkers(px, pw, py)
+        } else {
+            px := (T - bar) // 2, py := mainStart, pw := bar, ph := mainLen
+            g.Add("Text", Format("x{} y{} w{} h{} Background333333", Round(px), Round(py), pw, Round(ph)), "")
+            this.Progress := g.Add("Progress"
+                , Format("x{} y{} w{} h{} Vertical c{} Background333333 +Smooth", Round(px), Round(py), pw, Round(ph), Color_Active), 0)
+        }
+    }
 
-    Bar_RightText := Bar_Gui.Add("Text"
-        , "x" rightTextX " y" textY " w" textBoxWidth " h" textControlH
-        . " BackgroundTrans Right", "")
+    _BuildTaskMarkers(progX, progW, progY) {
+        global Color_Task
+        WorkRangeMins(&bs, &be)
+        range := be - bs
+        if (range <= 0)
+            return
+        tasks := WorkDayTasks(bs, be)
+        taskH := 4
+        track1Y := progY - taskH - 2
+        track2Y := track1Y - taskH - 1
+        lastEnd := -1
+        for task in tasks {
+            offR := (task.Start - bs) / range
+            wR   := (task.End - task.Start) / range
+            mkX  := Round(progX + progW * offR)
+            mkW  := Max(2, Round(progW * wR))
+            useY := track1Y
+            if (task.Start < lastEnd)
+                useY := track2Y
+            else
+                lastEnd := task.End
+            this.Gui.Add("Text", Format("x{} y{} w{} h{} Background{}", mkX, useY, mkW, taskH, Color_Task), "")
+        }
+    }
 
-    Bar_Gui.Show("x" barX " y" barY " w" barScreenWidth " h" Bar_Height " NoActivate")
-    WinSetTransparent(Bar_Transparent, Bar_Gui.Hwnd)
-    RoundWindow(Bar_Gui)
+    UpdateDesktops() {
+        global CurrentDesktop, DesktopCount, Desktops, Bar_Cfg
+        if !IsObject(this.DesktopsCtrl)
+            return
+        labels := Bar_Cfg["desktop_labels"]
+        lft := Bar_Cfg["cur_left"], rgt := Bar_Cfg["cur_right"]
+        mode := Bar_Cfg["display_mode"]
+        sep := this.IsHorizontal() ? "  " : "`n"
+        str := ""
+        Loop DesktopCount {
+            i := A_Index
+            lbl := (i <= labels.Length) ? labels[i] : (i "")   ; robust fallback to number
+            show := true
+            if (mode = "current")
+                show := (i = CurrentDesktop)
+            else if (mode = "occupied")
+                show := (i = CurrentDesktop) || (Desktops.Has(i) && Desktops[i].Length > 0)
+            if !show
+                continue
+            cell := (i = CurrentDesktop) ? (lft lbl rgt) : lbl
+            str .= (str = "" ? "" : sep) cell
+        }
+        try this.DesktopsCtrl.Value := str
+    }
+
+    UpdateClock(pct) {
+        global Bar_Cfg
+        if IsObject(this.TimeCtrl)
+            try this.TimeCtrl.Value := FormatTime(, Bar_Cfg["time_format"])
+        if IsObject(this.DateCtrl)
+            try this.DateCtrl.Value := FormatTime(, Bar_Cfg["date_format"])
+        if IsObject(this.Progress)
+            try this.Progress.Value := Integer(pct)
+    }
+
+    Show()    => (this.Gui ? this.Gui.Show("NoActivate") : 0)
+    Hide()    => (this.Gui ? this.Gui.Hide() : 0)
+    Destroy() {
+        if IsObject(this.Gui)
+            try this.Gui.Destroy()
+        this.Gui := ""
+    }
+}
+
+; Resolve the configured bar instances -> [{mon,pos,offset}, ...].
+; Falls back to a single legacy top bar (from [StatusBar]) when no spec is given.
+; At most one bar per monitor (extra entries are warned and ignored).
+BarInstances() {
+    global Bar_Cfg, Bar_MonitorIdx
+    out := [], seenMon := Map()
+    monCount := MonitorGetCount()
+    spec   := Bar_Cfg.Has("instances") ? Bar_Cfg["instances"] : ""
+    defPos := Bar_Cfg.Has("position")  ? Bar_Cfg["position"]  : "top"
+    defOff := Bar_Cfg.Has("offset")    ? Bar_Cfg["offset"]    : 0
+    if !(defPos ~= "^(top|bottom|left|right)$")
+        defPos := "top"
+
+    if (Trim(spec) != "") {
+        for clause in StrSplit(spec, ";") {
+            clause := Trim(clause)
+            if (clause = "")
+                continue
+            p := StrSplit(clause, ":")
+            mraw := Trim(p[1])
+            pos  := (p.Length >= 2 && Trim(p[2]) != "") ? StrLower(Trim(p[2])) : defPos
+            off  := (p.Length >= 3 && IsInteger(Trim(p[3]))) ? Integer(Trim(p[3])) : defOff
+            if !(pos ~= "^(top|bottom|left|right)$")
+                pos := "top"
+            mons := []
+            if (mraw = "*") {
+                Loop monCount
+                    mons.Push(A_Index)
+            } else if (IsInteger(mraw) && Integer(mraw) >= 1 && Integer(mraw) <= monCount) {
+                mons.Push(Integer(mraw))
+            } else {
+                WMLog("Bar instance skipped (bad monitor '" mraw "'): " clause)
+                continue
+            }
+            for m in mons {
+                if seenMon.Has(m) {
+                    WMLog("Bar: monitor " m " already has a bar; ignoring '" clause "'")
+                    continue
+                }
+                seenMon[m] := true
+                out.Push({mon:m, pos:pos, offset:off})
+            }
+        }
+    }
+    if (out.Length = 0) {
+        mon := (Bar_MonitorIdx >= 1 && Bar_MonitorIdx <= monCount) ? Bar_MonitorIdx : 1
+        out.Push({mon:mon, pos:defPos, offset:defOff})
+    }
+    return out
+}
+
+; True when hwnd belongs to any bar (so layout/desktop logic can skip bars).
+IsBarWindow(hwnd) {
+    global Bars
+    if !IsSet(Bars)
+        return false
+    for b in Bars {
+        if (IsObject(b.Gui) && hwnd = b.Gui.Hwnd)
+            return true
+    }
+    return false
+}
+
+; Subtract every visible bar on a monitor from a work-area rect (direction-aware),
+; so window tiling never overlaps a bar. Replaces the old single-bar reservation.
+BarReserve(monIdx, &L, &T, &R, &B) {
+    global Bars, Bar_Visible
+    if (!IsSet(Bars) || !Bar_Visible)
+        return
+    margin := 5
+    for b in Bars {
+        if (b.Mon != monIdx)
+            continue
+        reserve := b.Thick + b.Offset + margin
+        switch b.Pos {
+            case "bottom": B -= reserve
+            case "left":   L += reserve
+            case "right":  R -= reserve
+            default:       T += reserve   ; top
+        }
+    }
+}
+
+DestroyAllBars() {
+    global Bars
+    if !IsSet(Bars)
+        return
+    for b in Bars
+        try b.Destroy()
+    Bars := []
+}
+
+CreateStatusBar() {
+    global Bars
+    DestroyAllBars()
+    Bars := []
+    for inst in BarInstances() {
+        try Bars.Push(BarInstance(inst.mon, inst.pos, inst.offset))
+        catch as e
+            WMLog("Bar build failed (mon " inst.mon "): " e.Message)
+    }
+    UpdateStatusBar()
 }
 
 UpdateStatusBar() {
-    global CurrentDesktop, DesktopCount, Bar_LeftText
-    if !IsObject(Bar_LeftText)
+    global Bars
+    if !IsSet(Bars)
         return
-    str := ""
-    Loop DesktopCount
-        str .= (A_Index == CurrentDesktop) ? " [" A_Index "] " : "  " A_Index "  "
-    try Bar_LeftText.Value := str
+    for b in Bars
+        try b.UpdateDesktops()
 }
 
 UpdateClockAndProgress() {
-    global Bar_RightText, Bar_Progress
-    global Work_Start, Work_End, Work_WeekendBar, Work_Mode
+    global Bars
     static LastDay := ""
-
-    if !IsObject(Bar_RightText)
-        return
-
     CurrentDay := FormatTime(, "yyyyMMdd")
     if (LastDay != "" && LastDay != CurrentDay)
-        CreateStatusBar()
+        CreateStatusBar()         ; rebuild at midnight so task markers refresh
     LastDay := CurrentDay
-
-    try Bar_RightText.Value := FormatTime(, "yyyy-MM-dd   HH:mm")
-
-    NowTime := A_Now, TodayDate := FormatTime(NowTime, "yyyyMMdd")
-    WDay := A_WDay, StartTS := "", EndTS := "", ForceFull := false
-
-    if (Work_Mode = "off") {
-        StartTS := TodayDate . "000000"
-        EndTS   := TodayDate . "235959"
-    } else {
-        StartTS := TodayDate . Work_Start . "00"
-        EndTS   := TodayDate . Work_End   . "00"
-        if ((WDay == 1 || WDay == 7) && Work_WeekendBar = "off")
-            ForceFull := true
-    }
-
-    pct := 0
-    if ForceFull {
-        pct := 100
-    } else {
-        TotalSec   := DateDiff(EndTS, StartTS, "Seconds")
-        ElapsedSec := DateDiff(NowTime, StartTS, "Seconds")
-        if (TotalSec <= 0)
-            pct := 100
-        else if (ElapsedSec < 0)
-            pct := 0
-        else if (ElapsedSec > TotalSec)
-            pct := 100
-        else
-            pct := (ElapsedSec / TotalSec) * 100
-    }
-    try {
-        if IsObject(Bar_Progress)
-            Bar_Progress.Value := Integer(pct)
-    }
+    if !IsSet(Bars)
+        return
+    pct := WorkPercent()
+    for b in Bars
+        try b.UpdateClock(pct)
 }
 
 ToggleBar(*) {
-    global Bar_Visible, Bar_Gui
+    global Bar_Visible, Bars
     Bar_Visible := !Bar_Visible
-    if Bar_Visible
-        Bar_Gui.Show("NoActivate")
-    else
-        Bar_Gui.Hide()
+    if !IsSet(Bars)
+        return
+    for b in Bars {
+        if Bar_Visible
+            b.Show()
+        else
+            b.Hide()
+    }
 }
 
 TogglePin(*) {
-    global AlwaysVisible, Bar_Gui
+    global AlwaysVisible
     hwnd := 0
     try hwnd := WinExist("A")
-    if (!hwnd || (Bar_Gui && hwnd == Bar_Gui.Hwnd))
+    if (!hwnd || IsBarWindow(hwnd))
         return
 
     if AlwaysVisible.Has(hwnd) {
@@ -1667,8 +2282,17 @@ TogglePin(*) {
 }
 
 GatherAllToCurrent(*) {
-    global Desktops, CurrentDesktop, AlwaysVisible, Bar_Gui
+    global Desktops, CurrentDesktop, AlwaysVisible
     ShowOSD("Gathering All Windows...")
+
+    ; When using the "hide" method, windows parked on other desktops are hidden and would
+    ; not appear in WinGetList; un-hide every tracked window first so all get gathered.
+    Loop DesktopCount {
+        if Desktops.Has(A_Index) {
+            for h in Desktops[A_Index]
+                try ShowWin(h)
+        }
+    }
 
     fullList := WinGetList()
     Loop DesktopCount
@@ -1679,12 +2303,12 @@ GatherAllToCurrent(*) {
 
     for hwnd in fullList {
         try {
-            if (Bar_Gui && hwnd == Bar_Gui.Hwnd)
+            if IsBarWindow(hwnd)
                 continue
             winClass := WinGetClass(hwnd)
             if (winClass == "Progman" || winClass == "Shell_TrayWnd")
                 continue
-            ; 跳过脚本自身的 ToolWindow
+            ; Skip the script's own ToolWindows.
             ex := WinGetExStyle(hwnd)
             if (ex & 0x80)
                 continue
@@ -1697,16 +2321,29 @@ GatherAllToCurrent(*) {
     WTM.OnWindowChanged()
 }
 
+; ---- Tiling outer-boundary helpers (protect Bar / work-area edge on negative gaps) ----
+SetTileBound(l, t, r, b) {
+    global TileBound_L, TileBound_T, TileBound_R, TileBound_B, TileBoundSet
+    TileBound_L := l, TileBound_T := t, TileBound_R := r, TileBound_B := b
+    TileBoundSet := true
+}
+ClearTileBound() {
+    global TileBoundSet
+    TileBoundSet := false
+}
+
 ; ---- Smart tiling ----
 TileCurrentMonitor(*) {
-    global Bar_Height, Bar_Visible, Bar_MonitorIdx, CurrentTileGap, Tile_Gap, LayoutRules
+    global CurrentTileGap, Tile_Gap
 
     MouseGetPos(&mx, &my)
     targetMon := GetMonitorIndexAtPoint(mx, my)
     MonitorGetWorkArea(targetMon, &WL, &WT, &WR, &WB)
+    BarReserve(targetMon, &WL, &WT, &WR, &WB)   ; subtract every bar on this monitor
 
-    if (Bar_Visible && targetMon == Bar_MonitorIdx)
-        WT += Bar_Height + 5
+    ; The bar-reserved work area is the protected outer boundary; remember it so PlaceWin
+    ; can clamp against it (relevant only when the gap is negative).
+    SetTileBound(WL, WT, WR, WB)
 
     W := WR - WL
     H := WB - WT
@@ -1715,11 +2352,13 @@ TileCurrentMonitor(*) {
     n := windows.Length
     if (n == 0) {
         ShowOSD("No Windows To Tile")
+        ClearTileBound()
         return
     }
 
-    ; 窗口间隙: 外边距 + 每窗口由 PlaceWin 应用 (Alt+D 与 WTM 同样规则)
-    g := Max(0, Tile_Gap)
+    ; Positive gap keeps the old outer margin; negative gap leaves the outer rect at the
+    ; work area and is applied purely as a per-window inset in PlaceWin (allows overlap).
+    g := Tile_Gap
     if (g > 0) {
         WL += g/2, WT += g/2, W -= g, H -= g
     }
@@ -1733,10 +2372,9 @@ TileCurrentMonitor(*) {
     else
         mode := "Normal"
 
-    ; 优先使用用户自定义布局; 无匹配规则时回退默认逻辑
-    if LayoutRules.Has(n) {
+    ; Prefer the user's custom layout for this monitor; fall back to the default logic.
+    if ApplyCustomLayout(windows, WL, WT, W, H, targetMon) {
         ShowOSD("Tile [Custom] [Mon " . targetMon . "]: " . n)
-        ApplyCustomLayout(windows, WL, WT, W, H)
     } else {
         ShowOSD("Tile [" . mode . "] [Mon " . targetMon . "]: " . n)
         switch mode {
@@ -1747,13 +2385,29 @@ TileCurrentMonitor(*) {
     }
 
     CurrentTileGap := 0
+    ClearTileBound()
 }
 
 PlaceWin(hwnd, x, y, w, h) {
-    global CurrentTileGap
-    if (CurrentTileGap > 0) {
+    global CurrentTileGap, TileBound_L, TileBound_T, TileBound_R, TileBound_B, TileBoundSet
+    ; Per-window gap inset (gap may be negative -> neighbouring windows overlap).
+    if (CurrentTileGap != 0) {
         half := CurrentTileGap / 2
         x += half, y += half, w -= CurrentTileGap, h -= CurrentTileGap
+    }
+    ; Clamp to the protected outer boundary so a negative gap never crosses the Bar /
+    ; work-area edge, while still allowing windows to overlap each other inside it.
+    if (TileBoundSet) {
+        x2 := x + w, y2 := y + h
+        if (x  < TileBound_L)
+            x := TileBound_L
+        if (y  < TileBound_T)
+            y := TileBound_T
+        if (x2 > TileBound_R)
+            x2 := TileBound_R
+        if (y2 > TileBound_B)
+            y2 := TileBound_B
+        w := x2 - x, h := y2 - y
     }
     try {
         WinRestore(hwnd)
@@ -1909,7 +2563,6 @@ GetVisibleWindow() {
 
 ; ---- Window snapping ----
 SnapWindow(direction, *) {
-    global Bar_Visible, Bar_Height, Bar_MonitorIdx
     hwnd := 0
     try hwnd := WinExist("A")
     if !hwnd
@@ -1917,8 +2570,7 @@ SnapWindow(direction, *) {
 
     targetMon := GetMonitorIndex(hwnd)
     MonitorGetWorkArea(targetMon, &L, &T, &R, &B)
-    if (Bar_Visible && targetMon == Bar_MonitorIdx)
-        T += Bar_Height + 5
+    BarReserve(targetMon, &L, &T, &R, &B)   ; subtract every bar on this monitor
     W := R - L, H := B - T
 
     try {
@@ -2037,20 +2689,25 @@ OpenWithVim(*) {
 
 ShowPowerMenu(*) {
     global PowerMenuObj
+    global PM_FontSize, PM_Width, PM_Height, PM_Opacity, PM_Rounded, PM_Radius
     if IsObject(PowerMenuObj) {
         PowerMenuObj.Destroy()
         PowerMenuObj := ""
         return
     }
+    ; Width/height scale the base 500x160 layout; FontSize is honored directly.
+    wsc := PM_Width / 500.0
+    hsc := PM_Height / 160.0
+
     pGui := Gui("+AlwaysOnTop -Caption +ToolWindow +Owner")
     pGui.BackColor := PM_Bg
-    pGui.SetFont("s12 c" . Color_Text, "Arial")
-    pGui.Add("Text", "x0 y15 w500 Center c" . Color_Active, "System Power Menu")
-    pGui.Add("Text", "x50 y45 w400 h2 0x10")
+    pGui.SetFont("s" PM_FontSize " c" . Color_Text, "Arial")
+    pGui.Add("Text", "x0 y" Round(15*hsc) " w" Round(500*wsc) " Center c" . Color_Active, "System Power Menu")
+    pGui.Add("Text", "x" Round(50*wsc) " y" Round(45*hsc) " w" Round(400*wsc) " h2 0x10")
 
     AddBtn(x, y, txt, fn, col) {
         btn := pGui.Add("Text"
-            , "x" x " y" y " w120 h60 Center 0x200 +Border cWhite Background" col, txt)
+            , "x" Round(x*wsc) " y" Round(y*hsc) " w" Round(120*wsc) " h" Round(60*hsc) " Center 0x200 +Border cWhite Background" col, txt)
         btn.OnEvent("Click", fn)
     }
     AddBtn(50,  70, "Shutdown", (*) => Shutdown(1), PM_BtnShutdown)
@@ -2058,8 +2715,9 @@ ShowPowerMenu(*) {
          , (*) => DllCall("PowrProf\SetSuspendState","Int",0,"Int",0,"Int",0), PM_BtnSleep)
     AddBtn(330, 70, "Reboot",   (*) => Shutdown(2), PM_BtnReboot)
     pGui.OnEvent("Escape", (*) => (pGui.Destroy(), PowerMenuObj := ""))
-    pGui.Show("w500 h160")
-    RoundWindow(pGui)
+    pGui.Show("w" Round(500*wsc) " h" Round(160*hsc))
+    try WinSetTransparent(PM_Opacity, pGui.Hwnd)
+    RoundWindowEx(pGui, PM_Rounded, PM_Radius)
     PowerMenuObj := pGui
 }
 
@@ -2086,6 +2744,7 @@ ExportThemeToCustom(*) {
         "Color_Task",        "Task",
         "Border_Drag_Color", "BorderDrag",
         "Border_Pin_Color",  "BorderPin",
+        "Color_BorderUnfocus","BorderUnfocus",
         "PM_Bg",             "PowerMenuBg",
         "PM_BtnShutdown",    "PowerBtnShutdown",
         "PM_BtnSleep",       "PowerBtnSleep",
@@ -2109,13 +2768,26 @@ ExportThemeToCustom(*) {
 
 ; ---- Misc helpers ----
 RestoreAndExit(*) {
-    global Bar_Gui
+    global Desktops, AlwaysVisible
     ShowOSD("Script Shutting Down ...")
     Sleep(500)
     WTM.Deactivate()
+    if AllBorders.Active
+        AllBorders.Deactivate()
     PinBorder.RemoveAll()
-    if IsObject(Bar_Gui)
-        Bar_Gui.Destroy()
+    DestroyAllBars()
+
+    ; Make sure no window stays hidden/minimized by us: explicitly un-hide every tracked
+    ; window across all desktops first (covers the "hide" method), then restore the rest.
+    Loop DesktopCount {
+        if Desktops.Has(A_Index) {
+            for h in Desktops[A_Index]
+                try DllCall("ShowWindow", "Ptr", h, "Int", 9)   ; SW_RESTORE (un-hide + restore)
+        }
+    }
+    for h, _ in AlwaysVisible
+        try DllCall("ShowWindow", "Ptr", h, "Int", 9)
+
     for hwnd in WinGetList() {
         try {
             winClass := WinGetClass(hwnd)
@@ -2127,12 +2799,11 @@ RestoreAndExit(*) {
 }
 
 GetVisibleWindows() {
-    global Bar_Gui
     list := WinGetList()
     windows := []
     for hwnd in list {
         try {
-            if (Bar_Gui && hwnd == Bar_Gui.Hwnd)
+            if IsBarWindow(hwnd)
                 continue
             winClass := WinGetClass(hwnd)
             if (winClass == "Progman" || winClass == "Shell_TrayWnd")
@@ -2270,7 +2941,7 @@ class WTM {
     static TileOrder  := []
     static Excluded   := Map()
     static FocusHwnd  := 0
-    static BorderMap   := Map()    ; hwnd -> [g1,g2,g3,g4]
+    static BorderMap   := Map()    ; hwnd -> BorderFrame
     static BorderState := Map()    ; hwnd -> "focus" | "unfocus"
     static _LastSig   := ""
     static TickFn     := ObjBindMethod(WTM, "Tick")
@@ -2293,6 +2964,7 @@ class WTM {
         this.AutoTile()
         this.RefreshBorder()
         SetTimer(this.TickFn, 150)
+        AllBorders.Suspend()     ; WTM owns borders while active
         ShowOSD("WTM Mode: ON")
     }
 
@@ -2300,16 +2972,21 @@ class WTM {
         this.Active := false
         SetTimer(this.TickFn, 0)
         this.DestroyAllBorders()
+        AllBorders.Rebuild()     ; resume all-borders mode if it was enabled
         ShowOSD("WTM Mode: OFF")
     }
 
     static OnDesktopSwitched() {
         if !this.Active
             return
-        ; 切换桌面后保持窗口位置不变: 仅重建顺序与边框, 不重新平铺.
-        ; 目标桌面的窗口在 SwitchDesktop 中被 WinRestore, Windows 会保留其原有位置.
+        ; Keep window positions after a desktop switch: only rebuild order & borders,
+        ; do not re-tile. The target desktop's windows are restored in SwitchDesktop and
+        ; Windows preserves their previous positions.
+        ; Fully reset borders so none of the previous desktop's frames can linger.
+        this.DestroyAllBorders()
         this.RebuildOrder()
-        ; 刷新签名缓存, 避免 Tick 因可见窗口集合变化而触发重新平铺.
+        ; Refresh the signature cache so Tick does not retile just because the visible
+        ; window set changed.
         this._LastSig := this._Signature()
         this.RefreshBorder()
     }
@@ -2368,24 +3045,24 @@ class WTM {
     }
 
     static _TileMonitor(monIdx, wins) {
-        global Bar_Height, Bar_Visible, Bar_MonitorIdx, CurrentTileGap, WTM_Gap, LayoutRules
+        global CurrentTileGap, WTM_Gap
         if (wins.Length = 0)
             return
         if (monIdx < 1 || monIdx > MonitorGetCount())
             monIdx := 1
         MonitorGetWorkArea(monIdx, &WL, &WT, &WR, &WB)
-        if (Bar_Visible && monIdx = Bar_MonitorIdx)
-            WT += Bar_Height + 5
+        BarReserve(monIdx, &WL, &WT, &WR, &WB)   ; subtract every bar on this monitor
+        SetTileBound(WL, WT, WR, WB)             ; protected outer boundary for PlaceWin
         W := WR - WL, H := WB - WT
 
-        g := Max(0, WTM_Gap)
+        g := WTM_Gap
         if (g > 0) {
             WL += g/2, WT += g/2, W -= g, H -= g
         }
         CurrentTileGap := g
 
-        ; 同样优先应用用户自定义布局, 无匹配时回退默认平铺
-        if !ApplyCustomLayout(wins, WL, WT, W, H) {
+        ; Prefer the user's custom layout for this monitor; fall back to default tiling.
+        if !ApplyCustomLayout(wins, WL, WT, W, H, monIdx) {
             aspect := (H != 0) ? W / H : 1
             if (H > W)
                 TileVertical(wins, WL, WT, W, H)
@@ -2396,6 +3073,7 @@ class WTM {
         }
 
         CurrentTileGap := 0
+        ClearTileBound()
     }
 
     static _Signature() {
@@ -2404,6 +3082,8 @@ class WTM {
             if this.Excluded.Has(hwnd)
                 continue
             try {
+                if (WinGetMinMax(hwnd) = -1)   ; ignore minimized windows (avoids spurious retiles)
+                    continue
                 WinGetPos(&x, &y, &w, &h, hwnd)
                 sig .= hwnd "|" w "x" h ";"
             }
@@ -2639,23 +3319,14 @@ class WTM {
     static EnsureBorder(hwnd) {
         if this.BorderMap.Has(hwnd)
             return
-        guis := []
-        Loop 4 {
-            g := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x20 -DPIScale")
-            g.BackColor := WTM_BorderUnfocusColor
-            g.Show("NoActivate x-2000 y-2000 w10 h10")
-            WinSetTransparent(WTM_BorderOpacity, g.Hwnd)
-            guis.Push(g)
-        }
-        this.BorderMap[hwnd]   := guis
+        this.BorderMap[hwnd]   := BorderFrame(WTM_BorderUnfocusColor, WTM_BorderOpacity)
         this.BorderState[hwnd] := "unfocus"
     }
 
     static RemoveBorder(hwnd) {
         if !this.BorderMap.Has(hwnd)
             return
-        for g in this.BorderMap[hwnd]
-            try g.Destroy()
+        try this.BorderMap[hwnd].Destroy()
         this.BorderMap.Delete(hwnd)
         if this.BorderState.Has(hwnd)
             this.BorderState.Delete(hwnd)
@@ -2674,12 +3345,7 @@ class WTM {
         if (this.BorderState.Has(hwnd) && this.BorderState[hwnd] = state)
             return
         col := (state = "focus") ? WTM_BorderFocusColor : WTM_BorderUnfocusColor
-        for g in this.BorderMap[hwnd] {
-            try {
-                g.BackColor := col
-                WinRedraw(g.Hwnd)
-            }
-        }
+        this.BorderMap[hwnd].SetColor(col)
         this.BorderState[hwnd] := state
     }
 
@@ -2689,6 +3355,7 @@ class WTM {
         valid := Map()
         for hwnd in this.TileOrder
             valid[hwnd] := true
+        ; Prune borders whose window left the tile order (closed / floated / moved off).
         for hwnd, _ in this.BorderMap.Clone() {
             if !valid.Has(hwnd) || !WinExist(hwnd)
                 this.RemoveBorder(hwnd)
@@ -2700,10 +3367,8 @@ class WTM {
                 continue
             try {
                 if (WinGetMinMax(hwnd) = -1) {
-                    if this.BorderMap.Has(hwnd) {
-                        for g in this.BorderMap[hwnd]
-                            try DllCall("ShowWindow", "Ptr", g.Hwnd, "Int", 0)
-                    }
+                    if this.BorderMap.Has(hwnd)
+                        this.BorderMap[hwnd].Hide()
                     continue
                 }
             } catch {
@@ -2712,22 +3377,132 @@ class WTM {
             this.EnsureBorder(hwnd)
             if !GetWindowVisualRect(hwnd, &x, &y, &w, &ht)
                 continue
-            t := Max(2, WTM_BorderThickness)
             o := WTM_BorderOffset
             x -= o, y -= o, w += 2*o, ht += 2*o
-
             this._SetBorderColor(hwnd, hwnd = focusH ? "focus" : "unfocus")
+            rad := (WTM_BorderRounded = "on") ? WTM_BorderRadius : 0
+            this.BorderMap[hwnd].Place(x, y, w, ht, Max(2, WTM_BorderThickness), rad, WTM_BorderOpacity)
+        }
+    }
+}
 
-            guis := this.BorderMap[hwnd]
+; ==============================================================================
+;  AllBorders - "show borders on every window" toggle mode. Independent of WTM;
+;  while WTM is active it defers (WTM already draws borders). Focused window uses
+;  the drag-border color, the rest use Color_BorderUnfocus. Built on BorderFrame.
+; ==============================================================================
+class AllBorders {
+    static Active  := false
+    static Frames  := Map()    ; hwnd -> BorderFrame
+    static State   := Map()    ; hwnd -> "focus" | "unfocus"
+    static TimerFn := ObjBindMethod(AllBorders, "Tick")
+
+    static Toggle() {
+        if this.Active
+            this.Deactivate()
+        else
+            this.Activate()
+    }
+
+    static Activate() {
+        this.Active := true
+        ShowOSD("All Borders: ON")
+        if WTM.Active            ; WTM owns borders while active; we resume on WTM off
+            return
+        this.Tick()
+        SetTimer(this.TimerFn, 200)
+    }
+
+    static Deactivate() {
+        this.Active := false
+        SetTimer(this.TimerFn, 0)
+        this.DestroyAll()
+        ShowOSD("All Borders: OFF")
+    }
+
+    ; Rebuild from scratch (used after desktop switch or when WTM turns off).
+    static Rebuild() {
+        if !this.Active
+            return
+        this.DestroyAll()
+        if WTM.Active
+            return
+        this.Tick()
+        SetTimer(this.TimerFn, 200)
+    }
+
+    ; Called by WTM when it turns on: stop drawing but keep the Active flag.
+    static Suspend() {
+        SetTimer(this.TimerFn, 0)
+        this.DestroyAll()
+    }
+
+    static DestroyAll() {
+        for hwnd, _ in this.Frames.Clone()
+            this.Remove(hwnd)
+        this.Frames := Map()
+        this.State  := Map()
+    }
+
+    static Remove(hwnd) {
+        if !this.Frames.Has(hwnd)
+            return
+        try this.Frames[hwnd].Destroy()
+        this.Frames.Delete(hwnd)
+        if this.State.Has(hwnd)
+            this.State.Delete(hwnd)
+    }
+
+    static Ensure(hwnd) {
+        if this.Frames.Has(hwnd)
+            return
+        this.Frames[hwnd] := BorderFrame(Color_BorderUnfocus, WTM_BorderOpacity)
+        this.State[hwnd]  := "unfocus"
+    }
+
+    static SetColor(hwnd, state) {
+        if !this.Frames.Has(hwnd)
+            return
+        if (this.State.Has(hwnd) && this.State[hwnd] = state)
+            return
+        col := (state = "focus") ? Border_Drag_Color : Color_BorderUnfocus
+        this.Frames[hwnd].SetColor(col)
+        this.State[hwnd] := state
+    }
+
+    static Tick() {
+        if !this.Active || WTM.Active
+            return
+        wins := GetVisibleWindow()    ; current-desktop, exclusion-aware visible windows
+        valid := Map()
+        for hwnd in wins
+            valid[hwnd] := true
+        for hwnd, _ in this.Frames.Clone() {
+            if !valid.Has(hwnd) || !WinExist(hwnd)
+                this.Remove(hwnd)
+        }
+        focusH := 0
+        try focusH := WinGetID("A")
+        for hwnd in wins {
+            if !WinExist(hwnd)
+                continue
             try {
-                Loop 4
-                    DllCall("ShowWindow", "Ptr", guis[A_Index].Hwnd, "Int", 8)
-                ; HWND_TOPMOST=-1, SWP_NOACTIVATE=0x10, SWP_SHOWWINDOW=0x40
-                DllCall("SetWindowPos", "Ptr", guis[1].Hwnd, "Ptr", -1, "Int", x,        "Int", y,         "Int", w,  "Int", t,  "UInt", 0x10|0x40)
-                DllCall("SetWindowPos", "Ptr", guis[2].Hwnd, "Ptr", -1, "Int", x,        "Int", y+ht-t,    "Int", w,  "Int", t,  "UInt", 0x10|0x40)
-                DllCall("SetWindowPos", "Ptr", guis[3].Hwnd, "Ptr", -1, "Int", x,        "Int", y,         "Int", t,  "Int", ht, "UInt", 0x10|0x40)
-                DllCall("SetWindowPos", "Ptr", guis[4].Hwnd, "Ptr", -1, "Int", x+w-t,    "Int", y,         "Int", t,  "Int", ht, "UInt", 0x10|0x40)
+                if (WinGetMinMax(hwnd) = -1) {
+                    if this.Frames.Has(hwnd)
+                        this.Frames[hwnd].Hide()
+                    continue
+                }
+            } catch {
+                continue
             }
+            this.Ensure(hwnd)
+            if !GetWindowVisualRect(hwnd, &x, &y, &w, &h)
+                continue
+            o := WTM_BorderOffset
+            x -= o, y -= o, w += 2*o, h += 2*o
+            this.SetColor(hwnd, hwnd = focusH ? "focus" : "unfocus")
+            rad := (WTM_BorderRounded = "on") ? WTM_BorderRadius : 0
+            this.Frames[hwnd].Place(x, y, w, h, Max(2, WTM_BorderThickness), rad, WTM_BorderOpacity)
         }
     }
 }
