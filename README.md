@@ -1,16 +1,16 @@
-# AHK WM  󰖲
+# AHK WM
 
 A tiny, fast, single-file window manager for Windows, powered by **AutoHotkey v2**.
 
 AHK WM is built for people who keep too many windows open and still want their desktop to feel light, predictable, and easy to escape from.
 
-- 󰈙 **Single-file script**
-- 󰌪 **Small size**, around 130 KB
-- 󰓅 **Fast response**, no heavy background framework
--  **Works from Windows 7 to Windows 11**
-- 󰉁 **Minimal interference**, friendly for shared/work computers
-- 󰒲 **Config-file driven**, no complex setup required
-- 󰖲 Virtual desktops, smart tiling, KDE-style dragging, pie menu, status bar, borders, GUI help page, and more
+-  **Single-file script**
+-  **Small size**, around 130 KB
+-  **Fast response**, no heavy background framework
+-  **Works from Windows 7 to Windows 11**
+-  **Minimal interference**, friendly for shared/work computers
+-  **Config-file driven**, no complex setup required
+-  Virtual desktops, smart tiling, KDE-style dragging, pie menu, status bar, borders, GUI help page, and more
 
 > I made this script because many Windows window managers felt too heavy, too laggy, or too disruptive for my daily work setup.  
 > This project has been written and used in real work for about two years.
@@ -92,7 +92,7 @@ The built-in help page will show the available actions.
 
 ## Main Features
 
-### 󰖲 Virtual Desktops
+### Virtual Desktops
 
 AHK WM provides a lightweight virtual desktop system.
 
@@ -103,22 +103,7 @@ You can:
 - move a window and switch to that desktop
 - choose how inactive windows are hidden
 
-Config:
-
-```ini
-[Desktop]
-Count=9
-HideMethod=minimize
-
-`Count` supports `1-9`.
-
-`HideMethod`:
-
-```text
-minimize | hide
-```
-
-### 󰝘 Smart Tiling
+###  Smart Tiling
 
 Quickly arrange windows on the current monitor.
 
@@ -160,7 +145,7 @@ a/b     = segment a of b
 (a-c)/b = segments a through c of b
 ```
 
-### 󰇙 KDE-style Window Dragging
+### KDE-style Window Dragging
 
 Move or resize a window from anywhere.
 
@@ -173,7 +158,7 @@ Alt + Right Mouse  = resize window
 
 This is useful when you do not want to aim at the title bar.
 
-### 󰕮 Pie Menu
+### Pie Menu
 
 AHK WM includes a customizable radial menu.
 
@@ -196,9 +181,7 @@ FontSizeActive=22
 
 You can use the pie menu for quick actions, shortcuts, tools, or your own workflow commands.
 
-> Add a GIF here to show the pie menu in action.
-
-### 󰓡 Status Bar
+### Status Bar
 
 The bar can show:
 
@@ -251,7 +234,7 @@ Bar position currently supports:
 top | bottom
 ```
 
-### 󰅀 Window Borders
+### Window Borders
 
 AHK WM can draw borders for focused, dragged, pinned, or managed windows.
 
@@ -282,7 +265,7 @@ full  = full border
 
 Pinned border has the highest priority.
 
-### 󰁨 WTM Mode
+### WTM Mode
 
 WTM is a preview tiling mode for keyboard-driven window control.
 
@@ -317,7 +300,7 @@ Enable the toggle hotkey in config if needed:
 WTMToggle=Alt+Shift+D
 ```
 
-### 󰌵 GUI Help Page
+### GUI Help Page
 
 Default hotkey:
 
@@ -337,7 +320,7 @@ HelpOpacity=255
 
 `HelpHeight=0` means automatic height.
 
-### 󰐥 Power Menu
+### Power Menu
 
 Default hotkey:
 
@@ -365,7 +348,7 @@ PowerBtnSleep=5E81AC
 PowerBtnReboot=BF616A
 ```
 
-### 󰆓 Transparency Control
+### Transparency Control
 
 Default hotkeys:
 
@@ -376,7 +359,7 @@ Alt + WheelDown
 
 Useful when you want to see reference content behind a window.
 
-### 󰆞 Save / Restore Layout
+### Save / Restore Layout
 
 Default hotkeys:
 
@@ -387,7 +370,7 @@ Alt + Shift + R  = restore layout
 
 Useful for repeated workspaces or temporary window arrangements.
 
-### 󰈉 Exclude Windows
+### Exclude Windows
 
 Some windows should not be moved or resized by tiling / WTM.
 
