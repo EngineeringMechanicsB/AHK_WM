@@ -32,6 +32,17 @@ global WTM_BorderFocusColor, WTM_BorderUnfocusColor
 global WTM_BorderThickness, WTM_BorderOffset, WTM_BorderOpacity, WTM_SizeStep
 global WTM_Gap
 
+; ---- Border display mode (top|full) + one global refresh interval ----
+global Border_RefreshMs := 10
+global Border_Drag_Mode := "full"
+global Border_Pin_Mode  := "top"
+global WTM_BorderMode    := "full"
+
+; ---- Bar auto-hide on fullscreen ----
+global Bar_AutoHide   := false    ; from [Bar] AutoHideOnFullscreen
+global Bar_FsHidden   := false    ; true while the bar is hidden *because* of fullscreen
+global Bar_ShownState := true     ; last applied show/hide state (avoids per-tick churn)
+
 global CurrentTileGap := 0
 
 ; ---- New: tiling gap / GUI rounding / custom layout / window exclusion ----
@@ -186,7 +197,6 @@ SplitExcludeList(str) {
     return out
 }
 
-; 标题规则: 默认包含匹配(不区分大小写); re:正则; =精确匹配
 MatchTitleRule(text, rule) {
     rule := Trim(rule)
     if (rule = "")
@@ -221,7 +231,6 @@ IsExcludedWindow(hwnd) {
 }
 
 ; ---- Custom tiling layout: parsing & application ----
-; 解析单个轴向表达式 -> {lo, hi} (0..1 的占比); 非法时抛出异常.
 ParseAxis(tok) {
     tok := Trim(tok)
     if (tok = "")
@@ -429,8 +438,6 @@ PrettifyHotkey(s) {
 }
 
 ; ---- Initialization ----
-; 全局错误兜底: 单个窗口操作失败(句柄失效 / 窗口已关闭 / 跨线程等)只记录日志,
-; 不弹出打扰用户的错误窗口, 也不会中断整个 WM.
 OnError(WM_OnError)
 WM_OnError(err, mode) {
     try WMLog("Runtime: " . (IsObject(err) ? err.Message : err))
@@ -449,9 +456,6 @@ if !DirExist(Path_Output)
 if !DirExist(Path_Button)
     DirCreate(Path_Button)
 
-; 注意: 首次运行会同时生成默认配置文件与八方向按钮脚本.
-; 旧逻辑在按钮脚本被创建后立即 Reload(), 导致重载后 isFirstRun 变为 false,
-; 欢迎页面被跳过. 这里改为首次运行优先显示欢迎页面, 不在首次运行时 Reload.
 buttonsCreated := InitializeButtons()
 if isFirstRun
     WelcomeScreen.Show()
@@ -467,8 +471,6 @@ OnClipboardChange(OnClipboardChanged)
 RegisterAllHotkeys()
 
 ; ---- Hotkey registration ----
-; 所有依赖快捷键触发的功能: 当配置中的快捷键为空 / 缺失时, 该功能不会注册,
-; 即视为关闭. RegHotkey 负责跳过空快捷键并对注册失败做静默保护.
 RegHotkey(key, fn) {
     global HK
     if !HK.Has(key)
@@ -519,7 +521,6 @@ RegisterAllHotkeys() {
     RegHotkey("TransparencyUp",   AdjustTransparency.Bind(20))
     RegHotkey("TransparencyDown", AdjustTransparency.Bind(-20))
 
-    ; 固定的复制手势(不依赖配置)
     try Hotkey("~LButton & RButton", (*) => Send("^c"))
     try Hotkey("~RButton & LButton", (*) => Send("^c"))
 
@@ -538,7 +539,6 @@ RegisterAllHotkeys() {
     RegHotkey("Reload", (*) => Reload())
     RegHotkey("ClipboardHistory", (*) => ToggleVimWindow())
 
-    ; 饼菜单依赖触发键; 触发键为空时连同抬起执行键一起关闭
     if RegHotkey("PieMenuTrigger", (*) => PieMenu.Start()) {
         try Hotkey("~Space Up",   PieMenuExecute)
         try Hotkey("~RButton Up", PieMenuExecute)
@@ -571,12 +571,141 @@ ToggleTopDispatch(*) {
         ToggleTopUnderMouse()
 }
 
-; WTM 模式下直接关闭聚焦窗口(不移动鼠标); 否则关闭光标下窗口.
 CloseWindowDispatch(*) {
     if WTM.Active
         WTM.CloseFocused()
     else
         CloseWindowUnderMouse()
+}
+
+; ---- Config helper: new section/key first, then legacy fallbacks, then default ----
+; fallbacks is a list of [section, key] pairs tried in order. This lets an old
+; config keep working while the file is migrated to the new [section] structure.
+CfgRead(sec, key, defVal, fallbacks*) {
+    global ConfigFile
+    miss := "__WM_MISSING__"
+    v := IniRead(ConfigFile, sec, key, miss)
+    if (v != miss)
+        return v
+    for fb in fallbacks {
+        v := IniRead(ConfigFile, fb[1], fb[2], miss)
+        if (v != miss)
+            return v
+    }
+    return defVal
+}
+
+; Parse the unified custom_items list (';'-separated, ordered). When custom_items is
+; empty, fall back to the legacy custom_icon then custom_text so old configs still show.
+ParseCustomItems(itemsRaw, iconRaw := "", textRaw := "") {
+    out := []
+    if (Trim(itemsRaw) != "") {
+        for part in StrSplit(itemsRaw, ";") {
+            part := Trim(part)
+            if (part != "")
+                out.Push(part)
+        }
+        return out
+    }
+    if (Trim(iconRaw) != "")
+        out.Push(Trim(iconRaw))
+    if (Trim(textRaw) != "")
+        out.Push(Trim(textRaw))
+    return out
+}
+
+; If the config still uses the old [section] names, copy values into the new structure
+; (raw strings, so no unit conversion is lost), merge legacy custom items, drop the
+; legacy sections, and keep a .bak. A no-op once the file is already in the new layout.
+MigrateLegacyConfig() {
+    global ConfigFile
+    miss := "__WM_MISSING__"
+    isLegacy := (IniRead(ConfigFile, "Colors",    "Background", miss) != miss)
+             || (IniRead(ConfigFile, "StatusBar", "HeightPct",  miss) != miss)
+             || (IniRead(ConfigFile, "Layout",    "Gap",        miss) != miss)
+             || (IniRead(ConfigFile, "Desktops",  "Count",      miss) != miss)
+             || (IniRead(ConfigFile, "VimLayout", "XPct",       miss) != miss)
+    if !isLegacy
+        return
+
+    try FileCopy(ConfigFile, ConfigFile . ".bak", true)
+
+    moves := [
+        ["Theme","Background","Colors","Background"],
+        ["Theme","Text","Colors","Text"],
+        ["Theme","Active","Colors","Active"],
+        ["Theme","Task","Colors","Task"],
+        ["Theme","BorderDrag","Colors","BorderDrag"],
+        ["Theme","BorderPin","Colors","BorderPin"],
+        ["Theme","BorderUnfocus","Colors","BorderUnfocus"],
+        ["Theme","PowerMenuBg","Colors","PowerMenuBg"],
+        ["Theme","PowerBtnShutdown","Colors","PowerBtnShutdown"],
+        ["Theme","PowerBtnSleep","Colors","PowerBtnSleep"],
+        ["Theme","PowerBtnReboot","Colors","PowerBtnReboot"],
+        ["Bar","HeightPct","StatusBar","HeightPct"],
+        ["Bar","Opacity","StatusBar","Opacity"],
+        ["Bar","FontSize","StatusBar","FontSize"],
+        ["Bar","MonitorIdx","StatusBar","MonitorIdx"],
+        ["Border","DragEnable","BorderDrag","Enable"],
+        ["Border","DragThickness","BorderDrag","Thickness"],
+        ["Border","DragOffset","BorderDrag","Offset"],
+        ["Border","DragOffsetTop","BorderDrag","OffsetTop"],
+        ["Border","DragOpacity","BorderDrag","Opacity"],
+        ["Border","DragRounded","BorderDrag","RoundedCorners"],
+        ["Border","DragRadius","BorderDrag","CornerRadius"],
+        ["Border","PinThickness","BorderPin","Thickness"],
+        ["Border","PinOffset","BorderPin","Offset"],
+        ["Border","PinOffsetTop","BorderPin","OffsetTop"],
+        ["Border","PinOpacity","BorderPin","Opacity"],
+        ["Tiling","Gap","Layout","Gap"],
+        ["Tiling","Rules","Layout","Rules"],
+        ["GUI","HelpFontSize","HelpMenu","FontSize"],
+        ["GUI","HelpWidth","HelpMenu","Width"],
+        ["GUI","HelpHeight","HelpMenu","Height"],
+        ["GUI","HelpOpacity","HelpMenu","Opacity"],
+        ["GUI","HelpRounded","HelpMenu","RoundedCorners"],
+        ["GUI","HelpRadius","HelpMenu","CornerRadius"],
+        ["GUI","PowerFontSize","PowerMenu","FontSize"],
+        ["GUI","PowerWidth","PowerMenu","Width"],
+        ["GUI","PowerHeight","PowerMenu","Height"],
+        ["GUI","PowerOpacity","PowerMenu","Opacity"],
+        ["GUI","PowerRounded","PowerMenu","RoundedCorners"],
+        ["GUI","PowerRadius","PowerMenu","CornerRadius"],
+        ["GUI","OSDPositionPct","OSD","PositionPct"],
+        ["GUI","OSDOpacity","OSD","Opacity"],
+        ["GUI","OSDFontSize","OSD","FontSize"],
+        ["GUI","OSDRounded","OSD","RoundedCorners"],
+        ["GUI","OSDRadius","OSD","CornerRadius"],
+        ["Desktop","Count","Desktops","Count"],
+        ["Desktop","HideMethod","Desktops","HideMethod"],
+        ["Paths","EditorXPct","VimLayout","XPct"],
+        ["Paths","EditorYPct","VimLayout","YPct"],
+        ["Paths","EditorWidthPct","VimLayout","WidthPct"],
+        ["Paths","EditorHeightPct","VimLayout","HeightPct"]
+    ]
+    for m in moves {
+        v := IniRead(ConfigFile, m[3], m[4], miss)
+        if (v != miss && IniRead(ConfigFile, m[1], m[2], miss) = miss)
+            try IniWrite(v, ConfigFile, m[1], m[2])
+    }
+
+    ; Merge legacy custom_icon / custom_text into custom_items (icon first, then text).
+    if (IniRead(ConfigFile, "Bar", "custom_items", miss) = miss) {
+        icon := IniRead(ConfigFile, "Bar", "custom_icon", "")
+        text := IniRead(ConfigFile, "Bar", "custom_text", "")
+        merged := ""
+        if (Trim(icon) != "")
+            merged := icon
+        if (Trim(text) != "")
+            merged := (merged = "" ? text : merged ";" text)
+        if (merged != "")
+            try IniWrite(merged, ConfigFile, "Bar", "custom_items")
+    }
+    try IniDelete(ConfigFile, "Bar", "custom_icon")
+    try IniDelete(ConfigFile, "Bar", "custom_text")
+
+    for sec in ["Colors","StatusBar","BorderDrag","BorderPin","Layout","HelpMenu","PowerMenu","OSD","Desktops","VimLayout"]
+        try IniDelete(ConfigFile, sec)
 }
 
 ; ---- Config (load or initialize default) ----
@@ -594,259 +723,230 @@ LoadOrInitConfig() {
     if !FileExist(ConfigFile) {
         DefaultIni := "
         (
-        ;==========================================================================
-        ; AHK WM Configuration
-        ;==========================================================================
+;==========================================================================
+; AHK WM Configuration
+;==========================================================================
+; Thank you for using my script.
+[General]
+; Theme name. Built-in examples:
+; custom, nord, tokyonight, dracula, gruvbox, monokai, solarized-dark,
+; solarized-light, catppuccin-mocha, catppuccin-latte, onedark, ayu-dark,
+; github-dark, rose-pine, everforest, kanagawa, material-deep, nightfox,
+; palenight, horizon, oxocarbon.
+ActiveTheme=custom
 
-        [General]
-        ; custom / nord / tokyonight / dracula / gruvbox / monokai
-        ; / solarized-dark / solarized-light / catppuccin-mocha / catppuccin-latte
-        ; / onedark / ayu-dark / github-dark / rose-pine / everforest / kanagawa
-        ; / material-deep / nightfox / palenight / horizon / oxocarbon
-        ActiveTheme=custom
+[Theme]
+; Hex colors without '#'.
+Background=0e050f
+Text=e5e9f0
+Active=744da9
+Task=CF8DC9
+BorderDrag=A020F0
+BorderPin=FF5555
+; Border color for unfocused windows when all-window borders are enabled.
+BorderUnfocus=666666
+PowerMenuBg=2E3440
+PowerBtnShutdown=B48EAD
+PowerBtnSleep=5E81AC
+PowerBtnReboot=BF616A
 
-        [Colors]
-        Background=0e050f
-        Text=e5e9f0
-        Active=744da9
-        Task=CF8DC9
-        BorderDrag=A020F0
-        BorderPin=FF5555
-        ; Unfocused border color for the "show all window borders" toggle (Alt+B).
-        ; Focused windows reuse BorderDrag.
-        BorderUnfocus=666666
-        PowerMenuBg=2E3440
-        PowerBtnShutdown=B48EAD
-        PowerBtnSleep=5E81AC
-        PowerBtnReboot=BF616A
+[Paths]
+; Resource/output paths and launch targets.
+ButtonDir=Buttons
+OutputDir=C:\Users\Administrator\Documents
+VimPath=C:\Windows\system32\notepad.exe
+TerminalExe=C:\Windows\system32\cmd.exe
+; Editor window position and size, in screen percentage.
+EditorXPct=20
+EditorYPct=0
+EditorWidthPct=52
+EditorHeightPct=74
 
-        [StatusBar]
-        ; Legacy single-bar settings. Still used as the fallback bar and as defaults
-        ; (height / opacity / font / monitor) for the new [Bar] system below.
-        HeightPct=3
-        Opacity=78
-        FontSize=10
-        MonitorIdx=1
+[Desktop]
+; Virtual desktop count: 1-9.
+Count=9
+; Inactive desktop window handling: minimize | hide (hide reduces flicker).
+HideMethod=minimize
 
-        [PieMenu]
-        SizePct=28
-        CenterZonePct=27
-        Opacity=78
-        FontSize=14
-        FontSizeActive=22
+[Bar]
+; Status bar geometry.
+HeightPct=3
+Opacity=78
+FontSize=10
+MonitorIdx=1
+; Widget visibility.
+desktops=true
+time=true
+date=true
+progress=true
+; AutoHotkey FormatTime patterns.
+time_format=HH:mm
+date_format=yyyy-MM-dd
+; Ordered custom items separated by ';'. Reference them in 'layout' as
+; custom_1, custom_2, ... custom_n. May be text, symbols, icons, or emoji.
+custom_items=Edit Configuration file to hide
+; Comma-separated desktop names. Falls back to numbers if count mismatches.
+desktop_labels=
+; Current desktop label wrapper.
+current_desktop_left=[
+current_desktop_right=]
+; Desktop display: all | current | occupied.
+desktop_display_mode=all
+; Bar edge: top | bottom. Distance from screen edge in pixels.
+position=top
+offset=0
+; Multi-bar format: M:pos:offset;...  M=monitor index or '*'.
+; Example: instances=1:top:0;2:bottom:8
+instances=
+; Element layout: element:span;...  Span uses [Tiling] fraction syntax.
+; Elements: desktops, time, date, progress, custom_1..n.
+layout=custom_1:(2-5)/10;desktops:(1-3)/20;date:(18-19)/20;time:20/20
+; Hide the bar while a fullscreen window exists on the current desktop.
+AutoHideOnFullscreen=off
 
-        [OSD]
-        PositionPct=80
-        Opacity=78
-        FontSize=20
-        ; RoundedCorners / CornerRadius inherit [GUI] when omitted.
-        ; RoundedCorners=on
-        ; CornerRadius=12
+[Border]
+; One refresh interval (ms) shared by all border drawing.
+RefreshMs=10
+; Drag/focus border. Mode: top (top edge only) | full (all sides).
+DragEnable=on
+DragMode=full
+DragThickness=15
+DragOffset=0
+DragOffsetTop=5
+DragOpacity=70
+DragRounded=on
+DragRadius=10
+; Pinned-window indicator. Highest priority: a pinned window draws no other
+; border. Mode: top | full.
+PinMode=top
+PinThickness=10
+PinOffset=0
+PinOffsetTop=5
+PinOpacity=78
 
-        [BorderDrag]
-        Enable=on
-        Thickness=15
-        Offset=0
-        OffsetTop=5
-        Opacity=70
-        ; Window drag border rounding (focused-style border). Inherits [GUI] if omitted.
-        RoundedCorners=on
-        CornerRadius=10
+[Tiling]
+; Smart tiling gap in pixels (may be negative; outer work area stays protected).
+Gap=8
+; Custom tiling rules: M,N,I,X,Y;...  M=monitor index or '*', N=window count,
+; I=window index, X/Y=area span (1=full, a/b=segment, (a-c)/b=multi-segment).
+; Priority: exact monitor > '*' > built-in default. Legacy N,I,X,Y => '*',N,I,X,Y.
+Rules=1,3,1,1/2,1;1,3,2,2/2,1/2;1,3,3,2/2,2/2;1,5,1,(2-4)/5,1;1,5,2,1/5,1/2;1,5,3,1/5,2/2;1,5,4,5/5,(1-2)/3;1,5,5,5/5,3/3;
 
-        [BorderPin]
-        Thickness=10
-        Offset=0
-        OffsetTop=5
-        Opacity=78
-        ; The pinned indicator is a single top strip and is never rounded.
-        RoundedCorners=off
-        CornerRadius=0
+[WTM]
+; Window Tree Manager. BorderMode: top | full.
+BorderMode=full
+BorderFocusColor=A020F0
+BorderUnfocusColor=555555
+BorderThickness=8
+BorderOffset=0
+BorderOpacity=80
+SizeStep=3
+; Gap may be negative; windows can overlap but never cover bars.
+Gap=10
+RoundedCorners=on
+CornerRadius=10
 
-        [Paths]
-        ButtonDir=Buttons
-        OutputDir=C:\Users\Administrator\Documents
-        VimPath=C:\Windows\system32\notepad.exe
-        TerminalExe=C:\Windows\system32\cmd.exe
+[PieMenu]
+; Radial menu size, center dead zone, transparency, and font sizes.
+SizePct=28
+CenterZonePct=27
+Opacity=78
+FontSize=14
+FontSizeActive=22
 
-        [VimLayout]
-        XPct=20
-        YPct=0
-        WidthPct=52
-        HeightPct=74
+[GUI]
+; Global rounding defaults. Sections may override. Status bar is never rounded.
+RoundedCorners=on
+CornerRadius=12
+; Help menu (Height=0 = auto). Power menu. On-screen display.
+HelpFontSize=10
+HelpWidth=620
+HelpHeight=0
+HelpOpacity=255
+PowerFontSize=12
+PowerWidth=500
+PowerHeight=160
+PowerOpacity=255
+OSDPositionPct=80
+OSDOpacity=78
+OSDFontSize=20
 
-        [WorkTime]
-        Mode=off
-        WeekendBar=off
-        WorkStart=0900
-        WorkEnd=1745
-        TaskTimes=1_1200_1300;2_1200_1300;3_1200_1300;4_1200_1300;5_1200_1300;6_1200_1300;7_1200_1300;2_1700_1745;3_0900_0920;
+[WorkTime]
+; WorkTime / AllDay progress.
+Mode=off
+; Full progress on weekends.
+WeekendBar=off
+; WorkStart / WorkEnd format: HHMM.
+WorkStart=0900
+WorkEnd=1745
+; TaskTimes format: Weekday_Start_End;...  Weekday 1=Mon..7=Sun, time HHMM.
+TaskTimes=1_1200_1300;2_1200_1300;3_1200_1300;4_1200_1300;5_1200_1300;6_1200_1300;7_1200_1300;2_1700_1745;3_0900_0920;
 
-        [WTM]
-        BorderFocusColor=A020F0
-        BorderUnfocusColor=555555
-        BorderThickness=8
-        BorderOffset=0
-        BorderOpacity=80
-        SizeStep=3
-        ; Gap may be negative (windows draw closer / overlap, but never cover a bar).
-        Gap=10
-        ; WTM window border rounding. Inherits [GUI] if omitted.
-        RoundedCorners=on
-        CornerRadius=10
+[Exclude]
+; Matching windows are ignored by tiling / WTM.  Multiple entries use ';'.
+; Title: contains by default; re:xxx = regex; =xxx = exact.
+Titles=Picture-in-Picture
+; Class name: exact, case-insensitive.
+Classes=
+; Process exe name: exact, case-insensitive. Example: notepad.exe
+Processes=
 
-        [Layout]
-        ; Window gap (pixels) for smart tiling (Alt+D). WTM gap is [WTM] Gap.
-        ; May be negative: windows draw closer and may overlap, but never cross the
-        ; bar / work-area outer boundary.
-        Gap=8
-        ; Custom tiling rules. Format:  M,N,I,X,Y   multiple rules separated by ';'.
-        ;   M = monitor index (1-based) or '*' for all monitors
-        ;   N = total number of tiled windows on that monitor
-        ;   I = which window (starting at 1)
-        ;   X = horizontal span,  Y = vertical span
-        ; Coordinate expressions:
-        ;   a/b      -> segment a of b equal parts   (e.g. 1/2 = left / top half)
-        ;   (a-c)/b  -> segments a..c of b parts      (inclusive, e.g. (2-4)/5)
-        ;   1        -> the whole axis
-        ; Priority: exact monitor match -> '*' wildcard -> built-in default tiling.
-        ; The legacy 4-field form  N,I,X,Y  is still accepted (treated as '*').
-        ; Invalid groups are ignored (and logged) and fall back to default tiling.
-        ; Example (monitor 1 three windows, monitor 2 single fullscreen):
-        ;   Rules=1,3,1,1/2,1;1,3,2,2/2,1/2;1,3,3,2/2,2/2;2,1,1,1,1
-        Rules=
+;--------------------------------------------------------------------------
+; Hotkeys - use natural names joined by '+': Alt / Shift / Ctrl / Win
+;--------------------------------------------------------------------------
 
-        [Exclude]
-        ; Excluded windows are skipped by tiling / WTM and are never moved or resized.
-        ; Multiple rules separated by ';'.
-        ; Title match: default "contains" (case-insensitive); re:regex = regex; =text = exact.
-        Titles=Picture-in-Picture
-        ; Window class: exact match (case-insensitive), ';' separated.
-        Classes=
-        ; Process name (exe): exact match (case-insensitive), ';' separated, e.g. notepad.exe
-        Processes=
+[Hotkeys]
+Help=Alt+/
+Exit=Alt+F12
+Reload=Alt+R
 
-        [GUI]
-        ; Global GUI rounded corners (help menu / OSD / power menu / borders, etc.).
-        ; Each GUI section may override RoundedCorners / CornerRadius; otherwise it
-        ; inherits these global values. The top status bar is never rounded.
-        RoundedCorners=on
-        CornerRadius=12
+DesktopSwitchPrefix=Alt
+DesktopMovePrefix=Alt+Shift
+DesktopMoveSwitchPrefix=Ctrl+Alt
 
-        [HelpMenu]
-        ; Help page (Alt+/). FontSize/Opacity exact; Width/Height best-effort scaling.
-        FontSize=10
-        Width=620
-        Height=0
-        Opacity=255
-        ; RoundedCorners / CornerRadius inherit [GUI] when omitted.
-        ; RoundedCorners=on
-        ; CornerRadius=12
+TileSmart=Alt+D
+GatherAll=Alt+Shift+G
+TogglePin=Ctrl+Alt+T
+ToggleBar=Ctrl+Alt+B
+SaveLayout=Alt+Shift+S
+RestoreLayout=Alt+Shift+R
 
-        [PowerMenu]
-        ; Power page (Alt+X). FontSize/Opacity exact; Width/Height scale the layout.
-        FontSize=12
-        Width=500
-        Height=160
-        Opacity=255
-        ; RoundedCorners=on
-        ; CornerRadius=12
+CloseWindow=Alt+Q
+CloseWindowAlt=Alt+MButton
+ToggleMaximize=Alt+F
+ToggleTop=Alt+T
+HideWindow=Alt+W
+; Under testing
+ToggleAllBorders=
+TransparencyUp=Alt+WheelUp
+TransparencyDown=Alt+WheelDown
 
-        [Desktops]
-        ; Number of virtual desktops (1-9; switch hotkeys map to digits 1-9).
-        Count=9
-        ; How windows on inactive desktops are hidden: minimize | hide.
-        ; "hide" keeps focus stable and avoids taskbar flicker. All windows are shown
-        ; again on exit. Focus is preserved when switching away and back.
-        HideMethod=minimize
+SnapLeft=Alt+Left
+SnapRight=Alt+Right
+SnapUp=Alt+Up
+SnapDown=Alt+Down
 
-        [Bar]
-        ; Fully customizable status bar(s). Leave 'instances' empty to use a single
-        ; bar built from [StatusBar] (monitor / height / opacity / font).
-        ; Widget toggles:
-        desktops=true
-        time=true
-        date=true
-        progress=true
-        ; Time / date formats (AutoHotkey FormatTime patterns).
-        time_format=HH:mm
-        date_format=yyyy-MM-dd
-        ; Free custom content (empty = hidden). custom_icon can be a symbol or emoji.
-        custom_text=
-        custom_icon=
-        ; Desktop labels (comma separated). Falls back to numbers if count mismatches.
-        ; e.g. desktop_labels=work,code,web,chat,media
-        desktop_labels=
-        ; Symbols wrapping the current desktop label.
-        current_desktop_left=[
-        current_desktop_right=]
-        ; Desktop display mode: all | current | occupied
-        desktop_display_mode=all
-        ; Default bar edge + distance from the screen edge (used when 'instances' empty).
-        position=top
-        offset=0
-        ; Multiple bars: M:pos:offset; ...  (M = monitor index or '*'). One bar per
-        ; monitor; extras are ignored with a log warning. e.g. instances=1:top:0;2:left:8
-        instances=
-        ; Internal element layout: element:expr; ...  expr uses the tiling fractions
-        ; (a/b or (a-c)/b) along the bar's main axis (x for horizontal, y for vertical).
-        ; Elements: desktops, time, date, progress, custom_text, custom_icon.
-        ; e.g. layout=desktops:1/5;custom_text:3/5;time:5/5
-        layout=
+LaunchTerminal=Alt+Enter
+EditFile=Alt+V
+PowerMenu=Alt+X
+ClipboardHistory=Ctrl+``
 
-        ;--------------------------------------------------------------------------
-        ; Hotkeys - natural language:  Alt / Shift / Ctrl / Win  joined by '+'
-        ;--------------------------------------------------------------------------
-        [Hotkeys]
-        Help=Alt+/
-        Exit=Alt+F12
-        Reload=Alt+R
+DragMove=Alt+LButton
+DragResize=Alt+RButton
 
-        DesktopSwitchPrefix=Alt
-        DesktopMovePrefix=Alt+Shift
-        DesktopMoveSwitchPrefix=Ctrl+Alt
+PieMenuTrigger=~Space & RButton
 
-        TileSmart=Alt+D
-        GatherAll=Alt+Shift+G
-        TogglePin=Ctrl+Alt+T
-        ToggleBar=Ctrl+Alt+B
-        SaveLayout=Alt+Shift+S
-        RestoreLayout=Alt+Shift+R
-
-        CloseWindow=Alt+Q
-        CloseWindowAlt=Alt+MButton
-        ToggleMaximize=Alt+F
-        ToggleTop=Alt+T
-        HideWindow=Alt+W
-        ; Toggle borders on every window (focused = BorderDrag, others = BorderUnfocus).
-        ToggleAllBorders=Alt+B
-        TransparencyUp=Alt+WheelUp
-        TransparencyDown=Alt+WheelDown
-
-        SnapLeft=Alt+Left
-        SnapRight=Alt+Right
-        SnapUp=Alt+Up
-        SnapDown=Alt+Down
-
-        LaunchTerminal=Alt+Enter
-        EditFile=Alt+V
-        PowerMenu=Alt+X
-        ClipboardHistory=Ctrl+``
-
-        DragMove=Alt+LButton
-        DragResize=Alt+RButton
-
-        PieMenuTrigger=~Space & RButton
-
-        WTMToggle=Alt+Shift+D
-        WTMFocusLeft=Alt+H
-        WTMFocusDown=Alt+J
-        WTMFocusUp=Alt+K
-        WTMFocusRight=Alt+L
-        WTMMoveLeft=Alt+Shift+H
-        WTMMoveDown=Alt+Shift+J
-        WTMMoveUp=Alt+Shift+K
-        WTMMoveRight=Alt+Shift+L
-        )"
+; Under testing
+WTMToggle=
+WTMFocusLeft=Alt+H
+WTMFocusDown=Alt+J
+WTMFocusUp=Alt+K
+WTMFocusRight=Alt+L
+WTMMoveLeft=Alt+Shift+H
+WTMMoveDown=Alt+Shift+J
+WTMMoveUp=Alt+Shift+K
+WTMMoveRight=Alt+Shift+L
+		 )"
 
         try {
             FileAppend(DefaultIni, ConfigFile, "UTF-8")
@@ -856,24 +956,32 @@ LoadOrInitConfig() {
         }
     }
 
+    ; Migrate an old-structure config to the new [section] layout (backs up to .bak).
+    MigrateLegacyConfig()
+
     ActiveTheme := IniRead(ConfigFile, "General", "ActiveTheme", "custom")
 
-    Color_Bg          := IniRead(ConfigFile, "Colors", "Background",       "0e050f")
-    Color_Text        := IniRead(ConfigFile, "Colors", "Text",             "744da9")
-    Color_Active      := IniRead(ConfigFile, "Colors", "Active",           "744da9")
-    Color_Task        := IniRead(ConfigFile, "Colors", "Task",             "CF8DC9")
-    Border_Drag_Color := IniRead(ConfigFile, "Colors", "BorderDrag",       "A020F0")
-    Border_Pin_Color  := IniRead(ConfigFile, "Colors", "BorderPin",        "FF5555")
-    PM_Bg             := IniRead(ConfigFile, "Colors", "PowerMenuBg",      "2E3440")
-    PM_BtnShutdown    := IniRead(ConfigFile, "Colors", "PowerBtnShutdown", "B48EAD")
-    PM_BtnSleep       := IniRead(ConfigFile, "Colors", "PowerBtnSleep",    "5E81AC")
-    PM_BtnReboot      := IniRead(ConfigFile, "Colors", "PowerBtnReboot",   "BF616A")
+    ; ---- Theme colors ([Theme], legacy [Colors]) ----
+    Color_Bg          := CfgRead("Theme", "Background",       "0e050f", ["Colors","Background"])
+    Color_Text        := CfgRead("Theme", "Text",             "744da9", ["Colors","Text"])
+    Color_Active      := CfgRead("Theme", "Active",           "744da9", ["Colors","Active"])
+    Color_Task        := CfgRead("Theme", "Task",             "CF8DC9", ["Colors","Task"])
+    Border_Drag_Color := CfgRead("Theme", "BorderDrag",       "A020F0", ["Colors","BorderDrag"])
+    Border_Pin_Color  := CfgRead("Theme", "BorderPin",        "FF5555", ["Colors","BorderPin"])
+    PM_Bg             := CfgRead("Theme", "PowerMenuBg",      "2E3440", ["Colors","PowerMenuBg"])
+    PM_BtnShutdown    := CfgRead("Theme", "PowerBtnShutdown", "B48EAD", ["Colors","PowerBtnShutdown"])
+    PM_BtnSleep       := CfgRead("Theme", "PowerBtnSleep",    "5E81AC", ["Colors","PowerBtnSleep"])
+    PM_BtnReboot      := CfgRead("Theme", "PowerBtnReboot",   "BF616A", ["Colors","PowerBtnReboot"])
+    ; All-window-borders mode: unfocused border color (focused reuses BorderDrag).
+    Color_BorderUnfocus := CfgRead("Theme", "BorderUnfocus",  "555555", ["Colors","BorderUnfocus"])
 
-    Bar_Height       := Pct2PxH(Integer(IniRead(ConfigFile, "StatusBar", "HeightPct",  "3")))
-    Bar_Transparent  := Pct2Alpha(Integer(IniRead(ConfigFile, "StatusBar", "Opacity",  "78")))
-    Bar_FontSize     := Integer(IniRead(ConfigFile, "StatusBar", "FontSize",   "10"))
-    Bar_MonitorIdx   := Integer(IniRead(ConfigFile, "StatusBar", "MonitorIdx", "1"))
+    ; ---- Bar geometry ([Bar], legacy [StatusBar]) ----
+    Bar_Height       := Pct2PxH(Integer(CfgRead("Bar", "HeightPct",  "3",  ["StatusBar","HeightPct"])))
+    Bar_Transparent  := Pct2Alpha(Integer(CfgRead("Bar", "Opacity",  "78", ["StatusBar","Opacity"])))
+    Bar_FontSize     := Integer(CfgRead("Bar", "FontSize",   "10", ["StatusBar","FontSize"]))
+    Bar_MonitorIdx   := Integer(CfgRead("Bar", "MonitorIdx", "1",  ["StatusBar","MonitorIdx"]))
 
+    ; ---- Pie menu ([PieMenu]) ----
     Pie_Size           := Pct2PxMin(Integer(IniRead(ConfigFile, "PieMenu", "SizePct",       "28")))
     Pie_Radius         := Pie_Size / 2
     Pie_CenterZone     := Round(Pie_Radius * Integer(IniRead(ConfigFile, "PieMenu", "CenterZonePct", "27")) / 100)
@@ -881,21 +989,35 @@ LoadOrInitConfig() {
     Pie_FontSize       := Integer(IniRead(ConfigFile, "PieMenu", "FontSize",       "14"))
     Pie_FontSizeActive := Integer(IniRead(ConfigFile, "PieMenu", "FontSizeActive", "22"))
 
-    OSD_Height       := Pct2PxH(Integer(IniRead(ConfigFile, "OSD", "PositionPct", "80")))
-    OSD_Transparent  := Pct2Alpha(Integer(IniRead(ConfigFile, "OSD", "Opacity",   "78")))
-    OSD_FontSize     := Integer(IniRead(ConfigFile, "OSD", "FontSize", "20"))
+    ; ---- OSD ([GUI] OSD*, legacy [OSD]) ----
+    OSD_Height       := Pct2PxH(Integer(CfgRead("GUI", "OSDPositionPct", "80", ["OSD","PositionPct"])))
+    OSD_Transparent  := Pct2Alpha(Integer(CfgRead("GUI", "OSDOpacity",   "78", ["OSD","Opacity"])))
+    OSD_FontSize     := Integer(CfgRead("GUI", "OSDFontSize", "20", ["OSD","FontSize"]))
 
-    Border_Drag_Enable      := IniRead(ConfigFile, "BorderDrag", "Enable",    "on")
-    Border_Drag_Thickness   := Pct2Border(Integer(IniRead(ConfigFile, "BorderDrag", "Thickness", "15")))
-    Border_Drag_Offset      := Pct2Border(Integer(IniRead(ConfigFile, "BorderDrag", "Offset",    "0")))
-    Border_Drag_OffsetTop   := Pct2Border(Integer(IniRead(ConfigFile, "BorderDrag", "OffsetTop", "5")))
-    Border_Drag_Transparent := Pct2Alpha(Integer(IniRead(ConfigFile, "BorderDrag", "Opacity",   "70")))
+    ; ---- Borders: one global refresh + per-type mode ([Border], legacy [BorderDrag]/[BorderPin]) ----
+    Border_RefreshMs := Max(1, Integer(IniRead(ConfigFile, "Border", "RefreshMs", "10")))
 
-    Border_Pin_Thickness   := Pct2Border(Integer(IniRead(ConfigFile, "BorderPin", "Thickness", "10")))
-    Border_Pin_Offset      := Pct2Border(Integer(IniRead(ConfigFile, "BorderPin", "Offset",    "0")))
-    Border_Pin_OffsetTop   := Pct2Border(Integer(IniRead(ConfigFile, "BorderPin", "OffsetTop", "5")))
-    Border_Pin_Transparent := Pct2Alpha(Integer(IniRead(ConfigFile, "BorderPin", "Opacity",   "78")))
+    Border_Drag_Enable      := CfgRead("Border", "DragEnable", "on", ["BorderDrag","Enable"])
+    Border_Drag_Mode        := StrLower(IniRead(ConfigFile, "Border", "DragMode", "full"))
+    if !(Border_Drag_Mode = "top" || Border_Drag_Mode = "full")
+        Border_Drag_Mode := "full"
+    Border_Drag_Thickness   := Pct2Border(Integer(CfgRead("Border", "DragThickness", "15", ["BorderDrag","Thickness"])))
+    Border_Drag_Offset      := Pct2Border(Integer(CfgRead("Border", "DragOffset",    "0",  ["BorderDrag","Offset"])))
+    Border_Drag_OffsetTop   := Pct2Border(Integer(CfgRead("Border", "DragOffsetTop", "5",  ["BorderDrag","OffsetTop"])))
+    Border_Drag_Transparent := Pct2Alpha(Integer(CfgRead("Border", "DragOpacity",   "70", ["BorderDrag","Opacity"])))
 
+    Border_Pin_Mode        := StrLower(IniRead(ConfigFile, "Border", "PinMode", "top"))
+    if !(Border_Pin_Mode = "top" || Border_Pin_Mode = "full")
+        Border_Pin_Mode := "top"
+    Border_Pin_Thickness   := Pct2Border(Integer(CfgRead("Border", "PinThickness", "10", ["BorderPin","Thickness"])))
+    Border_Pin_Offset      := Pct2Border(Integer(CfgRead("Border", "PinOffset",    "0",  ["BorderPin","Offset"])))
+    Border_Pin_OffsetTop   := Pct2Border(Integer(CfgRead("Border", "PinOffsetTop", "5",  ["BorderPin","OffsetTop"])))
+    Border_Pin_Transparent := Pct2Alpha(Integer(CfgRead("Border", "PinOpacity",   "78", ["BorderPin","Opacity"])))
+
+    ; ---- WTM ([WTM]) ----
+    WTM_BorderMode         := StrLower(IniRead(ConfigFile, "WTM", "BorderMode", "full"))
+    if !(WTM_BorderMode = "top" || WTM_BorderMode = "full")
+        WTM_BorderMode := "full"
     WTM_BorderFocusColor   := IniRead(ConfigFile, "WTM", "BorderFocusColor",   "A020F0")
     WTM_BorderUnfocusColor := IniRead(ConfigFile, "WTM", "BorderUnfocusColor", "555555")
     WTM_BorderThickness    := Pct2Border(Integer(IniRead(ConfigFile, "WTM", "BorderThickness", "8")))
@@ -905,55 +1027,54 @@ LoadOrInitConfig() {
     ; Gap may be negative (windows draw closer / overlap); not clamped to >= 0.
     WTM_Gap                := Integer(IniRead(ConfigFile, "WTM", "Gap", "10"))
 
+    ; ---- Tiling ([Tiling], legacy [Layout]) ----
     ; Gap may be negative (windows draw closer / overlap); not clamped to >= 0.
-    Tile_Gap         := Integer(IniRead(ConfigFile, "Layout", "Gap", "8"))
-    LayoutRules      := ParseLayoutRules(IniRead(ConfigFile, "Layout", "Rules", ""))
+    Tile_Gap         := Integer(CfgRead("Tiling", "Gap", "8", ["Layout","Gap"]))
+    LayoutRules      := ParseLayoutRules(CfgRead("Tiling", "Rules", "", ["Layout","Rules"]))
 
     Excl_Titles      := SplitExcludeList(IniRead(ConfigFile, "Exclude", "Titles",    ""))
     Excl_Classes     := SplitExcludeList(IniRead(ConfigFile, "Exclude", "Classes",   ""))
     Excl_Processes   := SplitExcludeList(IniRead(ConfigFile, "Exclude", "Processes", ""))
 
+    ; ---- GUI rounding + per-GUI overrides ([GUI], legacy [GUI]/[HelpMenu]/[PowerMenu]/[OSD]) ----
     GUI_Rounded      := IniRead(ConfigFile, "GUI", "RoundedCorners", "on")
     GUI_CornerRadius := Max(0, Integer(IniRead(ConfigFile, "GUI", "CornerRadius", "12")))
 
     ; Per-GUI rounded-corner overrides. Each defaults to the global [GUI] values so a
     ; section that omits the keys simply inherits the global setting.
-    Help_Rounded := IniRead(ConfigFile, "HelpMenu", "RoundedCorners", GUI_Rounded)
-    Help_Radius  := Max(0, Integer(IniRead(ConfigFile, "HelpMenu", "CornerRadius", GUI_CornerRadius)))
-    PM_Rounded   := IniRead(ConfigFile, "PowerMenu", "RoundedCorners", GUI_Rounded)
-    PM_Radius    := Max(0, Integer(IniRead(ConfigFile, "PowerMenu", "CornerRadius", GUI_CornerRadius)))
-    OSD_Rounded  := IniRead(ConfigFile, "OSD", "RoundedCorners", GUI_Rounded)
-    OSD_Radius   := Max(0, Integer(IniRead(ConfigFile, "OSD", "CornerRadius", GUI_CornerRadius)))
+    Help_Rounded := CfgRead("GUI", "HelpRounded", GUI_Rounded, ["HelpMenu","RoundedCorners"])
+    Help_Radius  := Max(0, Integer(CfgRead("GUI", "HelpRadius", GUI_CornerRadius, ["HelpMenu","CornerRadius"])))
+    PM_Rounded   := CfgRead("GUI", "PowerRounded", GUI_Rounded, ["PowerMenu","RoundedCorners"])
+    PM_Radius    := Max(0, Integer(CfgRead("GUI", "PowerRadius", GUI_CornerRadius, ["PowerMenu","CornerRadius"])))
+    OSD_Rounded  := CfgRead("GUI", "OSDRounded", GUI_Rounded, ["OSD","RoundedCorners"])
+    OSD_Radius   := Max(0, Integer(CfgRead("GUI", "OSDRadius", GUI_CornerRadius, ["OSD","CornerRadius"])))
 
-    Border_Drag_Rounded := IniRead(ConfigFile, "BorderDrag", "RoundedCorners", GUI_Rounded)
-    Border_Drag_Radius  := Max(0, Integer(IniRead(ConfigFile, "BorderDrag", "CornerRadius", "10")))
-    Border_Pin_Rounded  := IniRead(ConfigFile, "BorderPin", "RoundedCorners", "off")  ; pin strip: never rounded
-    Border_Pin_Radius   := Max(0, Integer(IniRead(ConfigFile, "BorderPin", "CornerRadius", "0")))
+    Border_Drag_Rounded := CfgRead("Border", "DragRounded", GUI_Rounded, ["BorderDrag","RoundedCorners"])
+    Border_Drag_Radius  := Max(0, Integer(CfgRead("Border", "DragRadius", "10", ["BorderDrag","CornerRadius"])))
+    Border_Pin_Rounded  := "off"   ; pin strip: never rounded
+    Border_Pin_Radius   := 0
     WTM_BorderRounded   := IniRead(ConfigFile, "WTM", "RoundedCorners", GUI_Rounded)
     WTM_BorderRadius    := Max(0, Integer(IniRead(ConfigFile, "WTM", "CornerRadius", "10")))
 
     ; Help menu sizing (FontSize/Opacity exact; Width/Height best-effort scaling).
-    Help_FontSize := Integer(IniRead(ConfigFile, "HelpMenu", "FontSize", "10"))
-    Help_Width    := Integer(IniRead(ConfigFile, "HelpMenu", "Width",    "620"))
-    Help_Height   := Integer(IniRead(ConfigFile, "HelpMenu", "Height",   "0"))
-    Help_Opacity  := Integer(IniRead(ConfigFile, "HelpMenu", "Opacity",  "255"))
+    Help_FontSize := Integer(CfgRead("GUI", "HelpFontSize", "10",  ["HelpMenu","FontSize"]))
+    Help_Width    := Integer(CfgRead("GUI", "HelpWidth",    "620", ["HelpMenu","Width"]))
+    Help_Height   := Integer(CfgRead("GUI", "HelpHeight",   "0",   ["HelpMenu","Height"]))
+    Help_Opacity  := Integer(CfgRead("GUI", "HelpOpacity",  "255", ["HelpMenu","Opacity"]))
 
     ; Power menu sizing.
-    PM_FontSize := Integer(IniRead(ConfigFile, "PowerMenu", "FontSize", "12"))
-    PM_Width    := Integer(IniRead(ConfigFile, "PowerMenu", "Width",    "500"))
-    PM_Height   := Integer(IniRead(ConfigFile, "PowerMenu", "Height",   "160"))
-    PM_Opacity  := Integer(IniRead(ConfigFile, "PowerMenu", "Opacity",  "255"))
+    PM_FontSize := Integer(CfgRead("GUI", "PowerFontSize", "12",  ["PowerMenu","FontSize"]))
+    PM_Width    := Integer(CfgRead("GUI", "PowerWidth",    "500", ["PowerMenu","Width"]))
+    PM_Height   := Integer(CfgRead("GUI", "PowerHeight",   "160", ["PowerMenu","Height"]))
+    PM_Opacity  := Integer(CfgRead("GUI", "PowerOpacity",  "255", ["PowerMenu","Opacity"]))
 
-    ; All-window-borders mode: unfocused border color (focused reuses BorderDrag).
-    Color_BorderUnfocus := IniRead(ConfigFile, "Colors", "BorderUnfocus", "555555")
-
-    ; Virtual-desktop count and hide method.
-    DesktopCount := Integer(IniRead(ConfigFile, "Desktops", "Count", "9"))
+    ; ---- Virtual desktops ([Desktop], legacy [Desktops]) ----
+    DesktopCount := Integer(CfgRead("Desktop", "Count", "9", ["Desktops","Count"]))
     if (DesktopCount < 1)
         DesktopCount := 1
     if (DesktopCount > 9)
         DesktopCount := 9                ; switch hotkeys map to digits 1-9
-    Desktop_HideMethod := StrLower(IniRead(ConfigFile, "Desktops", "HideMethod", "minimize"))
+    Desktop_HideMethod := StrLower(CfgRead("Desktop", "HideMethod", "minimize", ["Desktops","HideMethod"]))
     if !(Desktop_HideMethod = "minimize" || Desktop_HideMethod = "hide")
         Desktop_HideMethod := "minimize"
 
@@ -965,8 +1086,6 @@ LoadOrInitConfig() {
     Bar_Cfg["progress"]     := (StrLower(IniRead(ConfigFile, "Bar", "progress", "true")) = "true")
     Bar_Cfg["time_format"]  := IniRead(ConfigFile, "Bar", "time_format", "HH:mm")
     Bar_Cfg["date_format"]  := IniRead(ConfigFile, "Bar", "date_format", "yyyy-MM-dd")
-    Bar_Cfg["custom_text"]  := IniRead(ConfigFile, "Bar", "custom_text", "")
-    Bar_Cfg["custom_icon"]  := IniRead(ConfigFile, "Bar", "custom_icon", "")
     Bar_Cfg["cur_left"]     := IniRead(ConfigFile, "Bar", "current_desktop_left",  "[")
     Bar_Cfg["cur_right"]    := IniRead(ConfigFile, "Bar", "current_desktop_right", "]")
     Bar_Cfg["display_mode"] := StrLower(IniRead(ConfigFile, "Bar", "desktop_display_mode", "all"))
@@ -974,6 +1093,17 @@ LoadOrInitConfig() {
     Bar_Cfg["offset"]       := Integer(IniRead(ConfigFile, "Bar", "offset", "0"))
     Bar_Cfg["instances"]    := IniRead(ConfigFile, "Bar", "instances", "")
     Bar_Cfg["layout"]       := ParseBarLayout(IniRead(ConfigFile, "Bar", "layout", ""))
+
+    ; Unified custom items list. Legacy custom_icon/custom_text are merged (icon, text)
+    ; only when custom_items is absent, so old configs keep showing their content.
+    Bar_Cfg["custom_items"] := ParseCustomItems(
+        IniRead(ConfigFile, "Bar", "custom_items", ""),
+        IniRead(ConfigFile, "Bar", "custom_icon",  ""),
+        IniRead(ConfigFile, "Bar", "custom_text",  ""))
+
+    ; Auto-hide the bar while a fullscreen window exists on the current desktop.
+    Bar_AutoHide := BarShown(IniRead(ConfigFile, "Bar", "AutoHideOnFullscreen", "off"))
+
     barLabelsRaw := IniRead(ConfigFile, "Bar", "desktop_labels", "")
     barLabels := []
     if (Trim(barLabelsRaw) != "") {
@@ -982,6 +1112,7 @@ LoadOrInitConfig() {
     }
     Bar_Cfg["desktop_labels"] := barLabels
 
+    ; ---- Paths ([Paths]; editor position legacy [VimLayout]) ----
     bDirTemp        := IniRead(ConfigFile, "Paths", "ButtonDir",  "Buttons")
     Path_Button     := (bDirTemp ~= "^[a-zA-Z]:") ? bDirTemp : (A_ScriptDir . "\" . bDirTemp)
     Path_Output     := IniRead(ConfigFile, "Paths", "OutputDir",   "C:\Users\Administrator\Documents")
@@ -989,10 +1120,10 @@ LoadOrInitConfig() {
     Path_Vim        := IniRead(ConfigFile, "Paths", "VimPath",     "C:\Windows\system32\notepad.exe")
     Path_Terminal   := IniRead(ConfigFile, "Paths", "TerminalExe", "C:\Windows\system32\cmd.exe")
 
-    Vim_X      := Pct2PxW(Integer(IniRead(ConfigFile, "VimLayout", "XPct",      "20")))
-    Vim_Y      := Pct2PxH(Integer(IniRead(ConfigFile, "VimLayout", "YPct",      "0")))
-    Vim_Width  := Pct2PxW(Integer(IniRead(ConfigFile, "VimLayout", "WidthPct",  "52")))
-    Vim_Height := Pct2PxH(Integer(IniRead(ConfigFile, "VimLayout", "HeightPct", "74")))
+    Vim_X      := Pct2PxW(Integer(CfgRead("Paths", "EditorXPct",      "20", ["VimLayout","XPct"])))
+    Vim_Y      := Pct2PxH(Integer(CfgRead("Paths", "EditorYPct",      "0",  ["VimLayout","YPct"])))
+    Vim_Width  := Pct2PxW(Integer(CfgRead("Paths", "EditorWidthPct",  "52", ["VimLayout","WidthPct"])))
+    Vim_Height := Pct2PxH(Integer(CfgRead("Paths", "EditorHeightPct", "74", ["VimLayout","HeightPct"])))
 
     Work_Mode       := IniRead(ConfigFile, "WorkTime", "Mode",       "on")
     Work_WeekendBar := IniRead(ConfigFile, "WorkTime", "WeekendBar", "off")
@@ -1269,7 +1400,7 @@ class WelcomeScreen {
 
         g.SetFont("s10 w400 c" . Color_Text, "Segoe UI")
         g.Add("Text", "x0 y" Round(vh*0.88) " w" vw " Center BackgroundTrans"
-            , "v2.2  ::  AutoHotkey v2")
+            , "V2.4.1  ::  AutoHotkey v2")
 
         g.SetFont("s11 w600 c" . Color_Active, "Segoe UI")
         hint := g.Add("Text", "x0 y" Round(vh*0.93) " w" vw " Center BackgroundTrans"
@@ -1386,9 +1517,12 @@ class BorderFrame {
     Gui   := ""
     Color := ""
     LastW := -1, LastH := -1, LastT := -1, LastR := -1
+    LastMode := ""
 
     __New(color, opacity) {
-        g := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x20 -DPIScale")
+        ; Not +AlwaysOnTop: WTM / all-window borders sit just above their own target
+        ; window in the normal Z order (see Place) instead of floating over everything.
+        g := Gui("-Caption +ToolWindow +E0x20 -DPIScale")
         g.BackColor := color
         g.Show("NoActivate x-3000 y-3000 w10 h10")
         try WinSetTransparent(opacity, g.Hwnd)
@@ -1406,22 +1540,53 @@ class BorderFrame {
         this.Color := color
     }
 
-    ; Position the frame around the given rect; (re)build the region on size change.
-    Place(x, y, w, h, thickness, radius, opacity) {
+    ; Resolve SetWindowPos hwndInsertAfter:
+    ;   -1            -> HWND_TOPMOST (drag border: intentionally on top while dragging)
+    ;    0            -> HWND_TOP
+    ;   window handle -> sit immediately above that target window in the normal Z order
+    _ZOrder(insertAfter) {
+        if (insertAfter = -1 || insertAfter = 0)
+            return insertAfter
+        prev := DllCall("GetWindow", "Ptr", insertAfter, "UInt", 3, "Ptr")   ; GW_HWNDPREV
+        return prev ? prev : 0
+    }
+
+    ; Position the border around the given rect. mode "full" draws a hollow frame on all
+    ; sides; mode "top" draws a single solid strip along the top edge. insertAfter sets
+    ; Z order (see _ZOrder).
+    Place(x, y, w, h, thickness, radius, opacity, mode := "full", insertAfter := -1) {
         if !IsObject(this.Gui)
             return
-        t := Max(1, Round(thickness))
+        t   := Max(1, Round(thickness))
+        ins := this._ZOrder(insertAfter)
+        if (mode = "top") {
+            ww := Round(Max(t, w))
+            try DllCall("SetWindowPos", "Ptr", this.Gui.Hwnd, "Ptr", ins
+                , "Int", Round(x), "Int", Round(y), "Int", ww, "Int", t
+                , "UInt", 0x10 | 0x40)   ; SWP_NOACTIVATE | SWP_SHOWWINDOW
+            this._ApplyTopRegion(ww, t)
+            return
+        }
         w := Round(Max(t*2 + 1, w)), h := Round(Max(t*2 + 1, h))
-        try DllCall("SetWindowPos", "Ptr", this.Gui.Hwnd, "Ptr", -1
+        try DllCall("SetWindowPos", "Ptr", this.Gui.Hwnd, "Ptr", ins
             , "Int", Round(x), "Int", Round(y), "Int", w, "Int", h
-            , "UInt", 0x10 | 0x40)   ; HWND_TOPMOST | SWP_NOACTIVATE | SWP_SHOWWINDOW
+            , "UInt", 0x10 | 0x40)
         this._ApplyRegion(w, h, t, Max(0, Round(radius)))
+    }
+
+    ; Top mode: the whole strip-sized window is solid; clear any prior hollow region.
+    _ApplyTopRegion(w, t) {
+        if (this.LastMode = "top" && w = this.LastW && t = this.LastT)
+            return
+        this.LastMode := "top", this.LastW := w, this.LastH := t, this.LastT := t, this.LastR := 0
+        try DllCall("User32\SetWindowRgn", "Ptr", this.Gui.Hwnd, "Ptr", 0, "Int", 1)
     }
 
     _ApplyRegion(w, h, t, radius) {
         ; Skip region rebuilds when geometry is unchanged (cheap drag-loop updates).
-        if (w = this.LastW && h = this.LastH && t = this.LastT && radius = this.LastR)
+        if (this.LastMode = "full" && w = this.LastW && h = this.LastH && t = this.LastT && radius = this.LastR)
             return
+        this.LastMode := "full"
         this.LastW := w, this.LastH := h, this.LastT := t, this.LastR := radius
         d := radius * 2
         if (d > 0) {
@@ -1472,7 +1637,8 @@ class DragBorder {
         ot := Border_Drag_OffsetTop
         x -= o, y -= (o + ot), w += 2*o, h += 2*o + ot
         rad := (Border_Drag_Rounded = "on") ? Border_Drag_Radius : 0
-        this.Frame.Place(x, y, w, h, Border_Drag_Thickness, rad, Border_Drag_Transparent)
+        ; Drag border stays HWND_TOPMOST (-1) so it is clearly visible while dragging.
+        this.Frame.Place(x, y, w, h, Border_Drag_Thickness, rad, Border_Drag_Transparent, Border_Drag_Mode, -1)
     }
 
     static Destroy() {
@@ -1491,14 +1657,10 @@ class PinBorder {
     static Add(hwnd) {
         if this.Map.Has(hwnd)
             return
-        g := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x20 -DPIScale")
-        g.BackColor := Border_Pin_Color
-        g.Show("NoActivate x-1000 y-1000 w200 h10")
-        WinSetTransparent(Border_Pin_Transparent, g.Hwnd)
-        this.Map[hwnd] := g
+        this.Map[hwnd] := BorderFrame(Border_Pin_Color, Border_Pin_Transparent)
 
         if !this.Started {
-            SetTimer(this.TimerFn, 8)
+            SetTimer(this.TimerFn, Border_RefreshMs)
             this.Started := true
         }
     }
@@ -1520,16 +1682,15 @@ class PinBorder {
     }
 
     static Tick() {
-        t   := Max(3, Border_Pin_Thickness)
-        gap := Border_Pin_OffsetTop
-        for hwnd, g in this.Map.Clone() {
+        t := Max(3, Border_Pin_Thickness)
+        for hwnd, frame in this.Map.Clone() {
             if !WinExist(hwnd) {
                 this.Remove(hwnd)
                 continue
             }
             try {
                 if (WinGetMinMax(hwnd) = -1) {
-                    try DllCall("ShowWindow", "Ptr", g.Hwnd, "Int", 0)
+                    frame.Hide()
                     continue
                 }
                 if !GetWindowVisualRect(hwnd, &x, &y, &w, &h)
@@ -1537,13 +1698,11 @@ class PinBorder {
             } catch {
                 continue
             }
-            try {
-                DllCall("SetWindowPos"
-                    , "Ptr", g.Hwnd, "Ptr", -1
-                    , "Int", x, "Int", y - t - gap
-                    , "Int", w, "Int", t
-                    , "UInt", 0x10 | 0x40)
-            }
+            o  := Border_Pin_Offset
+            ot := Border_Pin_OffsetTop
+            x -= o, y -= (o + ot), w += 2*o, h += 2*o + ot
+            ; Pin border is highest priority and stays HWND_TOPMOST (-1); never rounded.
+            frame.Place(x, y, w, h, t, 0, Border_Pin_Transparent, Border_Pin_Mode, -1)
         }
     }
 }
@@ -1762,7 +1921,7 @@ SwitchDesktop(target, *) {
 
     CurrentDesktop := target
     UpdateStatusBar()
-    A_IconTip := "WM Script - Desktop " . CurrentDesktop
+    A_IconTip := "AHK WM - Desktop " . CurrentDesktop
     ShowOSD("Desktop " . CurrentDesktop)
 
     ; Restore focus to whatever was active on the target desktop, so switching away and
@@ -1933,21 +2092,38 @@ class BarInstance {
     IsHorizontal() => (this.Pos = "top" || this.Pos = "bottom")
 
     ; Resolve an element's main-axis segment {lo,hi}: layout override else default.
+    ; Legacy aliases (custom_1<-custom_icon, custom_2<-custom_text) let layouts written
+    ; for the old split custom_text/custom_icon config keep applying after migration.
     _Seg(name) {
         global Bar_Cfg
         layout := Bar_Cfg["layout"]
-        if layout.Has(name)
-            return layout[name]
+        keys := [name]
+        if (name = "custom_1") {
+            keys.Push("custom_icon")
+            keys.Push("custom_text")
+        } else if (name = "custom_2") {
+            keys.Push("custom_text")
+        }
+        for k in keys {
+            if layout.Has(k)
+                return layout[k]
+        }
         defaults := Map(
-            "desktops",    {lo:0.00, hi:0.30},
-            "custom_icon", {lo:0.30, hi:0.35},
-            "custom_text", {lo:0.35, hi:0.48},
-            "progress",    {lo:0.40, hi:0.62},
-            "date",        {lo:0.64, hi:0.82},
-            "time",        {lo:0.82, hi:1.00}
+            "desktops",  {lo:0.00, hi:0.30},
+            "custom_1",  {lo:0.30, hi:0.48},
+            "custom_2",  {lo:0.48, hi:0.62},
+            "progress",  {lo:0.40, hi:0.62},
+            "date",      {lo:0.64, hi:0.82},
+            "time",      {lo:0.82, hi:1.00}
         )
         return defaults.Has(name) ? defaults[name] : {lo:0.0, hi:1.0}
     }
+
+	_LineHeight() {
+	    global Bar_FontSize
+	    px := Bar_FontSize * A_ScreenDPI / 72
+	    return Round(px * 1.4) + 2
+	}
 
     _Opt(x, y, w, h, align) {
         return Format("x{} y{} w{} h{} BackgroundTrans {}", Round(x), Round(y), Round(w), Round(h), align)
@@ -1958,51 +2134,52 @@ class BarInstance {
         if (this.Mon < 1 || this.Mon > MonitorGetCount())
             this.Mon := 1
         MonitorGet(this.Mon, &mL, &mT, &mR, &mB)
-        monW := mR - mL, monH := mB - mT
+        monW := mR - mL
 
+        ; Bar thickness: at least one line of text plus padding.
+        lineH := this._LineHeight()
         thick := Bar_Height
-        minThick := Round(Bar_FontSize * 2 + 5)
+        minThick := Max(lineH + 4, Round(Bar_FontSize * 2 + 5))
         if (thick < minThick)
             thick := minThick
         this.Thick := thick
         off := this.Offset
 
-        switch this.Pos {
-            case "bottom": bx := mL,                by := mB - thick - off, bw := monW,  bh := thick
-            case "left":   bx := mL + off,          by := mT,               bw := thick, bh := monH
-            case "right":  bx := mR - thick - off,  by := mT,               bw := thick, bh := monH
-            default:       bx := mL,                by := mT + off,         bw := monW,  bh := thick  ; top
-        }
+        ; Bar only supports top / bottom (a full-width horizontal strip).
+        if (this.Pos = "bottom")
+            bx := mL, by := mB - thick - off
+        else
+            this.Pos := "top", bx := mL, by := mT + off
+        bw := monW, bh := thick
 
         g := Gui("-Caption +AlwaysOnTop +ToolWindow +Owner +E0x08000000 -DPIScale")
         g.BackColor := Color_Bg
         g.SetFont("s" Bar_FontSize " w600 c" Color_Active, "Segoe UI")
         this.Gui := g
 
-        horiz := this.IsHorizontal()
-        L := horiz ? bw : bh    ; main-axis length
-        T := horiz ? bh : bw    ; cross-axis thickness
-        this._BuildElements(L, T, horiz)
+        this._BuildElements(bw, bh, true)
 
         g.Show(Format("x{} y{} w{} h{} NoActivate", bx, by, bw, bh))
         WinSetTransparent(Bar_Transparent, g.Hwnd)
-        ; The bar is intentionally never rounded (a single-edge strip; see Bug.md sec 4).
+        ; The bar is intentionally never rounded (a single-edge strip).
         this.UpdateDesktops()
     }
 
     _BuildElements(L, T, horiz) {
         global Bar_Cfg, Bar_FontSize
         g := this.Gui
-        fontH := Round(Bar_FontSize * 2)
+        fontH := this._LineHeight()
         pad := 6
 
+        items := Bar_Cfg["custom_items"]
         elements := []
         if BarFlag("desktops")
             elements.Push("desktops")
-        if BarShown(Bar_Cfg["custom_icon"])
-            elements.Push("custom_icon")
-        if BarShown(Bar_Cfg["custom_text"])
-            elements.Push("custom_text")
+        ; Each non-empty custom item is referenced as custom_1, custom_2, ... custom_n.
+        for idx, val in items {
+            if BarShown(val)
+                elements.Push("custom_" idx)
+        }
         if BarFlag("progress")
             elements.Push("progress")
         if BarFlag("date")
@@ -2022,16 +2199,19 @@ class BarInstance {
             switch el {
                 case "desktops":
                     this.DesktopsCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), "")
-                case "custom_icon":
-                    g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), Bar_Cfg["custom_icon"])
-                case "custom_text":
-                    g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), Bar_Cfg["custom_text"])
                 case "date":
                     this.DateCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), "")
                 case "time":
                     this.TimeCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), "")
                 case "progress":
                     this._BuildProgress(s, segLen, T, horiz)
+                default:
+                    ; custom_N -> render the Nth unified custom item (text/icon/emoji).
+                    if RegExMatch(el, "^custom_(\d+)$", &mm) {
+                        n := Integer(mm[1])
+                        txt := (n >= 1 && n <= items.Length) ? items[n] : ""
+                        g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), txt)
+                    }
             }
         }
     }
@@ -2134,7 +2314,7 @@ BarInstances() {
     spec   := Bar_Cfg.Has("instances") ? Bar_Cfg["instances"] : ""
     defPos := Bar_Cfg.Has("position")  ? Bar_Cfg["position"]  : "top"
     defOff := Bar_Cfg.Has("offset")    ? Bar_Cfg["offset"]    : 0
-    if !(defPos ~= "^(top|bottom|left|right)$")
+    if !(defPos ~= "^(top|bottom)$")
         defPos := "top"
 
     if (Trim(spec) != "") {
@@ -2146,7 +2326,8 @@ BarInstances() {
             mraw := Trim(p[1])
             pos  := (p.Length >= 2 && Trim(p[2]) != "") ? StrLower(Trim(p[2])) : defPos
             off  := (p.Length >= 3 && IsInteger(Trim(p[3]))) ? Integer(Trim(p[3])) : defOff
-            if !(pos ~= "^(top|bottom|left|right)$")
+            ; Only top / bottom are supported; anything else falls back to top.
+            if !(pos ~= "^(top|bottom)$")
                 pos := "top"
             mons := []
             if (mraw = "*") {
@@ -2190,8 +2371,9 @@ IsBarWindow(hwnd) {
 ; Subtract every visible bar on a monitor from a work-area rect (direction-aware),
 ; so window tiling never overlaps a bar. Replaces the old single-bar reservation.
 BarReserve(monIdx, &L, &T, &R, &B) {
-    global Bars, Bar_Visible
-    if (!IsSet(Bars) || !Bar_Visible)
+    global Bars, Bar_ShownState
+    ; Reserve only for bars that are actually on screen (covers manual toggle + auto-hide).
+    if (!IsSet(Bars) || !Bar_ShownState)
         return
     margin := 5
     for b in Bars {
@@ -2200,8 +2382,6 @@ BarReserve(monIdx, &L, &T, &R, &B) {
         reserve := b.Thick + b.Offset + margin
         switch b.Pos {
             case "bottom": B -= reserve
-            case "left":   L += reserve
-            case "right":  R -= reserve
             default:       T += reserve   ; top
         }
     }
@@ -2217,7 +2397,7 @@ DestroyAllBars() {
 }
 
 CreateStatusBar() {
-    global Bars
+    global Bars, Bar_ShownState
     DestroyAllBars()
     Bars := []
     for inst in BarInstances() {
@@ -2225,6 +2405,8 @@ CreateStatusBar() {
         catch as e
             WMLog("Bar build failed (mon " inst.mon "): " e.Message)
     }
+    Bar_ShownState := true        ; freshly built bars are shown; re-apply auto-hide below
+    ApplyBarVisibility()
     UpdateStatusBar()
 }
 
@@ -2248,19 +2430,69 @@ UpdateClockAndProgress() {
     pct := WorkPercent()
     for b in Bars
         try b.UpdateClock(pct)
+    ApplyBarVisibility()      ; fullscreen auto-hide (respects the manual toggle state)
+}
+
+; True if any non-minimized window on the current desktop covers an entire monitor
+; (full screen, not just the work area) - e.g. a fullscreen video or game.
+HasFullscreenWindow(targetMon) {
+    for hwnd in GetVisibleWindow() {
+        try {
+            if (WinGetMinMax(hwnd) = -1)
+                continue
+            cls := WinGetClass(hwnd)
+            if (cls = "Progman" || cls = "WorkerW" || cls = "Shell_TrayWnd")
+                continue
+            WinGetPos(&wx, &wy, &ww, &wh, hwnd)
+            if (ww < 100 || wh < 100)
+                continue
+            mon := GetMonitorIndexAtPoint(wx + ww//2, wy + wh//2)
+            if (mon != targetMon)
+                continue
+            MonitorGet(mon, &mL, &mT, &mR, &mB)
+            if (wx <= mL + 2 && wy <= mT + 2 && wx + ww >= mR - 2 && wy + wh >= mB - 2)
+                return true
+        }
+    }
+    return false
+}
+
+; Apply the bar show/hide state from the manual toggle (Bar_Visible) combined with the
+; fullscreen auto-hide option. The manual toggle is authoritative: a manually hidden bar
+; is never auto-shown. Memoized so the per-second timer does not re-show every tick.
+ApplyBarVisibility() {
+    global Bars, Bar_Visible, Bar_AutoHide, Bar_FsHidden, Bar_ShownState
+    if !IsSet(Bars)
+        return
+
+    anyHidden := false
+    anyShown  := false
+
+    for b in Bars {
+        if !Bar_Visible {
+            b.Hide()
+            anyHidden := true
+            continue
+        }
+        fsHidden := (Bar_AutoHide && HasFullscreenWindow(b.Mon))
+        if fsHidden {
+            b.Hide()
+            anyHidden := true
+            } 
+            else {
+            b.Show()
+            anyShown := true
+        }
+    }
+
+    Bar_FsHidden  := anyHidden
+    Bar_ShownState := anyShown
 }
 
 ToggleBar(*) {
-    global Bar_Visible, Bars
+    global Bar_Visible
     Bar_Visible := !Bar_Visible
-    if !IsSet(Bars)
-        return
-    for b in Bars {
-        if Bar_Visible
-            b.Show()
-        else
-            b.Hide()
-    }
+    ApplyBarVisibility()
 }
 
 TogglePin(*) {
@@ -2554,7 +2786,7 @@ GetVisibleWindow() {
         WinGetPos(,, &w, &h, this_id)
         if (w < 100 || h < 100)
             continue
-        if IsExcludedWindow(this_id)     ; 排除规则: 不参与平铺 / WTM 布局
+        if IsExcludedWindow(this_id)
             continue
         windows.Push(this_id)
     }
@@ -2756,7 +2988,7 @@ ExportThemeToCustom(*) {
     )
     for key, val in palette {
         if nameMap.Has(key)
-            IniWrite(val, ConfigFile, "Colors", nameMap[key])
+            IniWrite(val, ConfigFile, "Theme", nameMap[key])
         else if wtmMap.Has(key)
             IniWrite(val, ConfigFile, "WTM", wtmMap[key])
     }
@@ -2944,6 +3176,7 @@ class WTM {
     static BorderMap   := Map()    ; hwnd -> BorderFrame
     static BorderState := Map()    ; hwnd -> "focus" | "unfocus"
     static _LastSig   := ""
+    static _Accum     := 0         ; ms accumulator: throttles retile detection
     static TickFn     := ObjBindMethod(WTM, "Tick")
 
     static Toggle() {
@@ -2963,7 +3196,7 @@ class WTM {
         this.RebuildOrder()
         this.AutoTile()
         this.RefreshBorder()
-        SetTimer(this.TickFn, 150)
+        SetTimer(this.TickFn, Border_RefreshMs)
         AllBorders.Suspend()     ; WTM owns borders while active
         ShowOSD("WTM Mode: ON")
     }
@@ -2999,14 +3232,12 @@ class WTM {
     }
 
     static RebuildOrder() {
-        ; 跨所有显示器收集可平铺窗口(排除已浮动 / 配置排除 / 最小化的窗口),
-        ; 这样焦点 / 移动可以跨显示器, 平铺按显示器分组进行.
         alive := Map()
         for hwnd in GetVisibleWindow() {
             if this.Excluded.Has(hwnd)
                 continue
             try {
-                if (WinGetMinMax(hwnd) = -1)     ; 跳过最小化窗口
+                if (WinGetMinMax(hwnd) = -1)
                     continue
             } catch {
                 continue
@@ -3029,7 +3260,6 @@ class WTM {
         this.RebuildOrder()
         if (this.TileOrder.Length = 0)
             return
-        ; 按窗口当前所在显示器分组, 各显示器分别平铺(多显示器支持)
         groups := Map()
         for hwnd in this.TileOrder {
             m := 1
@@ -3094,11 +3324,17 @@ class WTM {
     static Tick() {
         if !this.Active
             return
-        sig := this._Signature()
-        if (sig != this._LastSig) {
-            this._LastSig := sig
-            this.AutoTile()
-            this._LastSig := this._Signature()
+        ; Borders redraw every tick (global Border_RefreshMs). The heavier retile
+        ; detection is throttled to ~150ms so a fast refresh interval stays cheap.
+        this._Accum += Border_RefreshMs
+        if (this._Accum >= 150) {
+            this._Accum := 0
+            sig := this._Signature()
+            if (sig != this._LastSig) {
+                this._LastSig := sig
+                this.AutoTile()
+                this._LastSig := this._Signature()
+            }
         }
         try {
             fh := WinGetID("A")
@@ -3146,7 +3382,6 @@ class WTM {
             return
         target := this._PickNeighbor(cur, dir)
         if !target {
-            ; 该方向在本显示器无相邻窗口: 尝试推到相邻显示器
             adj := 0
             try adj := this._AdjacentMonitor(GetMonitorIndex(cur), dir)
             if adj {
@@ -3167,7 +3402,6 @@ class WTM {
             this.TileOrder[i1] := this.TileOrder[i2]
             this.TileOrder[i2] := tmp
         }
-        ; 跨显示器交换时同时物理迁移窗口, 使分组平铺落到正确显示器
         if (curMon != tgtMon) {
             this._MoveWindowToMonitor(cur, tgtMon)
             this._MoveWindowToMonitor(target, curMon)
@@ -3177,8 +3411,6 @@ class WTM {
         this.RefreshBorder()
     }
 
-    ; 将窗口中心移动到指定显示器工作区中心(随后由 AutoTile 重新平铺到位).
-    ; 使用工作区坐标, 兼容负坐标 / 不同分辨率 / 不同缩放.
     static _MoveWindowToMonitor(hwnd, monIdx) {
         if !hwnd || !WinExist(hwnd)
             return
@@ -3192,7 +3424,6 @@ class WTM {
         }
     }
 
-    ; 返回指定方向上相邻的显示器索引; 没有则返回 0.
     static _AdjacentMonitor(monIdx, dir) {
         if (monIdx < 1 || monIdx > MonitorGetCount())
             monIdx := 1
@@ -3225,7 +3456,6 @@ class WTM {
         return best
     }
 
-    ; WTM 直接关闭聚焦窗口: 不依赖鼠标位置, 不移动鼠标, 句柄失效时静默失败.
     static CloseFocused() {
         if !this.Active
             return
@@ -3365,6 +3595,12 @@ class WTM {
         for hwnd in this.TileOrder {
             if !WinExist(hwnd)
                 continue
+            ; Pin border has highest priority: a pinned / always-visible window draws no
+            ; WTM border over its pin indicator.
+            if (PinBorder.Map.Has(hwnd) || AlwaysVisible.Has(hwnd)) {
+                this.RemoveBorder(hwnd)
+                continue
+            }
             try {
                 if (WinGetMinMax(hwnd) = -1) {
                     if this.BorderMap.Has(hwnd)
@@ -3381,7 +3617,8 @@ class WTM {
             x -= o, y -= o, w += 2*o, ht += 2*o
             this._SetBorderColor(hwnd, hwnd = focusH ? "focus" : "unfocus")
             rad := (WTM_BorderRounded = "on") ? WTM_BorderRadius : 0
-            this.BorderMap[hwnd].Place(x, y, w, ht, Max(2, WTM_BorderThickness), rad, WTM_BorderOpacity)
+            ; Sit just above this window in the Z order (not topmost) - see BorderFrame.Place.
+            this.BorderMap[hwnd].Place(x, y, w, ht, Max(2, WTM_BorderThickness), rad, WTM_BorderOpacity, WTM_BorderMode, hwnd)
         }
     }
 }
@@ -3395,6 +3632,8 @@ class AllBorders {
     static Active  := false
     static Frames  := Map()    ; hwnd -> BorderFrame
     static State   := Map()    ; hwnd -> "focus" | "unfocus"
+    static _Wins   := []       ; cached visible-window list (re-enumerated ~every 200ms)
+    static _Accum  := 0        ; ms accumulator: throttles re-enumeration
     static TimerFn := ObjBindMethod(AllBorders, "Tick")
 
     static Toggle() {
@@ -3410,7 +3649,7 @@ class AllBorders {
         if WTM.Active            ; WTM owns borders while active; we resume on WTM off
             return
         this.Tick()
-        SetTimer(this.TimerFn, 200)
+        SetTimer(this.TimerFn, Border_RefreshMs)
     }
 
     static Deactivate() {
@@ -3428,7 +3667,7 @@ class AllBorders {
         if WTM.Active
             return
         this.Tick()
-        SetTimer(this.TimerFn, 200)
+        SetTimer(this.TimerFn, Border_RefreshMs)
     }
 
     ; Called by WTM when it turns on: stop drawing but keep the Active flag.
@@ -3442,6 +3681,8 @@ class AllBorders {
             this.Remove(hwnd)
         this.Frames := Map()
         this.State  := Map()
+        this._Wins  := []
+        this._Accum := 0
     }
 
     static Remove(hwnd) {
@@ -3473,19 +3714,31 @@ class AllBorders {
     static Tick() {
         if !this.Active || WTM.Active
             return
-        wins := GetVisibleWindow()    ; current-desktop, exclusion-aware visible windows
-        valid := Map()
-        for hwnd in wins
-            valid[hwnd] := true
-        for hwnd, _ in this.Frames.Clone() {
-            if !valid.Has(hwnd) || !WinExist(hwnd)
-                this.Remove(hwnd)
+        ; Re-enumerate the (heavier) visible-window list only ~every 200ms; reposition
+        ; the borders every tick at the global Border_RefreshMs rate.
+        this._Accum += Border_RefreshMs
+        if (this._Accum >= 200 || this._Wins.Length = 0) {
+            this._Accum := 0
+            this._Wins  := GetVisibleWindow()    ; current-desktop, exclusion-aware
+            valid := Map()
+            for hwnd in this._Wins
+                valid[hwnd] := true
+            for hwnd, _ in this.Frames.Clone() {
+                if !valid.Has(hwnd) || !WinExist(hwnd)
+                    this.Remove(hwnd)
+            }
         }
         focusH := 0
         try focusH := WinGetID("A")
-        for hwnd in wins {
+        for hwnd in this._Wins {
             if !WinExist(hwnd)
                 continue
+            ; Pin border has highest priority: a pinned / always-visible window draws no
+            ; all-window border over its pin indicator.
+            if (PinBorder.Map.Has(hwnd) || AlwaysVisible.Has(hwnd)) {
+                this.Remove(hwnd)
+                continue
+            }
             try {
                 if (WinGetMinMax(hwnd) = -1) {
                     if this.Frames.Has(hwnd)
@@ -3502,7 +3755,8 @@ class AllBorders {
             x -= o, y -= o, w += 2*o, h += 2*o
             this.SetColor(hwnd, hwnd = focusH ? "focus" : "unfocus")
             rad := (WTM_BorderRounded = "on") ? WTM_BorderRadius : 0
-            this.Frames[hwnd].Place(x, y, w, h, Max(2, WTM_BorderThickness), rad, WTM_BorderOpacity)
+            ; Sit just above this window in the Z order (not topmost) - see BorderFrame.Place.
+            this.Frames[hwnd].Place(x, y, w, h, Max(2, WTM_BorderThickness), rad, WTM_BorderOpacity, Border_Drag_Mode, hwnd)
         }
     }
 }
