@@ -585,10 +585,4 @@ Known notes:
 - Games, UWP apps, remote desktop windows, and security tools may behave differently.
 - If something looks wrong, reload the script first.
 
-## License
-
-```text
-MIT License
-```
-
-Happy to use. 󰖲✨
+Happy to use. ✨
