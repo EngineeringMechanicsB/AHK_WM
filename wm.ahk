@@ -45,6 +45,11 @@ global Bar_ShownState := true     ; last applied show/hide state (avoids per-tic
 
 global CurrentTileGap := 0
 
+; ---- Bar rounded corners ----
+global Bar_Rounded    := "off"    ; from [Bar] Rounded (on|off)
+global Bar_Radius     := 10       ; from [Bar] CornerRadius
+global Bar_CornerMode := "bottom" ; from [Bar] CornerMode (all|top|bottom)
+
 ; ---- New: tiling gap / GUI rounding / custom layout / window exclusion ----
 global Tile_Gap        := 8
 global GUI_Rounded     := "on"
@@ -167,7 +172,7 @@ RoundWindow(guiOrHwnd) {
     RoundWindowEx(guiOrHwnd, GUI_Rounded, GUI_CornerRadius)
 }
 
-RoundWindowEx(guiOrHwnd, enabled, radius) {
+RoundWindowEx(guiOrHwnd, enabled, radius, corners := "all") {
     if (enabled != "on")
         return
     hwnd := IsObject(guiOrHwnd) ? guiOrHwnd.Hwnd : guiOrHwnd
@@ -175,12 +180,33 @@ RoundWindowEx(guiOrHwnd, enabled, radius) {
         WinGetPos(, , &w, &h, hwnd)
         if (w <= 0 || h <= 0)
             return
-        d := Max(0, radius) * 2     ; CreateRoundRectRgn takes the ellipse diameter
+        ; Clamp radius to the half-extent so partial-corner squaring stays correct
+        ; even on a thin strip like the bar.
+        r := Max(0, radius)
+        r := Min(r, w // 2, h // 2)
+        d := r * 2                  ; CreateRoundRectRgn takes the ellipse diameter
         if (d <= 0)
             return
         hRgn := DllCall("Gdi32\CreateRoundRectRgn"
             , "Int", 0, "Int", 0, "Int", w + 1, "Int", h + 1
             , "Int", d, "Int", d, "Ptr")
+
+        ; For top/bottom modes, OR a plain rectangle over the side we want to keep
+        ; square, turning those two corners back into right angles.
+        corners := StrLower(Trim(corners))
+        if (corners = "top" || corners = "bottom") {
+            if (corners = "top")
+                ; keep TOP rounded -> square the bottom: cover the bottom r pixels
+                hRect := DllCall("Gdi32\CreateRectRgn"
+                    , "Int", 0, "Int", h - r, "Int", w + 1, "Int", h + 1, "Ptr")
+            else
+                ; keep BOTTOM rounded -> square the top: cover the top r pixels
+                hRect := DllCall("Gdi32\CreateRectRgn"
+                    , "Int", 0, "Int", 0, "Int", w + 1, "Int", r, "Ptr")
+            DllCall("Gdi32\CombineRgn", "Ptr", hRgn, "Ptr", hRgn, "Ptr", hRect, "Int", 2) ; RGN_OR
+            DllCall("Gdi32\DeleteObject", "Ptr", hRect)
+        }
+
         ; Ownership transfers to the system on success; no manual release needed.
         DllCall("User32\SetWindowRgn", "Ptr", hwnd, "Ptr", hRgn, "Int", 1)
     }
@@ -726,7 +752,7 @@ LoadOrInitConfig() {
 ;==========================================================================
 ; AHK WM Configuration
 ;==========================================================================
-; Thank you for using my script.
+
 [General]
 ; Theme name. Built-in examples:
 ; custom, nord, tokyonight, dracula, gruvbox, monokai, solarized-dark,
@@ -803,6 +829,10 @@ instances=
 layout=custom_1:(2-5)/10;desktops:(1-3)/20;date:(18-19)/20;time:20/20
 ; Hide the bar while a fullscreen window exists on the current desktop.
 AutoHideOnFullscreen=off
+; CornerMode: all (four corners) | top (top two only) | bottom (bottom two only).
+Rounded=off
+CornerRadius=10
+CornerMode=bottom
 
 [Border]
 ; One refresh interval (ms) shared by all border drawing.
@@ -855,7 +885,7 @@ FontSize=14
 FontSizeActive=22
 
 [GUI]
-; Global rounding defaults. Sections may override. Status bar is never rounded.
+;OSD Help menu and power menu rounding defaults.
 RoundedCorners=on
 CornerRadius=12
 ; Help menu (Height=0 = auto). Power menu. On-screen display.
@@ -874,7 +904,6 @@ OSDFontSize=20
 [WorkTime]
 ; WorkTime / AllDay progress.
 Mode=off
-; Full progress on weekends.
 WeekendBar=off
 ; WorkStart / WorkEnd format: HHMM.
 WorkStart=0900
@@ -980,6 +1009,9 @@ WTMMoveRight=Alt+Shift+L
     Bar_Transparent  := Pct2Alpha(Integer(CfgRead("Bar", "Opacity",  "78", ["StatusBar","Opacity"])))
     Bar_FontSize     := Integer(CfgRead("Bar", "FontSize",   "10", ["StatusBar","FontSize"]))
     Bar_MonitorIdx   := Integer(CfgRead("Bar", "MonitorIdx", "1",  ["StatusBar","MonitorIdx"]))
+	Bar_Rounded    := StrLower(Trim(IniRead(ConfigFile, "Bar", "Rounded", "off")))
+	Bar_Radius     := Integer(IniRead(ConfigFile, "Bar", "CornerRadius", 10))
+	Bar_CornerMode := StrLower(Trim(IniRead(ConfigFile, "Bar", "CornerMode", "bottom")))
 
     ; ---- Pie menu ([PieMenu]) ----
     Pie_Size           := Pct2PxMin(Integer(IniRead(ConfigFile, "PieMenu", "SizePct",       "28")))
@@ -1400,7 +1432,7 @@ class WelcomeScreen {
 
         g.SetFont("s10 w400 c" . Color_Text, "Segoe UI")
         g.Add("Text", "x0 y" Round(vh*0.88) " w" vw " Center BackgroundTrans"
-            , "V2.4.1  ::  AutoHotkey v2")
+            , "V2.4.2  ::  AutoHotkey v2")
 
         g.SetFont("s11 w600 c" . Color_Active, "Segoe UI")
         hint := g.Add("Text", "x0 y" Round(vh*0.93) " w" vw " Center BackgroundTrans"
@@ -2131,6 +2163,7 @@ class BarInstance {
 
     Build() {
         global Color_Bg, Color_Active, Bar_FontSize, Bar_Height, Bar_Transparent
+        global Bar_Rounded, Bar_Radius, Bar_CornerMode
         if (this.Mon < 1 || this.Mon > MonitorGetCount())
             this.Mon := 1
         MonitorGet(this.Mon, &mL, &mT, &mR, &mB)
@@ -2161,7 +2194,8 @@ class BarInstance {
 
         g.Show(Format("x{} y{} w{} h{} NoActivate", bx, by, bw, bh))
         WinSetTransparent(Bar_Transparent, g.Hwnd)
-        ; The bar is intentionally never rounded (a single-edge strip).
+        ; Optional rounded corners for the bar (all / top / bottom).
+        RoundWindowEx(g, Bar_Rounded, Bar_Radius, Bar_CornerMode)
         this.UpdateDesktops()
     }
 
