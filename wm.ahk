@@ -2,6 +2,8 @@
 #SingleInstance Force
 #WinActivateForce
 
+global WM_Version := "2.5.2"
+
 SetWorkingDir(A_ScriptDir)
 CoordMode("Mouse", "Screen")
 SetTitleMatchMode(2)
@@ -25,18 +27,31 @@ global Vim_CurrentPID := 0
 global OSD_Height, OSD_Transparent, OSD_FontSize
 global Work_Start, Work_End, Work_WeekendBar, Work_Mode, Work_TaskTimes
 global ActiveTheme
-global Border_Drag_Enable, Border_Drag_Thickness
-global Border_Drag_Offset, Border_Drag_OffsetTop, Border_Drag_Transparent
-global Border_Pin_Thickness, Border_Pin_Offset, Border_Pin_OffsetTop, Border_Pin_Transparent
-global WTM_BorderFocusColor, WTM_BorderUnfocusColor
-global WTM_BorderThickness, WTM_BorderOffset, WTM_BorderOpacity, WTM_SizeStep
-global WTM_Gap
 
-; ---- Border display mode (top|full) + one global refresh interval ----
-global Border_RefreshMs := 10
-global Border_Drag_Mode := "full"
+; ---- Unified border model ----------------------------------------------------
+global Border_Enable      := "on"      ; master switch for the drag/focus border
+global Border_Mode        := "full"    ; top | full  (shared by all modes)
+global Border_FocusColor  := "A020F0"  ; focused / interactive window
+global Border_UnfocusColor:= "555555"  ; other windows in wtm / all-borders modes
+global Border_Thickness   := 2
+global Border_Offset      := 0
+global Border_OffsetTop   := 1
+global Border_Opacity     := 200
+global Border_Rounded     := "on"
+global Border_Radius      := 10
+global Border_Gap         := 10        ; WTM tiling gap (px, may be negative)
+global Border_SizeStep    := 3         ; WTM resize step (reserved)
+
+; ---- Pinned-window indicator (separate, highest priority) ----
+; (Border_Pin_Color is declared with the other theme colors above.)
+global Border_Pin_Thickness, Border_Pin_Offset, Border_Pin_OffsetTop, Border_Pin_Transparent
 global Border_Pin_Mode  := "top"
-global WTM_BorderMode    := "full"
+
+; ---- One global refresh interval shared by all border drawing ----
+global Border_RefreshMs := 10
+
+; ---- Legacy WTM color globals (kept so built-in theme palettes keep applying) -
+global WTM_BorderFocusColor, WTM_BorderUnfocusColor
 
 ; ---- Bar auto-hide on fullscreen ----
 global Bar_AutoHide   := false    ; from [Bar] AutoHideOnFullscreen
@@ -61,12 +76,23 @@ global Excl_Titles     := []
 global Excl_Classes    := []
 global Excl_Processes  := []
 
+; ---- Whether always-on-top windows take part in tiling (smart + WTM) ----
+global Tile_IncludeAlwaysOnTop := true
+
+; ---- Window snapping while dragging / resizing ----
+global Snap_Enable   := true
+global Snap_Distance := 12      ; magnetic radius / gap (may be negative)
+global Snap_Release  := 8       ; pixels past the snap point before it releases
+
+; ---- Deferred startup warning (e.g. missing output directory) ----
+global PathWarning := ""
+
 ; ---- Per-GUI rounded-corner overrides (each falls back to global [GUI]) ----
 global Help_Rounded, Help_Radius, PM_Rounded, PM_Radius
 global OSD_Rounded, OSD_Radius
-global Border_Drag_Rounded, Border_Drag_Radius
 global Border_Pin_Rounded, Border_Pin_Radius
-global WTM_BorderRounded, WTM_BorderRadius
+; (Drag and WTM border rounding now come from the unified Border_Rounded /
+;  Border_Radius declared in the unified border model above.)
 
 ; ---- Help / Power menu sizing ----
 global Help_FontSize := 10, Help_Width := 620, Help_Height := 0, Help_Opacity := 255
@@ -129,11 +155,15 @@ global Themes := Map(
     "oxocarbon",        Map("Color_Bg","161616","Color_Text","F2F4F8","Color_Active","82CFFF","Color_Task","42BE65","Border_Drag_Color","82CFFF","Border_Pin_Color","FF7EB6","PM_Bg","262626","PM_BtnShutdown","FF7EB6","PM_BtnSleep","82CFFF","PM_BtnReboot","BE95FF","WTM_BorderFocusColor","82CFFF","WTM_BorderUnfocusColor","393939")
 )
 
-; Seed Color_BorderUnfocus (used by the all-window-borders mode) into every theme,
-; reusing each theme's existing WTM unfocused-border color so no preset is missing it.
+; directly via %key% := val with no per-theme special-casing.
 for _tname, _tmap in Themes {
     if !_tmap.Has("Color_BorderUnfocus")
         _tmap["Color_BorderUnfocus"] := _tmap.Has("WTM_BorderUnfocusColor") ? _tmap["WTM_BorderUnfocusColor"] : "555555"
+    if !_tmap.Has("Border_FocusColor")
+        _tmap["Border_FocusColor"] := _tmap.Has("WTM_BorderFocusColor") ? _tmap["WTM_BorderFocusColor"]
+                                    : (_tmap.Has("Border_Drag_Color") ? _tmap["Border_Drag_Color"] : "A020F0")
+    if !_tmap.Has("Border_UnfocusColor")
+        _tmap["Border_UnfocusColor"] := _tmap.Has("WTM_BorderUnfocusColor") ? _tmap["WTM_BorderUnfocusColor"] : "555555"
 }
 
 ; ---- Scaling helpers: 0-100 -> real units ----
@@ -157,11 +187,72 @@ Pct2PxMin(p) {
 }
 Pct2Border(p) => Round(Max(0, Min(100, p+0)) * 20 / 100)
 
-; ---- Lightweight logging (silent; avoids interrupting the user) ----
-WMLog(msg) {
-    global ConfigDir
-    try FileAppend(FormatTime(, "yyyy-MM-dd HH:mm:ss") . "  " . msg . "`r`n"
-                 , ConfigDir . "\wm.log", "UTF-8")
+; Tolerant integer parse: returns Integer(val) when val is numeric, otherwise def.
+SafeInt(val, def := 0) {
+    val := Trim(val "")
+    if (val = "")
+        return def
+    if IsInteger(val)
+        return Integer(val)
+    if IsNumber(val)
+        return Round(val + 0)
+    return def
+}
+
+; ---- Diagnostic logging (silent file log; never interrupts the user) ---------
+global WM_LogFile := ""          ; resolved lazily once ConfigDir is known
+global WM_LogSeen := Map()       ; "context|message" -> repeat count (flood guard)
+
+WMLog(msg, level := "INFO") {
+    global ConfigDir, WM_LogFile
+    if (WM_LogFile = "")
+        WM_LogFile := ConfigDir . "\wm.log"
+    try FileAppend(FormatTime(, "yyyy-MM-dd HH:mm:ss") . "  [" . level . "]  " . msg . "`r`n"
+                 , WM_LogFile, "UTF-8")
+}
+
+; Expand a thrown value into a rich, single-string diagnostic record.
+WMFormatErr(context, err) {
+    if !IsObject(err)
+        return context . ": " . err
+    out := context . ": " . err.Message
+    try if (err.Extra != "")
+        out .= "  | Extra: " . err.Extra
+    try if (err.What != "")
+        out .= "  | in: " . err.What
+    try out .= "  | at: " . err.File . ":" . err.Line
+    try if (err.Stack != "")
+        out .= "`r`n    Call stack:`r`n"
+             . RegExReplace(RTrim(err.Stack, "`r`n"), "m)^", "        ")
+    return out
+}
+
+; Log a fault with full diagnostics. Each distinct (context + message) is written
+; once in full; further repeats are counted but not re-written, so a recurring
+; timer/loop fault yields one detailed record instead of an endless flood.
+WMLogErr(context, err) {
+    global WM_LogSeen
+    key := context . "|" . (IsObject(err) ? err.Message : err)
+    if WM_LogSeen.Has(key) {
+        WM_LogSeen[key] += 1
+        return
+    }
+    WM_LogSeen[key] := 1
+    WMLog(WMFormatErr(context, err), "ERROR")
+}
+
+; Run fn() and send any fault to WMLogErr with the given context label. Used to
+; fault-isolate startup steps and timer bodies: one failing step self-reports with
+; its function/line/stack and the rest of initialization keeps going. Returns true
+; on success, false if fn() raised.
+WMGuard(context, fn) {
+    try {
+        fn()
+        return true
+    } catch Error as e {
+        WMLogErr(context, e)
+        return false
+    }
 }
 
 ; ---- GUI rounded corners (unified) ----
@@ -336,7 +427,7 @@ ParseLayoutRules(str) {
         try {
             xr := ParseAxis(f[4])
             yr := ParseAxis(f[5])
-        } catch as e {
+        } catch Error as e {
             bad[key] := true
             WMLog("Layout group " key " invalid (" e.Message ")")
             continue
@@ -466,8 +557,12 @@ PrettifyHotkey(s) {
 ; ---- Initialization ----
 OnError(WM_OnError)
 WM_OnError(err, mode) {
-    try WMLog("Runtime: " . (IsObject(err) ? err.Message : err))
-    return true     ; 抑制默认错误弹窗
+    ; Central sink for every otherwise-unhandled runtime error. Logs the full
+    ; diagnostic record (message, failing function, file:line, call stack, extra)
+    ; via WMLogErr and suppresses the default error dialog so the window manager
+    ; keeps running. 'mode' is "Return" / "Exit" / "ExitApp" per the AHK v2 docs.
+    WMLogErr("Unhandled runtime error (" . mode . ")", err)
+    return true     ; suppress the default error dialog; keep running
 }
 
 isFirstRun := !FileExist(ConfigFile)
@@ -477,24 +572,62 @@ LoadOrInitConfig()
 Loop DesktopCount
     Desktops[A_Index] := []
 
-if !DirExist(Path_Output)
-    DirCreate(Path_Output)
+; Output directory: try to create it, but never abort startup if that fails (the
+; user may have configured a path that does not exist on this machine). Record a
+; warning instead and keep running; clipboard writes simply no-op until it is fixed.
+if !DirExist(Path_Output) {
+    try DirCreate(Path_Output)
+    if !DirExist(Path_Output)
+        PathWarning := "The output directory does not exist and could not be created:`n`n"
+                     . Path_Output
+                     . "`n`nClipboard history will not be saved until you set a valid"
+                     . " OutputDir / OutputFile in the [Paths] section of:`n`n" . ConfigFile
+}
 if !DirExist(Path_Button)
-    DirCreate(Path_Button)
+    try DirCreate(Path_Button)
 
-buttonsCreated := InitializeButtons()
+buttonsCreated := false
+try buttonsCreated := InitializeButtons()
+catch Error as e
+    WMLogErr("Startup: InitializeButtons", e)
+
+; Register the hotkeys FIRST and in isolation. Previously the status bar / clock /
+; welcome screen were built before RegisterAllHotkeys(), so ANY error raised while
+; building them aborted the whole auto-execute thread and the drag / resize / desktop
+; hotkeys were never registered - which is exactly why KDE-style drag silently did
+; nothing after launch. Hotkey registration depends only on the config (already
+; loaded), so doing it up front guarantees the manager stays usable even if a later
+; non-critical step fails. Every remaining step is fault-isolated via WMGuard so a
+; failure is logged with full context (function, line, call stack) instead of
+; silently killing the rest of initialization.
+WMGuard("Startup: RegisterAllHotkeys", RegisterAllHotkeys)
+
 if isFirstRun
-    WelcomeScreen.Show()
+    WMGuard("Startup: WelcomeScreen", () => WelcomeScreen.Show())
 else if buttonsCreated
     Reload()
 
-CreateStatusBar()
-UpdateStatusBar()
-UpdateClockAndProgress()
+WMGuard("Startup: CreateStatusBar",        CreateStatusBar)
+WMGuard("Startup: UpdateStatusBar",        UpdateStatusBar)
+WMGuard("Startup: UpdateClockAndProgress", UpdateClockAndProgress)
 SetTimer(UpdateClockAndProgress, 1000)
-SetupTrayIcon()
+WMGuard("Startup: SetupTrayIcon",          SetupTrayIcon)
 OnClipboardChange(OnClipboardChanged)
-RegisterAllHotkeys()
+
+; Surface any deferred startup warning once the UI is up, without blocking the
+; rest of initialization. Shown after a short delay so it does not race the
+; welcome screen on first run.
+if (PathWarning != "")
+    SetTimer(ShowPathWarning, -1500)
+
+ShowPathWarning() {
+    global PathWarning
+    if (PathWarning = "")
+        return
+    msg := PathWarning
+    PathWarning := ""
+    try MsgBox(msg, "AHK WM - Configuration Warning", "Iconi 0x40000")
+}
 
 ; ---- Hotkey registration ----
 RegHotkey(key, fn) {
@@ -507,7 +640,7 @@ RegHotkey(key, fn) {
     try {
         Hotkey(combo, fn)
         return true
-    } catch as e {
+    } catch Error as e {
         WMLog("Hotkey register failed [" key "=" combo "]: " e.Message)
         return false
     }
@@ -740,7 +873,7 @@ LoadOrInitConfig() {
 
     if !DirExist(ConfigDir) {
         try DirCreate(ConfigDir)
-        catch as e {
+        catch Error as e {
             MsgBox("Failed to create config directory:`n" . ConfigDir . "`n`n" . e.Message)
             ExitApp
         }
@@ -777,9 +910,15 @@ PowerBtnSleep=5E81AC
 PowerBtnReboot=BF616A
 
 [Paths]
-; Resource/output paths and launch targets.
+; Folder that holds the eight directional button scripts (relative to the script
+; folder, or an absolute path).
 ButtonDir=Buttons
-OutputDir=C:\Users\Administrator\Documents
+; Directory where the clipboard-history file is written.
+OutputDir=%OUTPUTDIR%
+; Clipboard-history file. A bare name is created inside OutputDir above; an
+; absolute path (e.g. D:\notes\clip.txt) is used as-is.
+OutputFile=CB.txt
+; External programs launched by the editor / terminal hotkeys.
 VimPath=C:\Windows\system32\notepad.exe
 TerminalExe=C:\Windows\system32\cmd.exe
 ; Editor window position and size, in screen percentage.
@@ -812,7 +951,7 @@ date_format=yyyy-MM-dd
 ; custom_1, custom_2, ... custom_n. May be text, symbols, icons, or emoji.
 custom_items=Edit Configuration file to hide
 ; Comma-separated desktop names. Falls back to numbers if count mismatches.
-desktop_labels=
+desktop_labels=Work,Net,Game
 ; Current desktop label wrapper.
 current_desktop_left=[
 current_desktop_right=]
@@ -830,23 +969,32 @@ layout=custom_1:(2-5)/10;desktops:(1-3)/20;date:(18-19)/20;time:20/20
 ; Hide the bar while a fullscreen window exists on the current desktop.
 AutoHideOnFullscreen=off
 ; CornerMode: all (four corners) | top (top two only) | bottom (bottom two only).
-Rounded=off
+Rounded=on
 CornerRadius=10
 CornerMode=bottom
 
 [Border]
 ; One refresh interval (ms) shared by all border drawing.
 RefreshMs=10
-; Drag/focus border. Mode: top (top edge only) | full (all sides).
-DragEnable=on
-DragMode=full
-DragThickness=15
-DragOffset=0
-DragOffsetTop=5
-DragOpacity=70
-DragRounded=on
-DragRadius=10
-; Pinned-window indicator. Highest priority: a pinned window draws no other
+; Master switch for the interactive drag/focus border.
+Enable=on
+; Display mode for all border modes: top (top edge only) | full (all four sides).
+Mode=full
+; Focused / interactive window color.  Other windows (WTM / all-borders) use Unfocus.
+FocusColor=A020F0
+UnfocusColor=555555
+; Thickness / inset offsets / opacity (0-100 scale).
+Thickness=8
+Offset=0
+OffsetTop=5
+Opacity=80
+; Rounded corners + radius (px).
+RoundedCorners=on
+Radius=10
+Gap=10
+; WTM resize step (reserved).
+SizeStep=3
+; Pinned-window indicator.
 ; border. Mode: top | full.
 PinMode=top
 PinThickness=10
@@ -855,26 +1003,48 @@ PinOffsetTop=5
 PinOpacity=78
 
 [Tiling]
-; Smart tiling gap in pixels (may be negative; outer work area stays protected).
-Gap=8
+; Smart tiling gap in pixels.
+Gap=-15
+; Whether always-on-top windows take part in tiling. When off, topmost windows
+; are left where they are and ignored by both smart tiling and WTM mode.
+TileAlwaysOnTop=off
 ; Custom tiling rules: M,N,I,X,Y;...  M=monitor index or '*', N=window count,
 ; I=window index, X/Y=area span (1=full, a/b=segment, (a-c)/b=multi-segment).
 ; Priority: exact monitor > '*' > built-in default. Legacy N,I,X,Y => '*',N,I,X,Y.
+; eg:
+; 1,3,1,(1-2)/3,1;1,3,2,3/3,1/2;1,3,2,3/3,2/2;
+; │ │ │ └──┬──┘ │
+; │ │ │    │    └─ Full screen height (100%)
+; │ │ │    └─ Occupies columns 1-2 out of 3
+; │ │ └─ Window #1
+; │ └─ Applies when there are 3 windows
+; └─ Desktop #1
+; 
+; Layout visualization:
+; 
+; +-----------+-----------+-----------+
+; |                       |           |
+; |                       |           |
+; |                       | Window #2 |
+; |                       |           |
+; |       Window #1       |-----------|
+; |                       |           |
+; |                       | Window #3 |
+; |                       |           |
+; |                       |           |
+; +-----------+-----------+-----------+
+;
 Rules=1,3,1,1/2,1;1,3,2,2/2,1/2;1,3,3,2/2,2/2;1,5,1,(2-4)/5,1;1,5,2,1/5,1/2;1,5,3,1/5,2/2;1,5,4,5/5,(1-2)/3;1,5,5,5/5,3/3;
 
-[WTM]
-; Window Tree Manager. BorderMode: top | full.
-BorderMode=full
-BorderFocusColor=A020F0
-BorderUnfocusColor=555555
-BorderThickness=8
-BorderOffset=0
-BorderOpacity=80
-SizeStep=3
-; Gap may be negative; windows can overlap but never cover bars.
-Gap=10
-RoundedCorners=on
-CornerRadius=10
+[Snapping]
+; Magnetic snapping while moving or resizing windows with the drag hotkeys.
+; Edges snap to screen edges, the work area / taskbar, the status bar and other
+; windows. Set Enable=off to turn the whole feature off.
+Enable=off
+; Trigger radius and gap in pixels.
+Distance=-15
+; How far past a snapped edge the cursor must travel before the window releases
+Release=5
 
 [PieMenu]
 ; Radial menu size, center dead zone, transparency, and font sizes.
@@ -885,7 +1055,7 @@ FontSize=14
 FontSizeActive=22
 
 [GUI]
-;OSD Help menu and power menu rounding defaults.
+; OSD Help menu and power menu rounding defaults.
 RoundedCorners=on
 CornerRadius=12
 ; Help menu (Height=0 = auto). Power menu. On-screen display.
@@ -945,7 +1115,7 @@ CloseWindowAlt=Alt+MButton
 ToggleMaximize=Alt+F
 ToggleTop=Alt+T
 HideWindow=Alt+W
-; Under testing
+; Show a colored border on every window (Feature under testing).
 ToggleAllBorders=
 TransparencyUp=Alt+WheelUp
 TransparencyDown=Alt+WheelDown
@@ -965,7 +1135,7 @@ DragResize=Alt+RButton
 
 PieMenuTrigger=~Space & RButton
 
-; Under testing
+; WTM mode (Feature under testing).
 WTMToggle=
 WTMFocusLeft=Alt+H
 WTMFocusDown=Alt+J
@@ -977,9 +1147,11 @@ WTMMoveUp=Alt+Shift+K
 WTMMoveRight=Alt+Shift+L
 		 )"
 
+        ; Fill in machine-specific defaults so no account-specific path is baked in.
+        DefaultIni := StrReplace(DefaultIni, "%OUTPUTDIR%", A_MyDocuments)
         try {
             FileAppend(DefaultIni, ConfigFile, "UTF-8")
-        } catch as e {
+        } catch Error as e {
             MsgBox("Failed to create config file: " . e.Message)
             ExitApp
         }
@@ -1026,43 +1198,58 @@ WTMMoveRight=Alt+Shift+L
     OSD_Transparent  := Pct2Alpha(Integer(CfgRead("GUI", "OSDOpacity",   "78", ["OSD","Opacity"])))
     OSD_FontSize     := Integer(CfgRead("GUI", "OSDFontSize", "20", ["OSD","FontSize"]))
 
-    ; ---- Borders: one global refresh + per-type mode ([Border], legacy [BorderDrag]/[BorderPin]) ----
-    Border_RefreshMs := Max(1, Integer(IniRead(ConfigFile, "Border", "RefreshMs", "10")))
+    ; ---- UNIFIED border configuration ([Border]) -----------------------------
+    ; One model drives every border mode. Legacy keys ([Border] Drag*, the old
+    ; [WTM] section, and [BorderDrag]/[BorderPin]) are accepted as fallbacks so
+    ; existing configs keep working after the unification.
+    Border_RefreshMs := Max(1, SafeInt(IniRead(ConfigFile, "Border", "RefreshMs", "10"), 10))
 
-    Border_Drag_Enable      := CfgRead("Border", "DragEnable", "on", ["BorderDrag","Enable"])
-    Border_Drag_Mode        := StrLower(IniRead(ConfigFile, "Border", "DragMode", "full"))
-    if !(Border_Drag_Mode = "top" || Border_Drag_Mode = "full")
-        Border_Drag_Mode := "full"
-    Border_Drag_Thickness   := Pct2Border(Integer(CfgRead("Border", "DragThickness", "15", ["BorderDrag","Thickness"])))
-    Border_Drag_Offset      := Pct2Border(Integer(CfgRead("Border", "DragOffset",    "0",  ["BorderDrag","Offset"])))
-    Border_Drag_OffsetTop   := Pct2Border(Integer(CfgRead("Border", "DragOffsetTop", "5",  ["BorderDrag","OffsetTop"])))
-    Border_Drag_Transparent := Pct2Alpha(Integer(CfgRead("Border", "DragOpacity",   "70", ["BorderDrag","Opacity"])))
+    Border_Enable := CfgRead("Border", "Enable", "on", ["Border","DragEnable"], ["BorderDrag","Enable"])
 
+    Border_Mode := StrLower(Trim(CfgRead("Border", "Mode", "full", ["Border","DragMode"], ["WTM","BorderMode"])))
+    if !(Border_Mode = "top" || Border_Mode = "full")
+        Border_Mode := "full"
+
+    Border_FocusColor   := CfgRead("Border", "FocusColor",   "A020F0", ["WTM","BorderFocusColor"],   ["Theme","BorderDrag"])
+    Border_UnfocusColor := CfgRead("Border", "UnfocusColor", "555555", ["WTM","BorderUnfocusColor"], ["Theme","BorderUnfocus"])
+
+    Border_Thickness := Pct2Border(SafeInt(CfgRead("Border", "Thickness", "8", ["WTM","BorderThickness"], ["Border","DragThickness"], ["BorderDrag","Thickness"]), 8))
+    Border_Offset    := Pct2Border(SafeInt(CfgRead("Border", "Offset",    "0", ["WTM","BorderOffset"],    ["Border","DragOffset"],    ["BorderDrag","Offset"]), 0))
+    Border_OffsetTop := Pct2Border(SafeInt(CfgRead("Border", "OffsetTop", "5", ["Border","DragOffsetTop"], ["BorderDrag","OffsetTop"]), 5))
+    Border_Opacity   := Pct2Alpha(SafeInt(CfgRead("Border", "Opacity",   "80", ["WTM","BorderOpacity"],   ["Border","DragOpacity"],   ["BorderDrag","Opacity"]), 80))
+
+    Border_Rounded := StrLower(Trim(CfgRead("Border", "RoundedCorners", "on", ["WTM","RoundedCorners"], ["Border","DragRounded"], ["BorderDrag","RoundedCorners"])))
+    Border_Radius  := Max(0, SafeInt(CfgRead("Border", "Radius", "10", ["WTM","CornerRadius"], ["Border","DragRadius"], ["BorderDrag","CornerRadius"]), 10))
+
+    ; Gap may be negative (windows draw closer / overlap); not clamped to >= 0.
+    Border_Gap      := SafeInt(CfgRead("Border", "Gap", "10", ["WTM","Gap"]), 10)
+    Border_SizeStep := SafeInt(CfgRead("Border", "SizeStep", "3", ["WTM","SizeStep"]), 3)
+
+    ; Keep the legacy WTM color globals populated so the built-in theme palettes
+    ; (which list WTM_Border*Color) still apply; they also feed the fallbacks above.
+    WTM_BorderFocusColor   := Border_FocusColor
+    WTM_BorderUnfocusColor := Border_UnfocusColor
+
+    ; ---- Pinned-window indicator (separate; highest priority) ----
     Border_Pin_Mode        := StrLower(IniRead(ConfigFile, "Border", "PinMode", "top"))
     if !(Border_Pin_Mode = "top" || Border_Pin_Mode = "full")
         Border_Pin_Mode := "top"
-    Border_Pin_Thickness   := Pct2Border(Integer(CfgRead("Border", "PinThickness", "10", ["BorderPin","Thickness"])))
-    Border_Pin_Offset      := Pct2Border(Integer(CfgRead("Border", "PinOffset",    "0",  ["BorderPin","Offset"])))
-    Border_Pin_OffsetTop   := Pct2Border(Integer(CfgRead("Border", "PinOffsetTop", "5",  ["BorderPin","OffsetTop"])))
-    Border_Pin_Transparent := Pct2Alpha(Integer(CfgRead("Border", "PinOpacity",   "78", ["BorderPin","Opacity"])))
-
-    ; ---- WTM ([WTM]) ----
-    WTM_BorderMode         := StrLower(IniRead(ConfigFile, "WTM", "BorderMode", "full"))
-    if !(WTM_BorderMode = "top" || WTM_BorderMode = "full")
-        WTM_BorderMode := "full"
-    WTM_BorderFocusColor   := IniRead(ConfigFile, "WTM", "BorderFocusColor",   "A020F0")
-    WTM_BorderUnfocusColor := IniRead(ConfigFile, "WTM", "BorderUnfocusColor", "555555")
-    WTM_BorderThickness    := Pct2Border(Integer(IniRead(ConfigFile, "WTM", "BorderThickness", "8")))
-    WTM_BorderOffset       := Pct2Border(Integer(IniRead(ConfigFile, "WTM", "BorderOffset",    "0")))
-    WTM_BorderOpacity      := Pct2Alpha(Integer(IniRead(ConfigFile, "WTM", "BorderOpacity",   "80")))
-    WTM_SizeStep           := Integer(IniRead(ConfigFile, "WTM", "SizeStep", "3"))
-    ; Gap may be negative (windows draw closer / overlap); not clamped to >= 0.
-    WTM_Gap                := Integer(IniRead(ConfigFile, "WTM", "Gap", "10"))
+    Border_Pin_Thickness   := Pct2Border(SafeInt(CfgRead("Border", "PinThickness", "10", ["BorderPin","Thickness"]), 10))
+    Border_Pin_Offset      := Pct2Border(SafeInt(CfgRead("Border", "PinOffset",    "0",  ["BorderPin","Offset"]), 0))
+    Border_Pin_OffsetTop   := Pct2Border(SafeInt(CfgRead("Border", "PinOffsetTop", "5",  ["BorderPin","OffsetTop"]), 5))
+    Border_Pin_Transparent := Pct2Alpha(SafeInt(CfgRead("Border", "PinOpacity",   "78", ["BorderPin","Opacity"]), 78))
 
     ; ---- Tiling ([Tiling], legacy [Layout]) ----
     ; Gap may be negative (windows draw closer / overlap); not clamped to >= 0.
     Tile_Gap         := Integer(CfgRead("Tiling", "Gap", "8", ["Layout","Gap"]))
     LayoutRules      := ParseLayoutRules(CfgRead("Tiling", "Rules", "", ["Layout","Rules"]))
+    Tile_IncludeAlwaysOnTop := BarShown(IniRead(ConfigFile, "Tiling", "TileAlwaysOnTop", "on"))
+
+    ; ---- Snapping ([Snapping]) ----
+    Snap_Enable   := BarShown(IniRead(ConfigFile, "Snapping", "Enable", "on"))
+    ; Distance may be negative (parallels the tiling gap); magnitude is the radius.
+    Snap_Distance := Integer(IniRead(ConfigFile, "Snapping", "Distance", "12"))
+    Snap_Release  := Max(0, Integer(IniRead(ConfigFile, "Snapping", "Release", "8")))
 
     Excl_Titles      := SplitExcludeList(IniRead(ConfigFile, "Exclude", "Titles",    ""))
     Excl_Classes     := SplitExcludeList(IniRead(ConfigFile, "Exclude", "Classes",   ""))
@@ -1081,12 +1268,11 @@ WTMMoveRight=Alt+Shift+L
     OSD_Rounded  := CfgRead("GUI", "OSDRounded", GUI_Rounded, ["OSD","RoundedCorners"])
     OSD_Radius   := Max(0, Integer(CfgRead("GUI", "OSDRadius", GUI_CornerRadius, ["OSD","CornerRadius"])))
 
-    Border_Drag_Rounded := CfgRead("Border", "DragRounded", GUI_Rounded, ["BorderDrag","RoundedCorners"])
-    Border_Drag_Radius  := Max(0, Integer(CfgRead("Border", "DragRadius", "10", ["BorderDrag","CornerRadius"])))
-    Border_Pin_Rounded  := "off"   ; pin strip: never rounded
+    ; Border rounding now comes from the unified [Border] RoundedCorners / Radius
+    ; loaded above (shared by drag, WTM and all-window borders). The pin strip is
+    ; intentionally never rounded.
+    Border_Pin_Rounded  := "off"
     Border_Pin_Radius   := 0
-    WTM_BorderRounded   := IniRead(ConfigFile, "WTM", "RoundedCorners", GUI_Rounded)
-    WTM_BorderRadius    := Max(0, Integer(IniRead(ConfigFile, "WTM", "CornerRadius", "10")))
 
     ; Help menu sizing (FontSize/Opacity exact; Width/Height best-effort scaling).
     Help_FontSize := Integer(CfgRead("GUI", "HelpFontSize", "10",  ["HelpMenu","FontSize"]))
@@ -1122,7 +1308,7 @@ WTMMoveRight=Alt+Shift+L
     Bar_Cfg["cur_right"]    := IniRead(ConfigFile, "Bar", "current_desktop_right", "]")
     Bar_Cfg["display_mode"] := StrLower(IniRead(ConfigFile, "Bar", "desktop_display_mode", "all"))
     Bar_Cfg["position"]     := StrLower(IniRead(ConfigFile, "Bar", "position", "top"))
-    Bar_Cfg["offset"]       := Integer(IniRead(ConfigFile, "Bar", "offset", "0"))
+    Bar_Cfg["offset"]       := SafeInt(IniRead(ConfigFile, "Bar", "offset", "0"), 0)
     Bar_Cfg["instances"]    := IniRead(ConfigFile, "Bar", "instances", "")
     Bar_Cfg["layout"]       := ParseBarLayout(IniRead(ConfigFile, "Bar", "layout", ""))
 
@@ -1147,8 +1333,20 @@ WTMMoveRight=Alt+Shift+L
     ; ---- Paths ([Paths]; editor position legacy [VimLayout]) ----
     bDirTemp        := IniRead(ConfigFile, "Paths", "ButtonDir",  "Buttons")
     Path_Button     := (bDirTemp ~= "^[a-zA-Z]:") ? bDirTemp : (A_ScriptDir . "\" . bDirTemp)
-    Path_Output     := IniRead(ConfigFile, "Paths", "OutputDir",   "C:\Users\Administrator\Documents")
-    Path_OutputFile := Path_Output . "\CB.txt"
+    ; Output directory defaults to the current user's Documents folder (never a
+    ; hardcoded account path). The clipboard file name/path is fully configurable:
+    ; OutputFile may be a bare file name (joined to OutputDir) or an absolute path.
+    Path_Output     := Trim(IniRead(ConfigFile, "Paths", "OutputDir", A_MyDocuments))
+    ; Recover gracefully from a config that still holds an unexpanded placeholder
+    ; (e.g. a raw "%OUTPUTDIR%" copied from the example) so a fresh install never
+    ; silently loses clipboard history: any leftover %...% token falls back to Docs.
+    Path_Output := RegExReplace(Path_Output, "i)%OUTPUTDIR%", A_MyDocuments)
+    if (Path_Output = "" || InStr(Path_Output, "%"))
+        Path_Output := A_MyDocuments
+    outFileCfg      := Trim(IniRead(ConfigFile, "Paths", "OutputFile", "CB.txt"))
+    if (outFileCfg = "")
+        outFileCfg := "CB.txt"
+    Path_OutputFile := (outFileCfg ~= "^[a-zA-Z]:|^\\\\") ? outFileCfg : (Path_Output . "\" . outFileCfg)
     Path_Vim        := IniRead(ConfigFile, "Paths", "VimPath",     "C:\Windows\system32\notepad.exe")
     Path_Terminal   := IniRead(ConfigFile, "Paths", "TerminalExe", "C:\Windows\system32\cmd.exe")
 
@@ -1432,7 +1630,7 @@ class WelcomeScreen {
 
         g.SetFont("s10 w400 c" . Color_Text, "Segoe UI")
         g.Add("Text", "x0 y" Round(vh*0.88) " w" vw " Center BackgroundTrans"
-            , "V2.4.2  ::  AutoHotkey v2")
+            , "V" . WM_Version . "  ::  AutoHotkey v2")
 
         g.SetFont("s11 w600 c" . Color_Active, "Segoe UI")
         hint := g.Add("Text", "x0 y" Round(vh*0.93) " w" vw " Center BackgroundTrans"
@@ -1576,10 +1774,22 @@ class BorderFrame {
     ;   -1            -> HWND_TOPMOST (drag border: intentionally on top while dragging)
     ;    0            -> HWND_TOP
     ;   window handle -> sit immediately above that target window in the normal Z order
+    ; When anchoring above a target we walk past any topmost windows first: anchoring
+    ; a non-topmost border directly after a topmost window (e.g. the always-on-top
+    ; status bar) would promote the border itself to WS_EX_TOPMOST permanently and
+    ; make it float over everything. Falling back to HWND_TOP (0) keeps the border
+    ; above ordinary windows but still below topmost ones, with no topmost promotion.
     _ZOrder(insertAfter) {
         if (insertAfter = -1 || insertAfter = 0)
             return insertAfter
         prev := DllCall("GetWindow", "Ptr", insertAfter, "UInt", 3, "Ptr")   ; GW_HWNDPREV
+        while (prev) {
+            ex := 0
+            try ex := WinGetExStyle(prev)
+            if !(ex & 0x8)          ; not WS_EX_TOPMOST -> safe to anchor here
+                break
+            prev := DllCall("GetWindow", "Ptr", prev, "UInt", 3, "Ptr")
+        }
         return prev ? prev : 0
     }
 
@@ -1591,6 +1801,14 @@ class BorderFrame {
             return
         t   := Max(1, Round(thickness))
         ins := this._ZOrder(insertAfter)
+        ; Target-relative borders (WTM / all-window) must never be topmost. Clear a
+        ; stale topmost style before repositioning so they cannot get stuck on top.
+        if (insertAfter != -1) {
+            exb := 0
+            try exb := WinGetExStyle(this.Gui.Hwnd)
+            if (exb & 0x8)
+                try WinSetAlwaysOnTop(false, this.Gui.Hwnd)
+        }
         if (mode = "top") {
             ww := Round(Max(t, w))
             try DllCall("SetWindowPos", "Ptr", this.Gui.Hwnd, "Ptr", ins
@@ -1652,10 +1870,12 @@ class DragBorder {
     static Frame := ""
 
     static Show() {
-        if (Border_Drag_Enable != "on")
+        ; Uses the unified border model. This is the interactive/focus border: it
+        ; shows only the active window and stays always-on-top while dragging.
+        if (Border_Enable != "on")
             return
         this.Destroy()
-        this.Frame := BorderFrame(Border_Drag_Color, Border_Drag_Transparent)
+        this.Frame := BorderFrame(Border_FocusColor, Border_Opacity)
     }
 
     static Update(hwnd) {
@@ -1665,12 +1885,12 @@ class DragBorder {
             return
         if !GetWindowVisualRect(hwnd, &x, &y, &w, &h)
             return
-        o  := Border_Drag_Offset
-        ot := Border_Drag_OffsetTop
+        o  := Border_Offset
+        ot := Border_OffsetTop
         x -= o, y -= (o + ot), w += 2*o, h += 2*o + ot
-        rad := (Border_Drag_Rounded = "on") ? Border_Drag_Radius : 0
+        rad := (Border_Rounded = "on") ? Border_Radius : 0
         ; Drag border stays HWND_TOPMOST (-1) so it is clearly visible while dragging.
-        this.Frame.Place(x, y, w, h, Border_Drag_Thickness, rad, Border_Drag_Transparent, Border_Drag_Mode, -1)
+        this.Frame.Place(x, y, w, h, Border_Thickness, rad, Border_Opacity, Border_Mode, -1)
     }
 
     static Destroy() {
@@ -2036,7 +2256,7 @@ ParseBarLayout(str) {
             continue
         try {
             m[StrLower(Trim(p[1]))] := ParseAxis(p[2])
-        } catch as e {
+        } catch Error as e {
             WMLog("Bar layout segment invalid (" e.Message "): " clause)
         }
     }
@@ -2436,7 +2656,7 @@ CreateStatusBar() {
     Bars := []
     for inst in BarInstances() {
         try Bars.Push(BarInstance(inst.mon, inst.pos, inst.offset))
-        catch as e
+        catch Error as e
             WMLog("Bar build failed (mon " inst.mon "): " e.Message)
     }
     Bar_ShownState := true        ; freshly built bars are shown; re-apply auto-hide below
@@ -2457,14 +2677,22 @@ UpdateClockAndProgress() {
     static LastDay := ""
     CurrentDay := FormatTime(, "yyyyMMdd")
     if (LastDay != "" && LastDay != CurrentDay)
-        CreateStatusBar()         ; rebuild at midnight so task markers refresh
+        WMGuard("Tick: CreateStatusBar (midnight)", CreateStatusBar)
     LastDay := CurrentDay
     if !IsSet(Bars)
         return
-    pct := WorkPercent()
+    ; Each piece is fault-isolated so a fault in one widget can neither stop the clock
+    ; nor escape the timer once a second; the first occurrence is logged in full
+    ; (function + line + stack) and subsequent identical faults are suppressed.
+    pct := 100
+    try pct := WorkPercent()
+    catch Error as e
+        WMLogErr("Tick: WorkPercent", e)
     for b in Bars
         try b.UpdateClock(pct)
-    ApplyBarVisibility()      ; fullscreen auto-hide (respects the manual toggle state)
+    try ApplyBarVisibility()      ; fullscreen auto-hide (respects the manual toggle state)
+    catch Error as e
+        WMLogErr("Tick: ApplyBarVisibility", e)
 }
 
 ; True if any non-minimized window on the current desktop covers an entire monitor
@@ -2780,9 +3008,22 @@ TileUltrawide(wins, X, Y, W, H) {
     }
 }
 
+; True if a window is eligible for tiling. When [Tiling] TileAlwaysOnTop is off,
+; always-on-top (WS_EX_TOPMOST) windows are left in place and ignored by tiling.
+IsTilableWindow(hwnd) {
+    global Tile_IncludeAlwaysOnTop
+    if Tile_IncludeAlwaysOnTop
+        return true
+    ex := 0
+    try ex := WinGetExStyle(hwnd)
+    return !(ex & 0x8)
+}
+
 GetVisibleWindowsOnMonitor(monIdx) {
     out := []
     for hwnd in GetVisibleWindow() {
+        if !IsTilableWindow(hwnd)
+            continue
         try {
             WinGetPos(&wx, &wy, &ww, &wh, hwnd)
             cx := wx + ww/2, cy := wy + wh/2
@@ -2797,30 +3038,29 @@ GetVisibleWindow() {
     windows := []
     ids := WinGetList(,, "Program Manager")
     for this_id in ids {
+        ; Wrap the whole per-window probe: any window may be destroyed between the
+        ; WinGetList snapshot and these queries, which would otherwise raise a
+        ; "target window not found" error mid-scan. A failed probe just skips it.
         try {
             style := WinGetStyle(this_id)
-        } catch {
-            continue
-        }
-        if !(style & 0x10000000)
-            continue
-        exStyle := WinGetExStyle(this_id)
-        if (exStyle & 0x00000080)
-            continue
-        isCloaked := 0
-        try {
+            if !(style & 0x10000000)              ; WS_VISIBLE
+                continue
+            exStyle := WinGetExStyle(this_id)
+            if (exStyle & 0x00000080)             ; WS_EX_TOOLWINDOW
+                continue
+            isCloaked := 0
             DllCall("dwmapi\DwmGetWindowAttribute"
                 , "Ptr", this_id, "Int", 14, "Int*", &isCloaked, "Int", 4)
             if isCloaked
                 continue
-        }
-        title := WinGetTitle(this_id)
-        if (title == "")
-            continue
-        WinGetPos(,, &w, &h, this_id)
-        if (w < 100 || h < 100)
-            continue
-        if IsExcludedWindow(this_id)
+            if (WinGetTitle(this_id) == "")
+                continue
+            WinGetPos(,, &w, &h, this_id)
+            if (w < 100 || h < 100)
+                continue
+            if IsExcludedWindow(this_id)
+                continue
+        } catch
             continue
         windows.Push(this_id)
     }
@@ -3016,15 +3256,18 @@ ExportThemeToCustom(*) {
         "PM_BtnSleep",       "PowerBtnSleep",
         "PM_BtnReboot",      "PowerBtnReboot"
     )
-    wtmMap := Map(
-        "WTM_BorderFocusColor",   "BorderFocusColor",
-        "WTM_BorderUnfocusColor", "BorderUnfocusColor"
+    ; Unified border colors live in [Border] now (FocusColor / UnfocusColor).
+    borderMap := Map(
+        "WTM_BorderFocusColor",   "FocusColor",
+        "WTM_BorderUnfocusColor", "UnfocusColor",
+        "Border_FocusColor",      "FocusColor",
+        "Border_UnfocusColor",    "UnfocusColor"
     )
     for key, val in palette {
         if nameMap.Has(key)
             IniWrite(val, ConfigFile, "Theme", nameMap[key])
-        else if wtmMap.Has(key)
-            IniWrite(val, ConfigFile, "WTM", wtmMap[key])
+        else if borderMap.Has(key)
+            IniWrite(val, ConfigFile, "Border", borderMap[key])
     }
     IniWrite("custom", ConfigFile, "General", "ActiveTheme")
     ShowOSD("Exported -> custom")
@@ -3128,16 +3371,182 @@ Explorer_GetPath() {
     return ""
 }
 
+; ==============================================================================
+;  Window snapping - magnetic edges while dragging / resizing. Edges snap to the
+;  screen, the work area (taskbar), the status bar and other windows. Snapping is
+;  sticky: once an edge catches, the window pauses there until the cursor travels
+;  Snap_Release pixels past the snap point. Configured via the [Snapping] section.
+; ==============================================================================
+
+; Per-axis sticky-snap state carried across drag-loop iterations.
+class SnapCtx {
+    xOn := false, xLine := 0, xEdge := ""
+    yOn := false, yLine := 0, yEdge := ""
+}
+
+; Collect candidate snap lines for the monitor under a window. vLines holds vertical
+; lines (x coordinates), hLines horizontal lines (y coordinates). The dragged window
+; itself is skipped so it never snaps to its own former edges.
+GatherSnapLines(skipHwnd, &vLines, &hLines) {
+    vLines := [], hLines := []
+    mon := GetMonitorIndex(skipHwnd)
+    MonitorGet(mon, &mL, &mT, &mR, &mB)             ; full screen edges
+    MonitorGetWorkArea(mon, &wL, &wT, &wR, &wB)     ; work area (Windows taskbar)
+    bL := wL, bT := wT, bR := wR, bB := wB
+    BarReserve(mon, &bL, &bT, &bR, &bB)             ; status-bar reserved boundary
+    for v in [mL, mR, wL, wR, bL, bR]
+        vLines.Push(v)
+    for hh in [mT, mB, wT, wB, bT, bB]
+        hLines.Push(hh)
+    for h in GetVisibleWindow() {
+        if (h = skipHwnd)
+            continue
+        try {
+            if (WinGetMinMax(h) = -1)
+                continue
+            WinGetPos(&ox, &oy, &ow, &oh, h)
+        } catch
+            continue
+        vLines.Push(ox)
+        vLines.Push(ox + ow)
+        hLines.Push(oy)
+        hLines.Push(oy + oh)
+    }
+}
+
+; Snap one axis of a MOVE (the whole window shifts; size is fixed). edgeLo/edgeHi
+; are the raw low/high edges; &outLo returns the snapped low edge. A positive
+; Snap_Distance leaves that gap at the snap point, a negative one lets edges overlap.
+_SnapMoveAxis(edgeLo, edgeHi, size, lines, ctx, axis, &outLo) {
+    global Snap_Distance, Snap_Release
+    rad := Max(1, Abs(Snap_Distance)), gap := Snap_Distance, rel := Max(0, Snap_Release)
+    on   := (axis = "x") ? ctx.xOn   : ctx.yOn
+    line := (axis = "x") ? ctx.xLine : ctx.yLine
+    edge := (axis = "x") ? ctx.xEdge : ctx.yEdge
+    outLo := edgeLo
+    settled := false
+    if on {
+        cmp := (edge = "lo") ? edgeLo : edgeHi
+        if (Abs(cmp - line) <= rad + rel) {
+            outLo := (edge = "lo") ? (line + gap) : (line - gap - size)
+            settled := true
+        } else {
+            on := false
+        }
+    }
+    if !settled {
+        bestD := rad + 1, found := false
+        for ln in lines {
+            if (Abs(edgeLo - ln) < bestD) {
+                bestD := Abs(edgeLo - ln), line := ln, edge := "lo", found := true
+            }
+            if (Abs(edgeHi - ln) < bestD) {
+                bestD := Abs(edgeHi - ln), line := ln, edge := "hi", found := true
+            }
+        }
+        if found {
+            on := true
+            outLo := (edge = "lo") ? (line + gap) : (line - gap - size)
+        }
+    }
+    if (axis = "x") {
+        ctx.xOn := on, ctx.xLine := line, ctx.xEdge := edge
+    } else {
+        ctx.yOn := on, ctx.yLine := line, ctx.yEdge := edge
+    }
+}
+
+SnapMove(rawX, rawY, w, h, vLines, hLines, ctx, &outX, &outY) {
+    global Snap_Enable
+    outX := rawX, outY := rawY
+    if !Snap_Enable
+        return
+    _SnapMoveAxis(rawX, rawX + w, w, vLines, ctx, "x", &outX)
+    _SnapMoveAxis(rawY, rawY + h, h, hLines, ctx, "y", &outY)
+}
+
+; Snap a single moving edge of a RESIZE. isLowEdge marks a left/top edge (snapped to
+; line + gap) versus a right/bottom edge (snapped to line - gap). &outEdge returns it.
+_SnapResizeAxis(movingEdge, isLowEdge, lines, ctx, axis, &outEdge) {
+    global Snap_Distance, Snap_Release
+    rad := Max(1, Abs(Snap_Distance)), gap := Snap_Distance, rel := Max(0, Snap_Release)
+    on   := (axis = "x") ? ctx.xOn   : ctx.yOn
+    line := (axis = "x") ? ctx.xLine : ctx.yLine
+    outEdge := movingEdge
+    settled := false
+    if on {
+        if (Abs(movingEdge - line) <= rad + rel) {
+            outEdge := isLowEdge ? (line + gap) : (line - gap)
+            settled := true
+        } else {
+            on := false
+        }
+    }
+    if !settled {
+        bestD := rad + 1, found := false
+        for ln in lines {
+            if (Abs(movingEdge - ln) < bestD) {
+                bestD := Abs(movingEdge - ln), line := ln, found := true
+            }
+        }
+        if found {
+            on := true
+            outEdge := isLowEdge ? (line + gap) : (line - gap)
+        }
+    }
+    if (axis = "x") {
+        ctx.xOn := on, ctx.xLine := line
+    } else {
+        ctx.yOn := on, ctx.yLine := line
+    }
+}
+
+; Apply resize snapping to the proposed rect, keeping the anchored edges fixed.
+SnapResize(nX, nW, nY, nH, winX, winY, fixedRight, fixedBottom, isLeft, isUp, vLines, hLines, ctx, &oX, &oW, &oY, &oH) {
+    global Snap_Enable
+    oX := nX, oW := nW, oY := nY, oH := nH
+    if !Snap_Enable
+        return
+    if isLeft {
+        _SnapResizeAxis(nX, true, vLines, ctx, "x", &sx)
+        oX := sx, oW := fixedRight - sx
+    } else {
+        _SnapResizeAxis(nX + nW, false, vLines, ctx, "x", &sx)
+        oW := sx - winX
+    }
+    if isUp {
+        _SnapResizeAxis(nY, true, hLines, ctx, "y", &sy)
+        oY := sy, oH := fixedBottom - sy
+    } else {
+        _SnapResizeAxis(nY + nH, false, hLines, ctx, "y", &sy)
+        oH := sy - winY
+    }
+}
+
 ; ---- Mouse drag move / resize ----
+; While a window is being dragged / resized, keep the WTM and all-window borders
+; glued to it using the SAME unified drawing path as the focus border. This runs
+; inside the drag loop so the borders never lag, even if the per-frame timers are
+; starved while the tight loop holds the thread.
+BorderFollowDrag(hwnd) {
+    try WTM.DrawOne(hwnd)
+    try AllBorders.DrawOne(hwnd)
+}
+
 DragMoveHandler(*) {
     MouseGetPos(,, &hwnd)
     if !hwnd
         return
+    ; Activate best-effort: never abort the drag just because activation was blocked
+    ; (focus-stealing prevention / protected windows). This is what previously made
+    ; the very first KDE-style drag after startup silently do nothing.
     try WinActivate(hwnd)
-    catch
+    if !WinExist(hwnd)
         return
 
-    if (WinGetMinMax(hwnd) == 1) {
+    mm := 0
+    try mm := WinGetMinMax(hwnd)
+    if (mm == 1) {
         try {
             WinRestore(hwnd)
             WinGetPos(,, &rw, &rh, hwnd)
@@ -3153,13 +3562,21 @@ DragMoveHandler(*) {
     catch
         return
 
+    ctx := SnapCtx()
+    vLines := [], hLines := []
+    try GatherSnapLines(hwnd, &vLines, &hLines)
+
     DragBorder.Show()
     while GetKeyState("LButton", "P") {
         MouseGetPos(&curX, &curY)
-        try WinMove(winX + (curX - startX), winY + (curY - startY),,, hwnd)
+        rawX := winX + (curX - startX)
+        rawY := winY + (curY - startY)
+        SnapMove(rawX, rawY, winW, winH, vLines, hLines, ctx, &nx, &ny)
+        try WinMove(nx, ny,,, hwnd)
         catch
             break
         DragBorder.Update(hwnd)
+        BorderFollowDrag(hwnd)
     }
     DragBorder.Destroy()
     WTM.OnWindowChanged()
@@ -3181,6 +3598,12 @@ DragResizeHandler(*) {
     MouseGetPos(&startX, &startY)
     isLeft := (startX - winX) / winW < 0.5
     isUp   := (startY - winY) / winH < 0.5
+    fixedRight  := winX + winW
+    fixedBottom := winY + winH
+
+    ctx := SnapCtx()
+    vLines := [], hLines := []
+    try GatherSnapLines(hwnd, &vLines, &hLines)   ; fault-isolated; empty => no snapping
 
     DragBorder.Show()
     while GetKeyState("RButton", "P") {
@@ -3188,11 +3611,14 @@ DragResizeHandler(*) {
         dX := curX - startX, dY := curY - startY
         nX := isLeft ? (winX+dX) : winX, nW := isLeft ? (winW-dX) : (winW+dX)
         nY := isUp   ? (winY+dY) : winY, nH := isUp   ? (winH-dY) : (winH+dY)
+        SnapResize(nX, nW, nY, nH, winX, winY, fixedRight, fixedBottom, isLeft, isUp
+                 , vLines, hLines, ctx, &nX, &nW, &nY, &nH)
         if (nW > 50 && nH > 50) {
             try WinMove(nX, nY, nW, nH, hwnd)
             catch
                 break
             DragBorder.Update(hwnd)
+            BorderFollowDrag(hwnd)
         }
     }
     DragBorder.Destroy()
@@ -3270,6 +3696,8 @@ class WTM {
         for hwnd in GetVisibleWindow() {
             if this.Excluded.Has(hwnd)
                 continue
+            if !IsTilableWindow(hwnd)         ; honor [Tiling] TileAlwaysOnTop
+                continue
             try {
                 if (WinGetMinMax(hwnd) = -1)
                     continue
@@ -3306,10 +3734,12 @@ class WTM {
         }
         for m, wins in groups
             this._TileMonitor(m, wins)
+        ; Remember the window set we just tiled so Tick does not immediately retile.
+        this._LastSig := this._Signature()
     }
 
     static _TileMonitor(monIdx, wins) {
-        global CurrentTileGap, WTM_Gap
+        global CurrentTileGap, Border_Gap
         if (wins.Length = 0)
             return
         if (monIdx < 1 || monIdx > MonitorGetCount())
@@ -3319,7 +3749,7 @@ class WTM {
         SetTileBound(WL, WT, WR, WB)             ; protected outer boundary for PlaceWin
         W := WR - WL, H := WB - WT
 
-        g := WTM_Gap
+        g := Border_Gap
         if (g > 0) {
             WL += g/2, WT += g/2, W -= g, H -= g
         }
@@ -3340,18 +3770,39 @@ class WTM {
         ClearTileBound()
     }
 
+    ; Membership signature: the sorted set of currently tiled windows (order
+    ; independent, size independent). Retiling is driven only by windows being
+    ; opened, closed, minimized or restored - never by a position/size change.
+    ; This keeps manually moved/resized windows stable and avoids the feedback
+    ; loop where AutoTile's own size changes would re-trigger a retile.
     static _Signature() {
-        sig := ""
+        arr := []
         for hwnd in GetVisibleWindow() {
             if this.Excluded.Has(hwnd)
                 continue
+            if !IsTilableWindow(hwnd)
+                continue
             try {
-                if (WinGetMinMax(hwnd) = -1)   ; ignore minimized windows (avoids spurious retiles)
+                if (WinGetMinMax(hwnd) = -1)   ; ignore minimized windows
                     continue
-                WinGetPos(&x, &y, &w, &h, hwnd)
-                sig .= hwnd "|" w "x" h ";"
+            } catch {
+                continue
+            }
+            arr.Push(hwnd + 0)
+        }
+        n := arr.Length
+        Loop n {                               ; small set: simple in-place sort
+            i := A_Index
+            Loop n - i {
+                j := A_Index
+                if (arr[j] > arr[j+1]) {
+                    t := arr[j], arr[j] := arr[j+1], arr[j+1] := t
+                }
             }
         }
+        sig := ""
+        for v in arr
+            sig .= v ";"
         return sig
     }
 
@@ -3364,11 +3815,10 @@ class WTM {
         if (this._Accum >= 150) {
             this._Accum := 0
             sig := this._Signature()
-            if (sig != this._LastSig) {
-                this._LastSig := sig
+            ; Only retile when the window set actually changed; AutoTile refreshes
+            ; _LastSig itself, so positions stay put between membership changes.
+            if (sig != this._LastSig)
                 this.AutoTile()
-                this._LastSig := this._Signature()
-            }
         }
         try {
             fh := WinGetID("A")
@@ -3414,35 +3864,88 @@ class WTM {
         cur := this.FocusHwnd ? this.FocusHwnd : (this.TileOrder.Length ? this.TileOrder[1] : 0)
         if !cur
             return
-        target := this._PickNeighbor(cur, dir)
-        if !target {
-            adj := 0
-            try adj := this._AdjacentMonitor(GetMonitorIndex(cur), dir)
-            if adj {
-                this._MoveWindowToMonitor(cur, adj)
-                this.AutoTile()
-                this._MoveCursorToWindow(cur)
-                this.RefreshBorder()
+        curMon := 1
+        try curMon := GetMonitorIndex(cur)
+
+        ; In-monitor move: swap with a neighbour on the SAME monitor. For left/right
+        ; moves the upper neighbour is preferred first (so a window facing a vertically
+        ; split half swaps with the top window before the bottom one).
+        target := this._PickSwapTarget(cur, dir, curMon)
+        if target {
+            i1 := this._OrderIndex(cur)
+            i2 := this._OrderIndex(target)
+            if (i1 && i2) {
+                tmp := this.TileOrder[i1]
+                this.TileOrder[i1] := this.TileOrder[i2]
+                this.TileOrder[i2] := tmp
             }
+            this.AutoTile()
+            this._MoveCursorToWindow(cur)
+            this.RefreshBorder()
             return
         }
-        curMon := 1, tgtMon := 1
-        try curMon := GetMonitorIndex(cur)
-        try tgtMon := GetMonitorIndex(target)
-        i1 := this._OrderIndex(cur)
-        i2 := this._OrderIndex(target)
-        if (i1 && i2) {
-            tmp := this.TileOrder[i1]
-            this.TileOrder[i1] := this.TileOrder[i2]
-            this.TileOrder[i2] := tmp
+
+        ; Cross-monitor move: do NOT swap. Relocate the window onto the adjacent
+        ; monitor and let AutoTile fold it into that monitor's layout, so the source
+        ; monitor loses one window and the destination gains one.
+        adj := 0
+        try adj := this._AdjacentMonitor(curMon, dir)
+        if adj {
+            this._MoveWindowToMonitor(cur, adj)
+            this.AutoTile()
+            this._MoveCursorToWindow(cur)
+            this.RefreshBorder()
         }
-        if (curMon != tgtMon) {
-            this._MoveWindowToMonitor(cur, tgtMon)
-            this._MoveWindowToMonitor(target, curMon)
+    }
+
+    ; Pick a swap target on the same monitor in the pressed direction. Direction maps
+    ; h=Left, j=Down, k=Up, l=Right (dy grows downward). We pick the window that is
+    ; both in that direction AND most directly in line with the focused window: the
+    ; primary key is the travel distance ALONG the move axis (so "move left" swaps with
+    ; the nearest window to the left), the secondary key is the perpendicular offset (so
+    ; the most aligned neighbour wins on ties). Returns 0 when there is no in-monitor
+    ; neighbour in that direction.
+    static _PickSwapTarget(hwnd, dir, monIdx) {
+        if !WinExist(hwnd)
+            return 0
+        try WinGetPos(&cx, &cy, &cw, &ch, hwnd)
+        catch
+            return 0
+        ccx := cx + cw/2, ccy := cy + ch/2
+        best := 0
+        bestP := 0, bestS := 0, have := false
+        for h in this.TileOrder {
+            if (h = hwnd)
+                continue
+            tm := 1
+            try tm := GetMonitorIndex(h)
+            if (tm != monIdx)
+                continue
+            try WinGetPos(&x, &y, &w, &h2, h)
+            catch
+                continue
+            tx := x + w/2, ty := y + h2/2
+            dx := tx - ccx, dy := ty - ccy
+            if      (dir = "L" && dx >= 0)
+                continue
+            else if (dir = "R" && dx <= 0)
+                continue
+            else if (dir = "U" && dy >= 0)
+                continue
+            else if (dir = "D" && dy <= 0)
+                continue
+            ; Primary/secondary ranking keys (smaller is better): distance along the
+            ; move axis first, perpendicular misalignment second.
+            if (dir = "L" || dir = "R") {
+                pri := Abs(dx), sec := Abs(dy)
+            } else {
+                pri := Abs(dy), sec := Abs(dx)
+            }
+            if (!have || pri < bestP || (pri = bestP && sec < bestS)) {
+                have := true, best := h, bestP := pri, bestS := sec
+            }
         }
-        this.AutoTile()
-        this._MoveCursorToWindow(cur)
-        this.RefreshBorder()
+        return best
     }
 
     static _MoveWindowToMonitor(hwnd, monIdx) {
@@ -3583,7 +4086,7 @@ class WTM {
     static EnsureBorder(hwnd) {
         if this.BorderMap.Has(hwnd)
             return
-        this.BorderMap[hwnd]   := BorderFrame(WTM_BorderUnfocusColor, WTM_BorderOpacity)
+        this.BorderMap[hwnd]   := BorderFrame(Border_UnfocusColor, Border_Opacity)
         this.BorderState[hwnd] := "unfocus"
     }
 
@@ -3608,7 +4111,7 @@ class WTM {
             return
         if (this.BorderState.Has(hwnd) && this.BorderState[hwnd] = state)
             return
-        col := (state = "focus") ? WTM_BorderFocusColor : WTM_BorderUnfocusColor
+        col := (state = "focus") ? Border_FocusColor : Border_UnfocusColor
         this.BorderMap[hwnd].SetColor(col)
         this.BorderState[hwnd] := state
     }
@@ -3626,34 +4129,48 @@ class WTM {
         }
 
         focusH := this.FocusHwnd
-        for hwnd in this.TileOrder {
-            if !WinExist(hwnd)
-                continue
-            ; Pin border has highest priority: a pinned / always-visible window draws no
-            ; WTM border over its pin indicator.
-            if (PinBorder.Map.Has(hwnd) || AlwaysVisible.Has(hwnd)) {
-                this.RemoveBorder(hwnd)
-                continue
-            }
-            try {
-                if (WinGetMinMax(hwnd) = -1) {
-                    if this.BorderMap.Has(hwnd)
-                        this.BorderMap[hwnd].Hide()
-                    continue
-                }
-            } catch {
-                continue
-            }
-            this.EnsureBorder(hwnd)
-            if !GetWindowVisualRect(hwnd, &x, &y, &w, &ht)
-                continue
-            o := WTM_BorderOffset
-            x -= o, y -= o, w += 2*o, ht += 2*o
-            this._SetBorderColor(hwnd, hwnd = focusH ? "focus" : "unfocus")
-            rad := (WTM_BorderRounded = "on") ? WTM_BorderRadius : 0
-            ; Sit just above this window in the Z order (not topmost) - see BorderFrame.Place.
-            this.BorderMap[hwnd].Place(x, y, w, ht, Max(2, WTM_BorderThickness), rad, WTM_BorderOpacity, WTM_BorderMode, hwnd)
+        for hwnd in this.TileOrder
+            this._DrawBorder(hwnd, focusH)
+    }
+
+    ; Draw / reposition a single window's WTM border using the unified border model.
+    ; Shared by the timer (RefreshBorder) and the live drag/resize loop (DrawOne), so
+    ; WTM borders track their window exactly like the always-on-top focus border.
+    static _DrawBorder(hwnd, focusH) {
+        if !WinExist(hwnd)
+            return
+        ; Pin border has highest priority: a pinned / always-visible window draws no
+        ; WTM border over its pin indicator.
+        if (PinBorder.Map.Has(hwnd) || AlwaysVisible.Has(hwnd)) {
+            this.RemoveBorder(hwnd)
+            return
         }
+        try {
+            if (WinGetMinMax(hwnd) = -1) {
+                if this.BorderMap.Has(hwnd)
+                    this.BorderMap[hwnd].Hide()
+                return
+            }
+        } catch {
+            return
+        }
+        this.EnsureBorder(hwnd)
+        if !GetWindowVisualRect(hwnd, &x, &y, &w, &ht)
+            return
+        o := Border_Offset
+        x -= o, y -= o, w += 2*o, ht += 2*o
+        this._SetBorderColor(hwnd, hwnd = focusH ? "focus" : "unfocus")
+        rad := (Border_Rounded = "on") ? Border_Radius : 0
+        ; Sit just above this window in the Z order (not topmost) - see BorderFrame.Place.
+        this.BorderMap[hwnd].Place(x, y, w, ht, Max(2, Border_Thickness), rad, Border_Opacity, Border_Mode, hwnd)
+    }
+
+    ; Live update of one window's border (called from the drag / resize loop so the
+    ; WTM border follows the window while it is being moved or resized).
+    static DrawOne(hwnd) {
+        if (!this.Active || !this.BorderMap.Has(hwnd))
+            return
+        this._DrawBorder(hwnd, this.FocusHwnd)
     }
 }
 
@@ -3731,7 +4248,7 @@ class AllBorders {
     static Ensure(hwnd) {
         if this.Frames.Has(hwnd)
             return
-        this.Frames[hwnd] := BorderFrame(Color_BorderUnfocus, WTM_BorderOpacity)
+        this.Frames[hwnd] := BorderFrame(Border_UnfocusColor, Border_Opacity)
         this.State[hwnd]  := "unfocus"
     }
 
@@ -3740,7 +4257,7 @@ class AllBorders {
             return
         if (this.State.Has(hwnd) && this.State[hwnd] = state)
             return
-        col := (state = "focus") ? Border_Drag_Color : Color_BorderUnfocus
+        col := (state = "focus") ? Border_FocusColor : Border_UnfocusColor
         this.Frames[hwnd].SetColor(col)
         this.State[hwnd] := state
     }
@@ -3764,34 +4281,49 @@ class AllBorders {
         }
         focusH := 0
         try focusH := WinGetID("A")
-        for hwnd in this._Wins {
-            if !WinExist(hwnd)
-                continue
-            ; Pin border has highest priority: a pinned / always-visible window draws no
-            ; all-window border over its pin indicator.
-            if (PinBorder.Map.Has(hwnd) || AlwaysVisible.Has(hwnd)) {
-                this.Remove(hwnd)
-                continue
-            }
-            try {
-                if (WinGetMinMax(hwnd) = -1) {
-                    if this.Frames.Has(hwnd)
-                        this.Frames[hwnd].Hide()
-                    continue
-                }
-            } catch {
-                continue
-            }
-            this.Ensure(hwnd)
-            if !GetWindowVisualRect(hwnd, &x, &y, &w, &h)
-                continue
-            o := WTM_BorderOffset
-            x -= o, y -= o, w += 2*o, h += 2*o
-            this.SetColor(hwnd, hwnd = focusH ? "focus" : "unfocus")
-            rad := (WTM_BorderRounded = "on") ? WTM_BorderRadius : 0
-            ; Sit just above this window in the Z order (not topmost) - see BorderFrame.Place.
-            this.Frames[hwnd].Place(x, y, w, h, Max(2, WTM_BorderThickness), rad, WTM_BorderOpacity, Border_Drag_Mode, hwnd)
+        for hwnd in this._Wins
+            this._DrawBorder(hwnd, focusH)
+    }
+
+    ; Draw / reposition one window's border with the unified border model. Shared by
+    ; the timer (Tick) and the live drag/resize loop (DrawOne).
+    static _DrawBorder(hwnd, focusH) {
+        if !WinExist(hwnd)
+            return
+        ; Pin border has highest priority: a pinned / always-visible window draws no
+        ; all-window border over its pin indicator.
+        if (PinBorder.Map.Has(hwnd) || AlwaysVisible.Has(hwnd)) {
+            this.Remove(hwnd)
+            return
         }
+        try {
+            if (WinGetMinMax(hwnd) = -1) {
+                if this.Frames.Has(hwnd)
+                    this.Frames[hwnd].Hide()
+                return
+            }
+        } catch {
+            return
+        }
+        this.Ensure(hwnd)
+        if !GetWindowVisualRect(hwnd, &x, &y, &w, &h)
+            return
+        o := Border_Offset
+        x -= o, y -= o, w += 2*o, h += 2*o
+        this.SetColor(hwnd, hwnd = focusH ? "focus" : "unfocus")
+        rad := (Border_Rounded = "on") ? Border_Radius : 0
+        ; Sit just above this window in the Z order (not topmost) - see BorderFrame.Place.
+        this.Frames[hwnd].Place(x, y, w, h, Max(2, Border_Thickness), rad, Border_Opacity, Border_Mode, hwnd)
+    }
+
+    ; Live update of one window's border (called from the drag / resize loop so the
+    ; all-window border follows the window while it is being moved or resized).
+    static DrawOne(hwnd) {
+        if (!this.Active || WTM.Active || !this.Frames.Has(hwnd))
+            return
+        focusH := 0
+        try focusH := WinGetID("A")
+        this._DrawBorder(hwnd, focusH)
     }
 }
 
