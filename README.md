@@ -5,7 +5,7 @@ A tiny, fast, single-file window manager for Windows, powered by **AutoHotkey v2
 AHK WM is built for people who keep too many windows open and still want their desktop to feel light, predictable, and easy to escape from.
 
 -  **Single-file script**
--  **Small size**, around 130 KB
+-  **Small size**
 -  **Fast response**, no heavy background framework
 -  **Works from Windows 7 to Windows 11**
 -  **Minimal interference**, friendly for shared/work computers
