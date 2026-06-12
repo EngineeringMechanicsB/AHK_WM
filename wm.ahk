@@ -34,6 +34,8 @@ global Bar_ShownState := true
 global Bar_Rounded    := "off"
 global Bar_Radius     := 10
 global Bar_CornerMode := "bottom"
+global Bar_MarginLeft  := 0
+global Bar_MarginRight := 0
 global Bars := []
 global Bar_Cfg := Map()
 
@@ -1077,6 +1079,9 @@ desktop_display_mode=all
 ; 位置（top|bottom）与距屏幕边缘像素偏移 / Bar edge and pixel offset.
 position=top
 offset=0
+; 状态栏左右边距（距显示器左右边框像素）/ Bar left/right margin from monitor edges (px).
+margin_left=0
+margin_right=0
 ; 多栏配置 / Multi-bar format: M:pos:offset;...  M=显示器序号或 '*'.
 ; 例 / Example: instances=1:top:0;2:bottom:8
 instances=
@@ -1330,6 +1335,8 @@ WTMMoveRight=Alt+Shift+L
     Bar_Transparent  := Pct2Alpha(Integer(CfgRead("Bar", "Opacity",  "78", ["StatusBar","Opacity"])))
     Bar_FontSize     := Integer(CfgRead("Bar", "FontSize",   "10", ["StatusBar","FontSize"]))
     Bar_MonitorIdx   := Integer(CfgRead("Bar", "MonitorIdx", "1",  ["StatusBar","MonitorIdx"]))
+    Bar_MarginLeft   := Max(0, Integer(CfgRead("Bar", "margin_left",  "0")))
+    Bar_MarginRight  := Max(0, Integer(CfgRead("Bar", "margin_right", "0")))
     Bar_Rounded    := StrLower(Trim(IniRead(ConfigFile, "Bar", "Rounded", "off")))
     Bar_Radius     := Integer(IniRead(ConfigFile, "Bar", "CornerRadius", 10))
     Bar_CornerMode := StrLower(Trim(IniRead(ConfigFile, "Bar", "CornerMode", "bottom")))
@@ -2549,13 +2556,23 @@ class BarInstance {
     }
 
     ; -- 构建状态栏 / Build the bar window --
+    ; -- 构建状态栏 / Build the bar window --
     Build() {
         global Color_Bg, Color_Active, Bar_FontSize, Bar_Height, Bar_Transparent
         global Bar_Rounded, Bar_Radius, Bar_CornerMode
+        global Bar_MarginLeft, Bar_MarginRight
         if (this.Mon < 1 || this.Mon > MonitorGetCount())
             this.Mon := 1
         MonitorGet(this.Mon, &mL, &mT, &mR, &mB)
-        monW := mR - mL
+
+        ; 应用左右边距，夹紧避免越界 / Apply L/R margins, clamp to stay valid
+        mlEff := mL + Bar_MarginLeft
+        mrEff := mR - Bar_MarginRight
+        barW  := mrEff - mlEff
+        if (barW < 50) {
+            mlEff := mL, barW := mR - mL    ; 边距过大则回退 / fall back if margins too wide
+            WMLog("Bar: margins exceed monitor " this.Mon " width; ignored")
+        }
 
         lineH := this._LineHeight()
         thick := Bar_Height
@@ -2566,10 +2583,10 @@ class BarInstance {
         off := this.Offset
 
         if (this.Pos = "bottom")
-            bx := mL, by := mB - thick - off
+            bx := mlEff, by := mB - thick - off
         else
-            this.Pos := "top", bx := mL, by := mT + off
-        bw := monW, bh := thick
+            this.Pos := "top", bx := mlEff, by := mT + off
+        bw := barW, bh := thick
 
         g := Gui("-Caption +AlwaysOnTop +ToolWindow +Owner +E0x08000000 -DPIScale")
         g.BackColor := Color_Bg
@@ -2583,7 +2600,6 @@ class BarInstance {
         RoundWindowEx(g, Bar_Rounded, Bar_Radius, Bar_CornerMode)
         this.UpdateDesktops()
     }
-
     ; -- 构建元素 / Build bar elements --
     _BuildElements(L, T, horiz) {
         global Bar_Cfg, Bar_FontSize
