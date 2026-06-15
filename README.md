@@ -200,20 +200,6 @@ TaskTimes=1_1200_1300    ; Monday 12:00-13:00
 
 ---
 
-### 🛠️ v2.6.1 Changelog
-
-Three long-standing window coordinate issues fixed — all rooted in **Windows DWM extended frame causing `WinGetPos` to misalign with what you actually see**.
-
-| # | Issue | Fix |
-|---|-------|-----|
-| 1️⃣ | **Toggle OnTop full border had no rounded corners** 🟦 | `PinBorder.Tick()` hardcoded `radius=0` → now uses `Border_Rounded`/`Border_Radius` dynamically |
-| 2️⃣ | **WinSelect letter bar wider than the window** 📏 | `_MakeLabel()` switched from `WinGetPos` to `GetWindowVisualRect()` for true visual width |
-| 3️⃣ | **Negative snap distance broke screen-edge alignment** 🧲 | Added `GetFrameDelta()` helper; `GatherSnapLines`, drag-move, and drag-resize all use visual-rect coordinates for snap, then convert back for `WinMove` |
-
-> 💡 You can now set `Snapping → Distance` back to `8~12`. No more `-15` hacks.
-
----
-
 ### 🛠️ v2.6.2 Changelog
 
 | # | Issue | Fix |
