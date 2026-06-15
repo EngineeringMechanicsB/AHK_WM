@@ -14,7 +14,7 @@ Built for people who keep too many windows open and still want their desktop to 
 
 -  📄 **Single-file script** — zero dependency hell
 -  ⚡ **Fast response** — no heavy background framework
--  🪟 **Windows 7 ~ 11** — works everywhere
+-  🖥️ **Windows 7 ~ 11** — works everywhere
 -  🧹 **Low interference** — shared/work computer friendly
 -  ⚙️ **Config-driven** — plug and play
 -  🧩 Virtual desktops, smart tiling, KDE-style drag, pie menu, status bar, borders, GUI help page… the works
