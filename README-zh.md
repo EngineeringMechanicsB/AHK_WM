@@ -155,19 +155,6 @@ WorkStart=0900
 WorkEnd=1745
 ```
 
----
-
-### 🛠️ v2.6.1 更新内容
-
-修复了三个长期存在的窗口坐标问题，根源都一样——**Windows DWM 扩展边框导致 WinGetPos 和肉眼可见的不一致**。
-
-| # | 问题 | 怎么修的 |
-|---|------|---------|
-| 1️⃣ | **Toggle OnTop 全边框没有圆角** 🟦 | `PinBorder.Tick()` 传 radius=0 → 改为根据 `Border_Rounded`/`Border_Radius` 动态计算 |
-| 2️⃣ | **WinSelect 字母标签条比窗口宽一截** 📏 | `_MakeLabel()` 改用 `GetWindowVisualRect()` 获取真实可视宽度 |
-| 3️⃣ | **吸附功能距离设负数才对齐，结果屏幕边界吸附偏移** 🧲 | 新增 `GetFrameDelta()` 辅助函数，`GatherSnapLines`、拖拽移动/缩放全改成以可视矩形坐标做吸附计算 |
-
-> 💡 现在可以把 `Snapping → Distance` 设回 `8~12` 了，不再需要用 `-15` 来补偿。
 
 ---
 
