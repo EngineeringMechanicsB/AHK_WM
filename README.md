@@ -1,119 +1,105 @@
-# AHK WM
+# 🔲 AHK WM v2.6.1
 
-A tiny, fast, single-file window manager for Windows, powered by **AutoHotkey v2**.
+<div align="center">
 
-AHK WM is built for people who keep too many windows open and still want their desktop to feel light, predictable, and easy to escape from.
+[🇬🇧 **English**](#en) · [🇨🇳 **中文**](#cn)
 
--  **Single-file script**
--  **Small size**
--  **Fast response**, no heavy background framework
--  **Works from Windows 7 to Windows 11**
--  **Minimal interference**, friendly for shared/work computers
--  **Config-file driven**, no complex setup required
--  Virtual desktops, smart tiling, KDE-style dragging, pie menu, status bar, borders, GUI help page, and more
+</div>
 
-> I made this script because many Windows window managers felt too heavy, too laggy, or too disruptive for my daily work setup.  
+---
+
+## 🇬🇧 <a id="en"></a>
+
+A lightweight, fast, single-file window manager for Windows, powered by **AutoHotkey v2**.
+
+Built for people who keep too many windows open and still want their desktop to feel light, predictable, and easy to escape from.
+
+- 📄 **Single-file script** — zero dependency hell
+- ⚡ **Fast response** — no heavy background framework
+- 🪟 **Windows 7 ~ 11** — works everywhere
+- 🧹 **Low interference** — shared/work computer friendly
+- ⚙️ **Config-driven** — plug and play
+- 🧩 Virtual desktops, smart tiling, KDE-style drag, pie menu, status bar, borders, GUI help page… the works
+
+> I made this because most Windows window managers felt too heavy, too laggy, and would make my computer unusable for anyone else.
 > This project has been written and used in real work for about two years.
 
-### Screenshots
+---
 
-![Screenshots](./docs/images/Screenshots.png)
+### 📸 Screenshots
 
-### Status Bar
+| Preview                                       | Description                                                                          |
+| --------------------------------------------- | ------------------------------------------------------------------------------------ |
+| ![Status Bar](./docs/images/status-bar.png)   | **Status Bar** — desktop indicator, clock, date, progress bar, and custom text/emoji |
+| ![Screenshots](./docs/images/Screenshots.png) | **Desktop Overview** — borders, tiling, and multi-window layout                      |
+| ![Smart Tile](./docs/images/Smart-tile.gif)   | **Smart Tiling** — one-key window arrangement                                        |
+| ![Pie Menu](./docs/images/pie-menu.gif)       | **Pie Menu** — radial menu for quick actions                                         |
+| ![WinSelect](./docs/images/window-Select.gif) | **WinSelect Mode** — letter-labeled window picker                                    |
+| ![Help Menu](./docs/images/help-menu.png)     | **Help Page** — built-in hotkey reference                                            |
 
-![Status Bar](./docs/images/status-bar.png)
+---
 
-### Pie Menu
+### 📦 Installation
 
-![Pie Menu](./docs/images/pie-menu.gif)
+#### Option 1: Run the `.ahk` script
 
-### Help Menu
+1. Install **AutoHotkey v2**  
+   👉 <https://www.autohotkey.com/>
 
-![Help Menu](./docs/images/help-menu.png)
+2. Download the script to your machine.
 
-### Smart Tile
+3. **Run as Administrator** (recommended — operations on elevated windows won't work otherwise).
 
-![Smart Tile](./docs/images/Smart-tile.gif)
+That's it.
 
-## Installation
+#### Option 2: Compiled `.exe`
 
-### Option 1: Run the `.ahk` script
+You can also run the compiled executable directly.
 
-1. Install official **AutoHotkey v2**  
-   <https://www.autohotkey.com/>
+> ⚠️ Without AHK v2 installed, the pie menu customization won't work. Installing AHK v2 is still recommended.
 
-2. Download or copy this script to your local machine.
+---
 
-3. Run the script as administrator.
+### 🚀 Quick Start
 
-That is all.
+| Action                        | Hotkey              |
+| ----------------------------- | ------------------- |
+| 📖 Show/hide help             | `Alt + /`           |
+| 🧩 Smart tile current monitor | `Alt + D`           |
+| ✋ Move window                 | `Alt + Left Mouse`  |
+| 📐 Resize window              | `Alt + Right Mouse` |
+| 🔄 Switch desktop             | `Alt + 1~9`         |
+| 📦 Move window to desktop     | `Alt + Shift + 1~9` |
+| 🚀 Move & switch desktop      | `Ctrl + Alt + 1~9`  |
+| 📊 Toggle status bar          | `Ctrl + Alt + B`    |
+| 💾 Save layout                | `Alt + Shift + S`   |
+| 🔁 Restore layout             | `Alt + Shift + R`   |
+| 📌 Gather all windows         | `Alt + Shift + G`   |
+| ❌ Close window                | `Alt + Q`           |
+| 🔄 Reload script              | `Alt + R`           |
+| 🛑 Exit safely                | `Alt + F12`         |
+| ⚡ Power menu                  | `Alt + X`           |
 
-> Administrator permission is recommended because window moving, resizing, and some hotkeys may not work correctly with elevated applications otherwise.
+Forgot something? Press `Alt + /` — the built-in help page has everything.
 
-### Option 2: Run the compiled version
+---
 
-You can also run the compiled `.exe` version directly.
+### 🧰 Features
 
-However:
+#### 🖥️ Virtual Desktops
 
-> If AutoHotkey v2 is not installed, the pie menu / radial menu may not work correctly.
+Lightweight virtual desktop system with:
 
-For the full experience, installing AutoHotkey v2 is still recommended.
+- Desktop switching
+- Move windows between desktops
+- Move and switch in one action
+- Hide method: minimize / transparency
 
-## Basic Usage
+#### 🧩 Smart Tiling
 
-Default useful hotkeys:
+Arrange all windows on the current monitor in one keypress.
 
-| Action                     | Hotkey              |
-| -------------------------- | ------------------- |
-| Show / Hide Help Menu      | `Alt + /`           |
-| Smart Tile Current Monitor | `Alt + D`           |
-| Move Window                | `Alt + Left Mouse`  |
-| Resize Window              | `Alt + Right Mouse` |
-| Switch Desktop             | `Alt + 1-9`         |
-| Move Window to Desktop     | `Alt + Shift + 1-9` |
-| Move and Switch Desktop    | `Ctrl + Alt + 1-9`  |
-| Toggle Top Bar             | `Ctrl + Alt + B`    |
-| Save Layout                | `Alt + Shift + S`   |
-| Restore Layout             | `Alt + Shift + R`   |
-| Gather All Windows         | `Alt + Shift + G`   |
-| Close Window               | `Alt + Q`           |
-| Reload Script              | `Alt + R`           |
-| Exit Safely                | `Alt + F12`         |
-| Power Menu                 | `Alt + X`           |
-
-If you forget the shortcuts, press:
-
-```tex
-Alt + /
-```
-
-The built-in help page will show the available actions.
-
-## Main Features
-
-### Virtual Desktops
-
-AHK WM provides a lightweight virtual desktop system.
-
-You can:
-
-- switch between desktops
-- move windows to another desktop
-- move a window and switch to that desktop
-- choose how inactive windows are hidden
-
-###  Smart Tiling
-
-Quickly arrange windows on the current monitor.
-
-Default hotkey:
-
-```text
-Alt + D
-```
-
-Config:
+Default: `Alt + D`
 
 ```ini
 [Tiling]
@@ -121,54 +107,26 @@ Gap=8
 Rules=1,3,1,1/2,1;1,3,2,2/2,1/2;1,3,3,2/2,2/2;
 ```
 
-Rule format:
+Rule format: `M,N,I,X,Y`
+
+- `M` = monitor (`*` = all)
+- `N` = total windows
+- `I` = window index
+- `X` = horizontal span: `1` full / `a/b` segment a / `(a-c)/b` a~c
+- `Y` = vertical span (same syntax)
+
+#### ✋ KDE-style Drag
+
+Move/resize from anywhere — no need to aim for the title bar.
 
 ```text
-M,N,I,X,Y
+Alt + Left  = move
+Alt + Right = resize
 ```
 
-Meaning:
+#### 🥧 Pie Menu
 
-```text
-M = monitor index, or * for all monitors
-N = total number of tiled windows
-I = current window index
-X = horizontal span
-Y = vertical span
-```
-
-Span syntax:
-
-```text
-1       = full axis
-a/b     = segment a of b
-(a-c)/b = segments a through c of b
-```
-
-### KDE-style Window Dragging
-
-Move or resize a window from anywhere.
-
-Default hotkeys:
-
-```text
-Alt + Left Mouse   = move window
-Alt + Right Mouse  = resize window
-```
-
-This is useful when you do not want to aim at the title bar.
-
-### Pie Menu
-
-AHK WM includes a customizable radial menu.
-
-Default trigger:
-
-```text
-Space + Right Mouse
-```
-
-Config:
+Trigger: `Space + Right Mouse`
 
 ```ini
 [PieMenu]
@@ -179,410 +137,315 @@ FontSize=14
 FontSizeActive=22
 ```
 
-You can use the pie menu for quick actions, shortcuts, tools, or your own workflow commands.
+Customize with your own shortcuts and workflow commands.
 
-### Status Bar
+#### 📊 Status Bar
 
-The bar can show:
-
-- desktops
-- time
-- date
-- progress
-- custom text / icons / emoji
-
-Config:
+Displays: desktops, time, date, progress, custom text/emoji.
 
 ```ini
 [Bar]
 HeightPct=3
 Opacity=78
-FontSize=10
 MonitorIdx=1
-
-desktops=true
-time=true
-date=true
-progress=true
-
-time_format=HH:mm
-date_format=yyyy-MM-dd
-
-custom_items=Edit Configuration file to hide
-layout=custom_1:(2-5)/10;desktops:(1-3)/20;date:(18-19)/20;time:20/20
-
-position=top
-offset=0
-AutoHideOnFullscreen=off
+position=top    ; top / bottom
 ```
 
-Custom items use this format:
+Custom items:
 
 ```ini
-custom_items=text_1;icon_1;text_2
+custom_items=text1;icon1;text2
+layout=custom_1:1/10;custom_2:2/10;desktops:(1-3)/20
 ```
 
-Then reference them in `layout` as:
+#### 🖼️ Window Borders
 
-```ini
-layout=custom_1:1/10;custom_2:2/10;custom_3:3/10
-```
-
-Bar position currently supports:
-
-```text
-top | bottom
-```
-
-### Window Borders
-
-AHK WM can draw borders for focused, dragged, pinned, or managed windows.
-
-Config:
+Focused / dragged / pinned / managed windows get visual borders.
 
 ```ini
 [Border]
-RefreshMs=10
-
-DragEnable=on
-DragMode=full
+DragMode=full          ; full = 4-sided, top = top strip only
 DragThickness=15
-DragOpacity=70
 DragRounded=on
 DragRadius=10
-
 PinMode=top
-PinThickness=10
-PinOpacity=78
 ```
 
-Border mode:
+#### ⌨️ WTM Mode
 
-```text
-top   = only top border
-full  = full border
-```
-
-Pinned border has the highest priority.
-
-### WTM Mode
-
-WTM is a preview tiling mode for keyboard-driven window control.
-
-Default WTM hotkeys may be disabled in the config by default because this feature is still under testing.
-
-Config:
+Keyboard-driven tiling preview mode. Still experimental — default hotkeys are disabled.
 
 ```ini
 [WTM]
 BorderMode=full
 BorderFocusColor=A020F0
-BorderUnfocusColor=555555
 BorderThickness=8
-BorderOpacity=80
-SizeStep=3
 Gap=10
-RoundedCorners=on
-CornerRadius=10
 ```
 
-Default navigation keys:
-
-```text
-Alt + H/J/K/L          = focus window
-Alt + Shift + H/J/K/L  = move / swap window
-```
-
-Enable the toggle hotkey in config if needed:
+Enable in config:
 
 ```ini
 [Hotkeys]
 WTMToggle=Alt+Shift+D
 ```
 
-### GUI Help Page
+#### 🎨 Themes
 
-Default hotkey:
+Built-in themes: `nord, tokyonight, dracula, gruvbox, monokai, solarized-dark/light, catppuccin-mocha/latte, onedark, ayu-dark, github-dark, rose-pine, everforest, kanagawa, material-deep, nightfox, palenight, horizon, oxocarbon`
 
-```text
-Alt + /
-```
-
-Config:
-
-```ini
-[GUI]
-HelpFontSize=10
-HelpWidth=620
-HelpHeight=0
-HelpOpacity=255
-```
-
-`HelpHeight=0` means automatic height.
-
-### Power Menu
-
-Default hotkey:
-
-```text
-Alt + X
-```
-
-Config:
-
-```ini
-[GUI]
-PowerFontSize=12
-PowerWidth=500
-PowerHeight=160
-PowerOpacity=255
-```
-
-Theme colors:
-
-```ini
-[Theme]
-PowerMenuBg=2E3440
-PowerBtnShutdown=B48EAD
-PowerBtnSleep=5E81AC
-PowerBtnReboot=BF616A
-```
-
-### Transparency Control
-
-Default hotkeys:
-
-```text
-Alt + WheelUp
-Alt + WheelDown
-```
-
-Useful when you want to see reference content behind a window.
-
-### Save / Restore Layout
-
-Default hotkeys:
-
-```text
-Alt + Shift + S  = save layout
-Alt + Shift + R  = restore layout
-```
-
-Useful for repeated workspaces or temporary window arrangements.
-
-### Exclude Windows
-
-Some windows should not be moved or resized by tiling / WTM.
-
-Config:
-
-```ini
-[Exclude]
-Titles=Picture-in-Picture
-Classes=
-Processes=
-```
-
-Title match rules:
-
-```text
-text      = contains match
-=text     = exact match
-re:regex  = regex match
-```
-
-## Configuration
-
-The script uses an `.ini` configuration file.
-
-Main sections:
-
-```ini
-[General]
-[Theme]
-[Paths]
-[Desktop]
-[Bar]
-[Border]
-[Tiling]
-[WTM]
-[PieMenu]
-[GUI]
-[WorkTime]
-[Exclude]
-[Hotkeys]
-```
-
-Most options can be edited directly.
-
-After editing the config, reload the script:
-
-```text
-Alt + R
-```
-
-## Themes
-
-Built-in theme names include:
-
-```text
-custom
-nord
-tokyonight
-dracula
-gruvbox
-monokai
-solarized-dark
-solarized-light
-catppuccin-mocha
-catppuccin-latte
-onedark
-ayu-dark
-github-dark
-rose-pine
-everforest
-kanagawa
-material-deep
-nightfox
-palenight
-horizon
-oxocarbon
-```
-
-Example:
-
-```ini
-[General]
-ActiveTheme=custom
-
-[Theme]
-Background=0e050f
-Text=e5e9f0
-Active=744da9
-Task=CF8DC9
-BorderDrag=A020F0
-BorderPin=FF5555
-BorderUnfocus=666666
-```
-
-Color values are hex RGB without `#`.
-
-## Work Time / Progress
-
-Config:
+#### ⏱️ Work Timer / Progress Bar
 
 ```ini
 [WorkTime]
 Mode=off
-WeekendBar=off
 WorkStart=0900
 WorkEnd=1745
-TaskTimes=1_1200_1300;2_1200_1300;
+TaskTimes=1_1200_1300    ; Monday 12:00-13:00
 ```
 
-Time format:
+---
 
-```text
-HHMM
-```
+### 🛠️ v2.6.1 Changelog
 
-Task time format:
+Three long-standing window coordinate issues fixed — all rooted in **Windows DWM extended frame causing `WinGetPos` to misalign with what you actually see**.
 
-```text
-Weekday_Start_End
-```
+| #   | Issue                                                     | Fix                                                                                                                                                     |
+| --- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1️⃣ | **Toggle OnTop full border had no rounded corners** 🟦    | `PinBorder.Tick()` hardcoded `radius=0` → now uses `Border_Rounded`/`Border_Radius` dynamically                                                         |
+| 2️⃣ | **WinSelect letter bar wider than the window** 📏         | `_MakeLabel()` switched from `WinGetPos` to `GetWindowVisualRect()` for true visual width                                                               |
+| 3️⃣ | **Negative snap distance broke screen-edge alignment** 🧲 | Added `GetFrameDelta()` helper; `GatherSnapLines`, drag-move, and drag-resize all use visual-rect coordinates for snap, then convert back for `WinMove` |
 
-Weekday:
+> 💡 You can now set `Snapping → Distance` back to `8~12`. No more `-15` hacks.
 
-```text
-1 = Monday
-2 = Tuesday
-3 = Wednesday
-4 = Thursday
-5 = Friday
-6 = Saturday
-7 = Sunday
-```
+---
 
-Example:
+### 🔮 Future Plans
 
-```text
-1_1200_1300
-```
+- **🧹 Config consolidation** — the current INI structure has accumulated cruft over two years. Plans to gradually unify and clean up configuration sections.
+- **🔧 WTM mode stability** — the keyboard-driven tiling mode is still experimental. Future work will focus on edge cases, crash recovery, and smoother multi-monitor support.
 
-means:
+---
 
-```text
-Monday 12:00 - 13:00
-```
+### ⚙️ Configuration
 
-## Default Hotkeys
+INI-based. Main sections:
 
 ```ini
-[Hotkeys]
-Help=Alt+/
-Exit=Alt+F12
-Reload=Alt+R
-
-DesktopSwitchPrefix=Alt
-DesktopMovePrefix=Alt+Shift
-DesktopMoveSwitchPrefix=Ctrl+Alt
-
-TileSmart=Alt+D
-GatherAll=Alt+Shift+G
-TogglePin=Ctrl+Alt+T
-ToggleBar=Ctrl+Alt+B
-SaveLayout=Alt+Shift+S
-RestoreLayout=Alt+Shift+R
-
-CloseWindow=Alt+Q
-CloseWindowAlt=Alt+MButton
-ToggleMaximize=Alt+F
-ToggleTop=Alt+T
-HideWindow=Alt+W
-
-TransparencyUp=Alt+WheelUp
-TransparencyDown=Alt+WheelDown
-
-SnapLeft=Alt+Left
-SnapRight=Alt+Right
-SnapUp=Alt+Up
-SnapDown=Alt+Down
-
-LaunchTerminal=Alt+Enter
-EditFile=Alt+V
-PowerMenu=Alt+X
-ClipboardHistory=Ctrl+``
-
-DragMove=Alt+LButton
-DragResize=Alt+RButton
-
-PieMenuTrigger=~Space & RButton
+[General] [Theme] [Paths] [Desktop] [Bar]
+[Border] [Tiling] [WTM] [PieMenu] [GUI]
+[WorkTime] [Exclude] [Hotkeys] [Snapping] [WinSelect]
 ```
 
-Some testing features may be disabled by default:
+Edit the config, then reload with `Alt + R`.
 
-```ini
-ToggleAllBorders=
-WTMToggle=
-```
+---
 
-You can assign hotkeys manually if you want to test them.
+### 📋 Notes
 
-## Notes
+AHK WM isn't a full desktop environment — it just makes daily window management faster and less annoying.
 
-AHK WM tries to stay simple.
-
-It is not a full desktop environment.  
-It is not trying to replace Windows.  
-It just tries to make daily window management faster and less annoying.
-
-Known notes:
-
-- WTM mode is still experimental.
-- Some special windows may need exclusions.
+- WTM is still experimental.
+- Some special windows may need manual exclusions.
 - Admin windows may require the script to run as administrator.
-- Games, UWP apps, remote desktop windows, and security tools may behave differently.
-- If something looks wrong, reload the script first.
+- Games, UWP apps, and remote desktop sessions may behave differently.
 
 Happy to use. ✨
+
+---
+
+## 🇨🇳 <a id="cn"></a>
+
+# 🔲 AHK WM v2.6.1
+
+一个轻量、快速、单文件的 Windows 窗口管理器，基于 **AutoHotkey v2**。
+
+专为那些窗口永远开一堆、但还想要桌面清爽的人准备。
+
+- 📄 **单文件脚本**，没有复杂依赖
+- ⚡ **响应迅速**，没有沉重的后台框架
+- 🪟 **Windows 7 ~ 11** 都能跑
+- 🧹 **低侵入**，办公室 / 公用电脑友好
+- ⚙️ **配置驱动**，开箱即用，不用折腾
+- 🧩 虚拟桌面、智能平铺、KDE 风格拖拽、饼菜单、状态栏、窗口边框、GUI 帮助页……该有的都有
+
+> 我写这个脚本是因为觉得大多 Windows 窗口管理器太重、太卡、并且会让其他人完全无法使用我的电脑。
+> 这个项目已经写了大约两年，并在实际工作中一直在用。
+
+---
+
+### 📸 截图
+
+| 预览                                                                           | 说明                                 |
+| ---------------------------------------------------------------------------- | ---------------------------------- |
+| ![状态栏](./docs/images/status-bar.png)                                         | **状态栏** — 桌面指示器、时钟、日期、进度条、自定义文字/图标 |
+| ![效果一览](./docs/images/Screenshots.png)                                       | **效果一览** — 窗口边框、平铺、多窗口布局           |
+| ![智能平铺](C:\Users\Administrator\Desktop\AHK_WM\docs\images\Smart-tile.gif)    | **智能平铺** — 一键排列窗口                  |
+| ![饼菜单](./docs/images/pie-menu.gif)                                           | **饼菜单** — 径向菜单 + 快捷操作              |
+| ![窗口选择](C:\Users\Administrator\Desktop\AHK_WM\docs\images\window-Select.gif) | **WinSelect 选择模式** — 字母标签快速选中窗口    |
+| ![帮助页](C:\Users\Administrator\Desktop\AHK_WM\docs\images\help-menu.png)      | **内置帮助页** — 快捷键速查                  |
+
+---
+
+### 📦 安装
+
+#### 方式一：直接运行 `.ahk` 脚本
+
+1. 安装 **AutoHotkey v2** 👉 <https://www.autohotkey.com/>
+2. 下载脚本到本地
+3. **以管理员身份运行**（推荐，否则对管理员窗口的部分操作可能无效）
+
+搞定。
+
+#### 方式二：编译版 `.exe`
+
+也可以直接跑编译后的 exe 文件。
+
+> ⚠️ 如果没装 AHK v2，饼菜单的功能无法自定义。建议还是装上。
+
+---
+
+### 🚀 基本操作
+
+| 功能           | 快捷键                 |
+| ------------ | ------------------- |
+| 📖 显示/隐藏帮助   | `Alt + /`           |
+| 🧩 智能平铺当前显示器 | `Alt + D`           |
+| ✋ 移动窗口       | `Alt + 左键`          |
+| 📐 调整窗口大小    | `Alt + 右键`          |
+| 🔄 切换桌面      | `Alt + 1~9`         |
+| 📦 移动窗口到桌面   | `Alt + Shift + 1~9` |
+| 🚀 移动并切到桌面   | `Ctrl + Alt + 1~9`  |
+| 📊 切换顶部状态栏   | `Ctrl + Alt + B`    |
+| 💾 保存布局      | `Alt + Shift + S`   |
+| 🔁 恢复布局      | `Alt + Shift + R`   |
+| 📌 收集所有窗口    | `Alt + Shift + G`   |
+| ❌ 关闭窗口       | `Alt + Q`           |
+| 🔄 重载脚本      | `Alt + R`           |
+| 🛑 安全退出      | `Alt + F12`         |
+| ⚡ 电源菜单       | `Alt + X`           |
+
+按 `Alt + /` 打开内置帮助页。
+
+---
+
+### 🧰 主要功能
+
+#### 🖥️ 虚拟桌面
+
+轻量级虚拟桌面系统。支持切换桌面、移窗口到另一个桌面、移动并切换、可选隐藏方式。
+
+#### 🧩 智能平铺
+
+一键排列当前显示器的所有窗口。默认 `Alt + D`。
+
+```ini
+[Tiling]
+Gap=8
+Rules=1,3,1,1/2,1;1,3,2,2/2,1/2;1,3,3,2/2,2/2;
+```
+
+规则格式：`M,N,I,X,Y` — M 显示器 / N 窗口数 / I 索引 / X 水平跨度 / Y 垂直跨度
+
+#### ✋ KDE 风格窗口拖拽
+
+从窗口任意位置拖拽/缩放，不用对准标题栏。
+
+```text
+Alt + 左键 = 移动
+Alt + 右键 = 缩放
+```
+
+#### 🥧 饼菜单
+
+按 `空格 + 右键` 触发，菜单项可自定义。
+
+```ini
+[PieMenu]
+SizePct=28
+CenterZonePct=27
+Opacity=78
+FontSize=14
+FontSizeActive=22
+```
+
+#### 📊 状态栏
+
+显示虚拟桌面、时间、日期、进度条、自定义文字/图标/emoji。
+
+```ini
+[Bar]
+HeightPct=3
+position=top    ; top / bottom
+```
+
+#### 🖼️ 窗口边框
+
+```ini
+[Border]
+DragMode=full    ; full 四边框 / top 仅顶条
+DragThickness=15
+DragRounded=on
+PinMode=top
+```
+
+#### ⌨️ WTM 模式
+
+键盘驱动的窗口平铺预览模式，仍在测试中。
+
+#### 🎨 主题
+
+内置 20+ 主题：nord、tokyonight、dracula、gruvbox、monokai 等。
+
+#### ⏱️ 工作进度条
+
+```ini
+[WorkTime]
+Mode=off
+WorkStart=0900
+WorkEnd=1745
+```
+
+---
+
+### 🛠️ v2.6.1 更新内容
+
+修复了三个长期存在的窗口坐标问题，根源都一样——**Windows DWM 扩展边框导致 WinGetPos 和肉眼可见的不一致**。
+
+| #   | 问题                             | 怎么修的                                                                       |
+| --- | ------------------------------ | -------------------------------------------------------------------------- |
+| 1️⃣ | **Toggle OnTop 全边框没有圆角** 🟦    | `PinBorder.Tick()` 传 radius=0 → 改为根据 `Border_Rounded`/`Border_Radius` 动态计算 |
+| 2️⃣ | **WinSelect 字母标签条比窗口宽一截** 📏   | `_MakeLabel()` 改用 `GetWindowVisualRect()` 获取真实可视宽度                         |
+| 3️⃣ | **吸附功能距离设负数才对齐，结果屏幕边界吸附偏移** 🧲 | 新增 `GetFrameDelta()` 辅助函数，`GatherSnapLines`、拖拽移动/缩放全改成以可视矩形坐标做吸附计算         |
+
+---
+
+### 🔮 未来计划
+
+- **🧹 配置统一整理** — 脚本功能越来越多，INI 配置项有些散乱。计划逐步统一、清理配置结构。
+- **🔧 WTM 模式稳定性** — 键盘平铺模式目前仍在试验阶段，计划逐步完善。
+
+---
+
+### ⚙️ 配置
+
+INI 配置文件，主要段落：`[General] [Theme] [Bar] [Border] [Tiling] [WTM] [PieMenu] [GUI] [WorkTime] [Exclude] [Hotkeys] [Snapping] [WinSelect]`
+
+改完配置按 `Alt + R` 重载即可。
+
+---
+
+### 📋 注意事项
+
+AHK WM 不是桌面环境，不打算替代 Windows。只是让日常窗口操作快一点、少烦人一点。
+
+- WTM 模式仍在试验中
+- 某些特殊窗口可能需要手动排除
+- 管理员窗口可能要求脚本以管理员身份运行
+- 游戏 / UWP / 远程桌面可能会有不同表现
+
+Happy to use. ✨
+
+---
+
+*Version 2.6.1 — 2026-06-15*
