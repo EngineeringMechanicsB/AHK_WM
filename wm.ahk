@@ -6,7 +6,7 @@
 ; 一、环境与全局指令 / 1. Environment & Global Directives
 ; ==============================================================================
 
-global WM_Version := "2.5.3"
+global WM_Version := "2.6.1"
 
 SetWorkingDir(A_ScriptDir)
 CoordMode("Mouse", "Screen")
@@ -595,6 +595,20 @@ GetWindowVisualRect(hwnd, &x, &y, &w, &h) {
     }
     WinGetPos(&x, &y, &w, &h, hwnd)
     return false
+}
+
+; ---- 窗口不可见边框偏移 / Get the invisible DWM frame border delta ----
+GetFrameDelta(hwnd, &dx, &dy, &dw, &dh) {
+    WinGetPos(&wx, &wy, &ww, &wh, hwnd)
+    if !GetWindowVisualRect(hwnd, &vx, &vy, &vw, &vh) {
+        dx := 0, dy := 0, dw := 0, dh := 0
+        return false
+    }
+    dx := vx - wx
+    dy := vy - wy
+    dw := ww - vw
+    dh := wh - vh
+    return true
 }
 
 ; ---- 坐标所在显示器 / Monitor index at a point ----
@@ -2084,7 +2098,9 @@ class PinBorder {
             o  := Border_Pin_Offset
             ot := Border_Pin_OffsetTop
             x -= o, y -= (o + ot), w += 2*o, h += 2*o + ot
-            frame.Place(x, y, w, h, t, 0, Border_Pin_Transparent, Border_Pin_Mode, -1)
+            ; ★ FIX: support rounded corners when in full-border mode
+            rad := (Border_Pin_Mode = "full" && Border_Rounded = "on") ? Border_Radius : 0
+            frame.Place(x, y, w, h, t, rad, Border_Pin_Transparent, Border_Pin_Mode, -1)
         }
     }
 }
@@ -3297,7 +3313,9 @@ GatherSnapLines(skipHwnd, &vLines, &hLines) {
         try {
             if (WinGetMinMax(h) = -1)
                 continue
-            WinGetPos(&ox, &oy, &ow, &oh, h)
+            ; ★ FIX: use visual rect for consistent snapping
+            if !GetWindowVisualRect(h, &ox, &oy, &ow, &oh)
+                WinGetPos(&ox, &oy, &ow, &oh, h)
         } catch
             continue
         vLines.Push(ox)
@@ -3447,9 +3465,14 @@ DragMoveHandler(*) {
     }
 
     MouseGetPos(&startX, &startY)
-    try WinGetPos(&winX, &winY, &winW, &winH, hwnd)
-    catch
-        return
+    ; ★ FIX: use visual rect for snapping, convert back for WinMove
+    if !GetWindowVisualRect(hwnd, &vx, &vy, &vw, &vh) {
+        try WinGetPos(&vx, &vy, &vw, &vh, hwnd)
+        catch
+            return
+    }
+    WinGetPos(&wx, &wy, &ww, &wh, hwnd)
+    frameDX := vx - wx, frameDY := vy - wy
 
     ctx := SnapCtx()
     vLines := [], hLines := []
@@ -3458,10 +3481,10 @@ DragMoveHandler(*) {
     DragBorder.Show()
     while GetKeyState("LButton", "P") {
         MouseGetPos(&curX, &curY)
-        rawX := winX + (curX - startX)
-        rawY := winY + (curY - startY)
-        SnapMove(rawX, rawY, winW, winH, vLines, hLines, ctx, &nx, &ny)
-        try WinMove(nx, ny,,, hwnd)
+        rawX := vx + (curX - startX)
+        rawY := vy + (curY - startY)
+        SnapMove(rawX, rawY, vw, vh, vLines, hLines, ctx, &nx, &ny)
+        try WinMove(nx - frameDX, ny - frameDY,,, hwnd)
         catch
             break
         DragBorder.Update(hwnd)
@@ -3479,17 +3502,22 @@ DragResizeHandler(*) {
     if (WinGetMinMax(hwnd) == 1)
         return
 
-    try WinGetPos(&winX, &winY, &winW, &winH, hwnd)
-    catch
-        return
-    if (winW <= 0 || winH <= 0)
+    ; ★ FIX: use visual rect for snapping, convert back for WinMove
+    if !GetWindowVisualRect(hwnd, &vx, &vy, &vw, &vh) {
+        try WinGetPos(&vx, &vy, &vw, &vh, hwnd)
+        catch
+            return
+    }
+    WinGetPos(&wx, &wy, &ww, &wh, hwnd)
+    frameDX := vx - wx, frameDY := vy - wy
+    if (vw <= 0 || vh <= 0)
         return
 
     MouseGetPos(&startX, &startY)
-    isLeft := (startX - winX) / winW < 0.5
-    isUp   := (startY - winY) / winH < 0.5
-    fixedRight  := winX + winW
-    fixedBottom := winY + winH
+    isLeft := (startX - vx) / vw < 0.5
+    isUp   := (startY - vy) / vh < 0.5
+    fixedRight  := vx + vw
+    fixedBottom := vy + vh
 
     ctx := SnapCtx()
     vLines := [], hLines := []
@@ -3499,12 +3527,12 @@ DragResizeHandler(*) {
     while GetKeyState("RButton", "P") {
         MouseGetPos(&curX, &curY)
         dX := curX - startX, dY := curY - startY
-        nX := isLeft ? (winX+dX) : winX, nW := isLeft ? (winW-dX) : (winW+dX)
-        nY := isUp   ? (winY+dY) : winY, nH := isUp   ? (winH-dY) : (winH+dY)
-        SnapResize(nX, nW, nY, nH, winX, winY, fixedRight, fixedBottom, isLeft, isUp
+        nX := isLeft ? (vx+dX) : vx, nW := isLeft ? (vw-dX) : (vw+dX)
+        nY := isUp   ? (vy+dY) : vy, nH := isUp   ? (vh-dY) : (vh+dY)
+        SnapResize(nX, nW, nY, nH, vx, vy, fixedRight, fixedBottom, isLeft, isUp
                  , vLines, hLines, ctx, &nX, &nW, &nY, &nH)
         if (nW > 50 && nH > 50) {
-            try WinMove(nX, nY, nW, nH, hwnd)
+            try WinMove(nX - frameDX, nY - frameDY, nW, nH, hwnd)
             catch
                 break
             DragBorder.Update(hwnd)
@@ -4438,9 +4466,12 @@ class WinSelect {
         global Color_Bg, Color_Active
         bg := (WS_BarColor != "") ? WS_BarColor : Color_Bg
         fg := (WS_TextColor != "") ? WS_TextColor : Color_Active
-        try WinGetPos(&x, &y, &w, &h, it.hwnd)
-        catch
-            return ""
+        ; ★ FIX: use visual rect for bar width to match visible window area
+        if !GetWindowVisualRect(it.hwnd, &x, &y, &w, &h) {
+            try WinGetPos(&x, &y, &w, &h, it.hwnd)
+            catch
+                return ""
+        }
         bw := (WS_BarWidth > 0) ? WS_BarWidth : w
         bh := Max(16, WS_BarHeight)
         bx := x + (w - bw) // 2
