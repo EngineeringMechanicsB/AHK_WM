@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🔲 AHK WM v2.6.1
+# 🔲 AHK WM v2.6.2
 
 [🇬🇧 English](README.md) · 🇨🇳 中文
 
@@ -171,6 +171,19 @@ WorkEnd=1745
 
 ---
 
+### 🛠️ v2.6.2 更新内容
+
+| # | 问题 | 修复 |
+|---|------|------|
+| 1️⃣ | **Bar 文字垂直居中，不裁剪** 📄 | 保留干净居中 + 合适的边距，高字符也不会被裁切 |
+| 2️⃣ | **平铺间隙与吸附坐标体系不一致** 🧩 | 自动检测 DWM 边框，`Tile_Gap=0` 现在与 `Snap_Distance=0` 行为一致 |
+| 3️⃣ | **WinSelect 取消置顶窗口的 AlwaysOnTop** 📌 | `_RestoreAll()` 恢复后自动重新设置 PinBorder 窗口的置顶 |
+| 4️⃣ | **右下角拖拽缩放有像素偏移** 📐 | `DragResizeHandler` 补全了 `frameDW/frameDH` 尺寸补偿 |
+| 5️⃣ | **边框颜色与主题不搭配** 🎨 | 所有主题的 `Border_Drag_Color` 改为与 `Color_Active` 一致 |
+| 6️⃣ | **欢迎页被 Bar 挡住** 🖼️ | 显示欢迎页后强制 `WinSetAlwaysOnTop()` |
+
+---
+
 ### 🔮 未来计划
 
 - **🧹 配置统一整理** — 脚本功能越来越多，INI 配置项有些散乱。计划逐步统一、清理配置结构。
@@ -199,4 +212,4 @@ Happy to use. ✨
 
 ---
 
-*Version 2.6.1 — 2026-06-15*
+*Version 2.6.2 — 2026-06-15*

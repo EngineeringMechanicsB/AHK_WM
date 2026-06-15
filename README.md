@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🔲 AHK WM v2.6.1
+# 🔲 AHK WM v2.6.2
 
 🇬🇧 English · [🇨🇳 中文](README-zh.md)
 
@@ -214,6 +214,19 @@ Three long-standing window coordinate issues fixed — all rooted in **Windows D
 
 ---
 
+### 🛠️ v2.6.2 Changelog
+
+| # | Issue | Fix |
+|---|-------|-----|
+| 1️⃣ | **Bar text vertical centering** 📄 | Preserved clean centering — avoids tall-glyph clipping with proper padding |
+| 2️⃣ | **Tiling Gap vs Snapping coordinate mismatch** 🧩 | Auto DWM frame detection so `Tile_Gap=0` = visual zero, matching `Snap_Distance=0` |
+| 3️⃣ | **WinSelect strips pinned windows' AlwaysOnTop** 📌 | `_RestoreAll()` re-applies topmost for PinBorder-tracked windows |
+| 4️⃣ | **Bottom-right resize had pixel offset** 📐 | Full frame-dimension compensation (`frameDW/frameDH`) in `DragResizeHandler` |
+| 5️⃣ | **Border colors don't match theme accents** 🎨 | `Border_Drag_Color` unified with `Color_Active` across all themes |
+| 6️⃣ | **Welcome screen hidden behind bar** 🖼️ | Force `WinSetAlwaysOnTop()` after welcome GUI |
+
+---
+
 ### 🔮 Future Plans
 
 - **🧹 Config consolidation** — the current INI structure has accumulated cruft over two years. Plans to gradually unify and clean up configuration sections.
@@ -248,4 +261,4 @@ Happy to use. ✨
 
 ---
 
-*Version 2.6.1 — 2026-06-15*
+*Version 2.6.2 — 2026-06-15*
