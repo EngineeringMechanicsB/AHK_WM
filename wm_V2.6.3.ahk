@@ -6,7 +6,7 @@
 ; 一、环境与全局指令 / 1. Environment & Global Directives
 ; ==============================================================================
 
-global WM_Version := "2.6.2"
+global WM_Version := "2.6.3"
 
 SetWorkingDir(A_ScriptDir)
 CoordMode("Mouse", "Screen")
@@ -137,6 +137,13 @@ global WS_BarHeight := 28, WS_BarWidth := 0, WS_OffsetY := 8
 global WS_FontSize := 14, WS_Opacity := 217
 global WS_Rounded := "on", WS_Radius := 10, WS_CornerMode := "top"
 global WS_Timeout := 12
+
+; ---- 窗口选择侧边栏配置 / Window-select sidebar settings ----
+global WS_Sidebar_FontSize := 14
+global WS_Sidebar_Width := 80
+global WS_Sidebar_Position := "left"
+global WS_Sidebar_OffsetX := 10
+global WS_Sidebar_OffsetY := 0
 
 ; ---- 功能环方向符号 / Pie-menu direction symbols ----
 Pie_Config := Map(
@@ -1257,6 +1264,15 @@ CornerMode=top
 ; 无按键自动退出秒数（0 = 不超时）/ Auto-exit seconds (0 = never).
 Timeout=12
 
+[WinSelectSidebar]
+; 锁定窗口侧边栏 / Locked-window sidebar (visible on all desktops).
+FontSize=14
+Width=80
+; 位置 left|right / Position
+Position=left
+OffsetX=10
+OffsetY=0
+
 ;--------------------------------------------------------------------------
 ; 热键：使用自然名称并以 '+' 连接 / Hotkeys - natural names joined by '+':
 ; Alt / Shift / Ctrl / Win
@@ -1516,6 +1532,14 @@ WTMMoveRight=Alt+Shift+L
     WS_Radius    := Max(0, SafeInt(IniRead(ConfigFile, "WinSelect", "CornerRadius", "10"), 10))
     WS_CornerMode := StrLower(Trim(IniRead(ConfigFile, "WinSelect", "CornerMode", "top")))
     WS_Timeout   := Max(0, SafeInt(IniRead(ConfigFile, "WinSelect", "Timeout", "12"), 12))
+
+    WS_Sidebar_FontSize := Max(8,  SafeInt(IniRead(ConfigFile, "WinSelectSidebar", "FontSize", "14"), 14))
+    WS_Sidebar_Width   := Max(50, SafeInt(IniRead(ConfigFile, "WinSelectSidebar", "Width",   "80"), 80))
+    WS_Sidebar_Position := StrLower(Trim(IniRead(ConfigFile, "WinSelectSidebar", "Position", "left")))
+    if !(WS_Sidebar_Position = "left" || WS_Sidebar_Position = "right")
+        WS_Sidebar_Position := "left"
+    WS_Sidebar_OffsetX := SafeInt(IniRead(ConfigFile, "WinSelectSidebar", "OffsetX", "10"), 10)
+    WS_Sidebar_OffsetY := SafeInt(IniRead(ConfigFile, "WinSelectSidebar", "OffsetY", "0"), 0)
 
     HK := Map()
     hkKeys := ["Help","Exit","Reload",
@@ -4346,6 +4370,8 @@ class WinSelect {
     static Locks  := Map()
     static IH     := ""
     static ZOrder := []   ; 进入模式时的层级（上→下）/ z-order on entry (top->bottom)
+    static SidebarGui   := ""    ; 侧边栏 GUI / sidebar showing locked-but-absent windows
+    static SidebarItems := []    ; 侧边栏显示的字母 / letters currently shown in the sidebar
 
     ; -- 清理失效锁定 / Purge locks whose window is gone --
     static _CleanLocks() {
@@ -4364,6 +4390,8 @@ class WinSelect {
     }
 
     ; -- 启动选择模式 / Start the selection mode --
+    ; ★ v2.6.3: 可在任何桌面运行（包括空桌面），侧边栏显示其他桌面的锁定窗口
+    ; ★ v2.6.3: works on every desktop (including empty ones); sidebar shows locked windows from other desktops
     static Start() {
         global WS_Scale, WS_Letters
         if this.Active {
@@ -4374,7 +4402,19 @@ class WinSelect {
         ; GetVisibleWindow 借助 WinGetList 返回的是 Z 序（上→下）
         ; GetVisibleWindow uses WinGetList which is z-ordered (top->bottom)
         wins := GetVisibleWindow()
-        if (wins.Length = 0) {
+        ; 构造当前桌面的可见窗口集合 / Build set of visible HWNDs on this desktop
+        visibleSet := Map()
+        for hwnd in wins
+            visibleSet[hwnd] := true
+        ; 构建侧边栏字母列表：锁定的、但在当前桌面不可见的窗口
+        ; Build sidebar letters: locked windows NOT visible on the current desktop
+        sidebarLetters := []
+        for L, hwnd in this.Locks {
+            if !visibleSet.Has(hwnd) && WinExist(hwnd)
+                sidebarLetters.Push(L)
+        }
+        ; 既无可见窗口也无侧边栏可显示 / No visible windows AND no sidebar items
+        if (wins.Length = 0 && sidebarLetters.Length = 0) {
             ShowOSD("WinSelect: No Windows")
             return
         }
@@ -4404,33 +4444,35 @@ class WinSelect {
             used[letter] := true
             this.Items.Push({hwnd:hwnd, letter:letter, gui:"", x:x, y:y, w:w, h:h})
         }
-        if (this.Items.Length = 0) {
-            this.Active := false
-            this.ZOrder := []
-            return
-        }
 
-        ; 先平铺所有参与窗口 / Tile all participating windows first
-        tileHwnds := []
-        for it in this.Items
-            tileHwnds.Push(it.hwnd)
-        this._TileForSelect(tileHwnds)
+        ; 平铺窗口并显示标签（仅当有可见窗口时）/ Tile & label only when visible windows exist
+        if (this.Items.Length > 0) {
+            tileHwnds := []
+            for it in this.Items
+                tileHwnds.Push(it.hwnd)
+            this._TileForSelect(tileHwnds)
 
-        ; 在平铺后的位置上缩小窗口并显示标签
-        ; Shrink each tiled window in place, then show its label
-        for it in this.Items {
-            if (WS_Scale < 0.999) {
-                try WinGetPos(&tx, &ty, &tw, &th, it.hwnd)
-                catch
-                    continue
-                nw := Max(120, Round(tw * WS_Scale))
-                nh := Max(90,  Round(th * WS_Scale))
-                nx := Round(tx + (tw - nw) / 2)
-                ny := Round(ty + (th - nh) / 2)
-                try WinMove(nx, ny, nw, nh, it.hwnd)
+            ; 在平铺后的位置上缩小窗口并显示标签
+            ; Shrink each tiled window in place, then show its label
+            for it in this.Items {
+                if (WS_Scale < 0.999) {
+                    try WinGetPos(&tx, &ty, &tw, &th, it.hwnd)
+                    catch
+                        continue
+                    nw := Max(120, Round(tw * WS_Scale))
+                    nh := Max(90,  Round(th * WS_Scale))
+                    nx := Round(tx + (tw - nw) / 2)
+                    ny := Round(ty + (th - nh) / 2)
+                    try WinMove(nx, ny, nw, nh, it.hwnd)
+                }
+                it.gui := this._MakeLabel(it)
             }
-            it.gui := this._MakeLabel(it)
         }
+
+        ; 创建侧边栏（如有锁定窗口不在当前桌面）/ Show sidebar for locked-but-absent windows
+        if (sidebarLetters.Length > 0)
+            this._CreateSidebar(sidebarLetters)
+
         this._Capture()
     }
 
@@ -4631,6 +4673,74 @@ class WinSelect {
         try ShowWin(hwnd)
     }
 
+    ; ★ v2.6.3: 创建侧边栏 — 显示其他桌面的锁定窗口字母
+    ; ★ v2.6.3: Create sidebar — show letters of locked windows from other desktops
+    static _CreateSidebar(sidebarLetters) {
+        global WS_Sidebar_FontSize, WS_Sidebar_Width, WS_Sidebar_Position
+        global WS_Sidebar_OffsetX, WS_Sidebar_OffsetY
+        global WS_Opacity, GUI_Rounded, GUI_CornerRadius
+        global Color_Bg, Color_Text, Color_Active
+        if (sidebarLetters.Length = 0)
+            return false
+        this.SidebarItems := sidebarLetters.Clone()
+        ; 确定侧边栏位置 / Determine sidebar position
+        MouseGetPos(&mx, &my)
+        mon := GetMonitorIndexAtPoint(mx, my)
+        MonitorGetWorkArea(mon, &mL, &mT, &mR, &mB)
+        BarReserve(mon, &mL, &mT, &mR, &mB)
+        sw := WS_Sidebar_Width
+        sx := (WS_Sidebar_Position = "right")
+            ? (mR - sw - WS_Sidebar_OffsetX)
+            : (mL + WS_Sidebar_OffsetX)
+        sy := mT + WS_Sidebar_OffsetY
+        ; 构建 GUI / Build the sidebar GUI
+        g := Gui("-Caption +AlwaysOnTop +ToolWindow +Owner -DPIScale")
+        g.BackColor := Color_Bg
+        g.MarginX := 0, g.MarginY := 0
+        ; 标题 / Title
+        titleH := Round(WS_Sidebar_FontSize * 2.2)
+        g.SetFont("s" WS_Sidebar_FontSize " w700 c" Color_Active, "Segoe UI")
+        g.Add("Text", "x0 y4 w" sw " h" titleH " Center +0x200 BackgroundTrans", "Locks")
+        ; 分隔线 / Separator
+        g.Add("Text", "x8 y" (titleH+2) " w" (sw-16) " h1 Background" Color_Active, "")
+        ; 字母项 / Letter items
+        itemH := Max(36, Round(WS_Sidebar_FontSize * 2.6))
+        itemY := titleH + 10
+        g.SetFont("s" WS_Sidebar_FontSize " w600 c" Color_Text, "Segoe UI")
+        for L in sidebarLetters {
+            ctl := g.Add("Text", "x0 y" itemY " w" sw " h" itemH " Center +0x200 BackgroundTrans", L)
+            ctl.OnEvent("Click", ObjBindMethod(this, "_SidebarClick", L))
+            itemY += itemH + 2
+        }
+        totalH := itemY
+        g.Show(Format("x{} y{} w{} h{} NoActivate", sx, sy, sw, totalH))
+        try WinSetTransparent(WS_Opacity, g.Hwnd)
+        RoundWindowEx(g, GUI_Rounded, GUI_CornerRadius)
+        this.SidebarGui := g
+        return true
+    }
+
+    ; ★ v2.6.3: 侧边栏字母点击 / Sidebar letter click handler
+    static _SidebarClick(letter, ctl, *) {
+        if !this.Active
+            return
+        ; 停止活跃的 InputHook / Stop the active input hook
+        try {
+            if IsObject(this.IH)
+                this.IH.Stop()
+        }
+        this._Finish(letter, "")
+    }
+
+    ; ★ v2.6.3: 销毁侧边栏 / Destroy sidebar GUI
+    static _DestroySidebar() {
+        if IsObject(this.SidebarGui) {
+            try this.SidebarGui.Destroy()
+            this.SidebarGui := ""
+        }
+        this.SidebarItems := []
+    }
+
     ; -- 还原层级 / Re-apply captured z-order (top->bottom list) --
     static _RestoreZOrder(order) {
         static SWP := 0x1 | 0x2 | 0x10   ; NOSIZE | NOMOVE | NOACTIVATE
@@ -4671,6 +4781,8 @@ class WinSelect {
         ; Restore z-order without activating, keeping relative stacking
         if (zorder.Length > 0)
             this._RestoreZOrder(zorder)
+        ; ★ v2.6.3: 销毁侧边栏 / destroy sidebar GUI
+        this._DestroySidebar()
         this.Items := []
         this.ZOrder := []
         this.Active := false
@@ -4682,6 +4794,7 @@ class WinSelect {
             if IsObject(this.IH)
                 this.IH.Stop()
         }
+        this._DestroySidebar()
         this._RestoreAll()
     }
 }
