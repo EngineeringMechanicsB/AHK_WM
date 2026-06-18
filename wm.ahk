@@ -6,7 +6,7 @@
 ; 一、环境与全局指令 / 1. Environment & Global Directives
 ; ==============================================================================
 
-global WM_Version := "2.6.3"
+global WM_Version := "2.6.4"
 
 SetWorkingDir(A_ScriptDir)
 CoordMode("Mouse", "Screen")
@@ -219,6 +219,18 @@ Pct2PxMin(p) {
 
 ; ---- 百分比转边框厚度 / Percent to border thickness ----
 Pct2Border(p) => Round(Max(0, Min(100, p+0)) * 20 / 100)
+
+; ---- DWM 边框补偿量 / DWM frame-gap compensation ----
+; Windows 窗口实际可见区域与 WinGetPos 之间存在不可见边框，
+; 导致平铺间隙出现空位。此函数计算需补偿的像素量。
+GetDWMGapCompensation(hwnds) {
+    for _hw in hwnds {
+        WinGetPos(&_wx, &_wy, &_ww, &_wh, _hw)
+        if GetWindowVisualRect(_hw, &_vx, &_vy, &_vw, &_vh)
+            return (_wx - _vx) * 2
+    }
+    return 0
+}
 
 ; ---- 容错整数解析 / Tolerant integer parse ----
 SafeInt(val, def := 0) {
@@ -978,28 +990,140 @@ MigrateLegacyConfig() {
         try IniDelete(ConfigFile, sec)
 }
 
+; ---- 配置文件编码强制确保 / Enforce UTF-16 LE encoding ----
+; 部分编辑器会改变配置文件编码，导致中文/特殊符号乱码。
+; 此函数每次启动时检查并修复编码，确保始终为 UTF-16 LE。
 EnsureConfigEncoding() {
     global ConfigFile
     if !FileExist(ConfigFile)
         return
+
     buf := ""
     try buf := FileRead(ConfigFile, "RAW")
-    if (!IsObject(buf) || buf.Size < 3)
+    if (!IsObject(buf) || buf.Size < 2)
         return
-    b1 := NumGet(buf, 0, "UChar"), b2 := NumGet(buf, 1, "UChar"), b3 := NumGet(buf, 2, "UChar")
+
+    b1 := NumGet(buf, 0, "UChar"), b2 := NumGet(buf, 1, "UChar")
+
+    ; UTF-16 LE BOM → 已经是目标编码
     if (b1 = 0xFF && b2 = 0xFE)
         return
-    if !(b1 = 0xEF && b2 = 0xBB && b3 = 0xBF)
-        return
+
+    ; 非 UTF-16 LE → 强制转换
+    txt := ""
+    encName := "unknown"
     try {
         txt := FileRead(ConfigFile, "UTF-8")
+        encName := "UTF-8"
+    }
+    if (txt = "") {
+        try {
+            txt := FileRead(ConfigFile)
+            encName := "ANSI/System"
+        } catch Error as e {
+            WMLogErr("EnsureConfigEncoding: cannot read config file", e)
+            return
+        }
+    }
+    if !InStr(txt, "[General]") {
+        WMLog("EnsureConfigEncoding: file content invalid, encoding fix aborted")
+        return
+    }
+    try {
         FileCopy(ConfigFile, ConfigFile . ".enc.bak", true)
         FileDelete(ConfigFile)
         FileAppend(txt, ConfigFile, "UTF-16")
-        WMLog("Config converted UTF-8 -> UTF-16 for full Unicode (Chinese) support")
+        WMLog("EnsureConfigEncoding: converted " encName " -> UTF-16 LE")
     } catch Error as e {
-        WMLogErr("EnsureConfigEncoding", e)
+        WMLogErr("EnsureConfigEncoding: conversion failed", e)
     }
+}
+
+; ---- 配置模板解析 / Parse the default INI template into a structured map ----
+ParseConfigTemplate(templateStr) {
+    result := Map()
+    curSec := ""
+    for line in StrSplit(templateStr, "`n", "`r") {
+        line := Trim(line)
+        if (line = "" || SubStr(line, 1, 1) = ";")
+            continue
+        if RegExMatch(line, "^\[(.+)\]$", &m) {
+            curSec := Trim(m[1])
+            if !result.Has(curSec)
+                result[curSec] := Map()
+        } else if (curSec != "") && RegExMatch(line, "^([^=]+)=(.*)$", &m) {
+            key := Trim(m[1])
+            val := Trim(m[2])
+            result[curSec][key] := val
+        }
+    }
+    return result
+}
+
+; ---- 配置完整性检查 / Config integrity check ----
+; 每次启动对比默认模板与用户配置，自动补充缺失键、标注多余键。
+ConfigUpgrade(templateStr) {
+    global ConfigFile
+
+    expected := ParseConfigTemplate(templateStr)
+    if (expected.Count = 0) {
+        WMLog("ConfigUpgrade: template parse failed, skipping")
+        return
+    }
+
+    actualSections := Map()
+    allSections := IniRead(ConfigFile)
+    for sec in StrSplit(allSections, "`n", "`r") {
+        sec := Trim(sec)
+        if (sec = "")
+            continue
+        actualSections[sec] := Map()
+        keys := IniRead(ConfigFile, sec)
+        for keyLine in StrSplit(keys, "`n", "`r") {
+            keyLine := Trim(keyLine)
+            if (keyLine = "")
+                continue
+            if RegExMatch(keyLine, "^([^=]+)=(.*)$", &m)
+                actualSections[sec][Trim(m[1])] := true
+        }
+    }
+
+    addedCount := 0
+    unknownCount := 0
+
+    for sec, keyMap in expected {
+        if (sec = "Hotkeys")
+            continue
+        for key, defVal in keyMap {
+            if (actualSections.Has(sec) && actualSections[sec].Has(key))
+                continue
+            try {
+                IniWrite(defVal, ConfigFile, sec, key)
+                WMLog("ConfigUpgrade: + [" sec "] " key " = " defVal)
+                addedCount++
+            }
+        }
+    }
+
+    for sec, keyMap in actualSections {
+        if !expected.Has(sec) {
+            for key, _ in keyMap {
+                WMLog("ConfigUpgrade: ? unknown section [" sec "] " key)
+                unknownCount++
+            }
+            continue
+        }
+        expectedKeys := expected[sec]
+        for key, _ in keyMap {
+            if !expectedKeys.Has(key) {
+                WMLog("ConfigUpgrade: ? unknown key [" sec "] " key)
+                unknownCount++
+            }
+        }
+    }
+
+    if (addedCount > 0 || unknownCount > 0)
+        WMLog("ConfigUpgrade: done | +" addedCount " added | " unknownCount " unknown")
 }
 
 ; ==============================================================================
@@ -1018,9 +1142,8 @@ LoadOrInitConfig() {
         }
     }
 
-    if !FileExist(ConfigFile) {
-        DefaultIni := "
-        (
+    DefaultIni := "
+    (
 ;==========================================================================
 ; AHK WM 配置文件 / AHK WM Configuration
 ;==========================================================================
@@ -1134,6 +1257,8 @@ Opacity=80
 ; 圆角 / Rounded corners + radius (px).
 RoundedCorners=on
 Radius=10
+; 圆角模式 / Corner mode: all | top | bottom.
+CornerMode=all
 ; WTM 平铺间隙（像素，可为负）/ WTM tiling gap (px, may be negative).
 Gap=10
 ; WTM 调整步长（保留）/ WTM resize step (reserved).
@@ -1144,6 +1269,9 @@ PinThickness=10
 PinOffset=0
 PinOffsetTop=5
 PinOpacity=78
+; 置顶指示条圆角 / Pin bar rounding. Rounded: on|off, Radius: px.
+PinRounded=off
+PinRadius=0
 
 [Tiling]
 ; 智能平铺间隙（像素，可为负）/ Smart tiling gap in pixels (may be negative).
@@ -1332,11 +1460,12 @@ WTMMoveLeft=Alt+Shift+H
 WTMMoveDown=Alt+Shift+J
 WTMMoveUp=Alt+Shift+K
 WTMMoveRight=Alt+Shift+L
-        )"
+    )"
 
-        DefaultIni := StrReplace(DefaultIni, "%OUTPUTDIR%", A_MyDocuments)
+    if !FileExist(ConfigFile) {
+        tmpIni := StrReplace(DefaultIni, "%OUTPUTDIR%", A_MyDocuments)
         try {
-            FileAppend(DefaultIni, ConfigFile, "UTF-16")
+            FileAppend(tmpIni, ConfigFile, "UTF-16")
         } catch Error as e {
             MsgBox("Failed to create config file: " . e.Message)
             ExitApp
@@ -1346,6 +1475,8 @@ WTMMoveRight=Alt+Shift+L
     EnsureConfigEncoding()
 
     MigrateLegacyConfig()
+
+    ConfigUpgrade(DefaultIni)
 
     ActiveTheme := IniRead(ConfigFile, "General", "ActiveTheme", "custom")
 
@@ -1437,8 +1568,8 @@ WTMMoveRight=Alt+Shift+L
     OSD_Rounded  := CfgRead("GUI", "OSDRounded", GUI_Rounded, ["OSD","RoundedCorners"])
     OSD_Radius   := Max(0, Integer(CfgRead("GUI", "OSDRadius", GUI_CornerRadius, ["OSD","CornerRadius"])))
 
-    Border_Pin_Rounded  := "off"
-    Border_Pin_Radius   := 0
+    Border_Pin_Rounded := StrLower(Trim(IniRead(ConfigFile, "Border", "PinRounded", "off")))
+    Border_Pin_Radius  := Max(0, Integer(IniRead(ConfigFile, "Border", "PinRadius", "0")))
 
     Help_FontSize := Integer(CfgRead("GUI", "HelpFontSize", "10",  ["HelpMenu","FontSize"]))
     Help_Width    := Integer(CfgRead("GUI", "HelpWidth",    "620", ["HelpMenu","Width"]))
@@ -2125,8 +2256,8 @@ class PinBorder {
             o  := Border_Pin_Offset
             ot := Border_Pin_OffsetTop
             x -= o, y -= (o + ot), w += 2*o, h += 2*o + ot
-            ; ★ FIX: support rounded corners when in full-border mode
-            rad := (Border_Pin_Mode = "full" && Border_Rounded = "on") ? Border_Radius : 0
+            ; ★ v2.6.4: Pin bar uses own rounded settings from [Border] PinRounded/PinRadius
+            rad := (Border_Pin_Rounded = "on") ? Border_Pin_Radius : 0
             frame.Place(x, y, w, h, t, rad, Border_Pin_Transparent, Border_Pin_Mode, -1)
         }
     }
@@ -2449,6 +2580,8 @@ BarShown(str) {
     s := StrLower(Trim(str))
     return !(s = "" || s = "false" || s = "off" || s = "0")
 }
+; 通用别名（非 Bar 场景使用更清晰的命名）
+BoolCfg(str) => BarShown(str)
 
 ; ---- 组件开关查询 / Widget-flag lookup ----
 BarFlag(key) {
@@ -3077,15 +3210,8 @@ TileCurrentMonitor(*) {
         return
     }
 
-    ; ★ v2.6.2: auto-compensate DWM frame so Tile_Gap=0 = visual 0
-    _autoFG := 0
-    for _hw in windows {
-        WinGetPos(&_wx, &_wy, &_ww, &_wh, _hw)
-        if GetWindowVisualRect(_hw, &_vx, &_vy, &_vw, &_vh) {
-            _autoFG := (_wx - _vx) * 2
-            break
-        }
-    }
+    ; ★ v2.6.4: auto-compensate DWM frame so Tile_Gap=0 = visual 0
+    _autoFG := GetDWMGapCompensation(windows)
     _gapEff := Tile_Gap + _autoFG
     if (_gapEff > 0) {
         WL += _gapEff/2, WT += _gapEff/2, W -= _gapEff, H -= _gapEff
@@ -4490,15 +4616,8 @@ class WinSelect {
         W := WR - WL
         H := WB - WT
 
-        ; ★ v2.6.2: auto-compensate DWM frame for WinSelect tiling
-        _autoFG := 0
-        for _hw in hwnds {
-            WinGetPos(&_wx, &_wy, &_ww, &_wh, _hw)
-            if GetWindowVisualRect(_hw, &_vx, &_vy, &_vw, &_vh) {
-                _autoFG := (_wx - _vx) * 2
-                break
-            }
-        }
+        ; ★ v2.6.4: auto-compensate DWM frame for WinSelect tiling
+        _autoFG := GetDWMGapCompensation(hwnds)
         _gapEff := Tile_Gap + _autoFG
         if (_gapEff > 0) {
             WL += _gapEff/2, WT += _gapEff/2, W -= _gapEff, H -= _gapEff
