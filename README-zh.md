@@ -8,7 +8,6 @@
   <img src="https://img.shields.io/badge/许可-MIT-brightgreen?style=flat-square" alt="许可" />
   <img src="https://badgen.net/github/release/EngineeringMechanicsB/AHK_WM?icon=github" alt="版本" />
   <img src="https://badgen.net/github/stars/EngineeringMechanicsB/AHK_WM?icon=github" alt="Stars" />
-  <img src="https://badgen.net/github/license/EngineeringMechanicsB/AHK_WM?icon=github" alt="许可" />
 </p>
 
 <p>
@@ -120,11 +119,11 @@
 | 📊 切换状态栏 | `Ctrl + Alt + B` |
 | 💾 保存布局 | `Alt + Shift + S` |
 | 🔁 恢复布局 | `Alt + Shift + R` |
-| 📌 收集所有窗口 | `Alt + Shift + G` |
+| 🧲 收集所有窗口 | `Alt + Shift + G` |
 | 🔍 调节窗口透明度 | `Alt + 滚轮` |
 | 📌 切换置顶 | `Alt + T` |
 | ❌ 关闭鼠标下方窗口 | `Alt + Q` |
-| 🔄 重载脚本 | `Alt + R` |
+| 🔃 重载脚本 | `Alt + R` |
 | 🛑 安全退出 | `Alt + F12` |
 | ⚡ 电源菜单 | `Alt + X` |
 | 🥧 饼菜单 | `空格 + 右键` |

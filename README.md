@@ -8,7 +8,6 @@
   <img src="https://img.shields.io/badge/license-MIT-brightgreen?style=flat-square" alt="License" />
   <img src="https://badgen.net/github/release/EngineeringMechanicsB/AHK_WM?icon=github" alt="Release" />
   <img src="https://badgen.net/github/stars/EngineeringMechanicsB/AHK_WM?icon=github" alt="Stars" />
-  <img src="https://badgen.net/github/license/EngineeringMechanicsB/AHK_WM?icon=github" alt="License" />
 </p>
 
 <p>
@@ -120,11 +119,11 @@ Run the pre-compiled executable — no AHK installation needed for basic use.
 | 📊 Toggle status bar | `Ctrl + Alt + B` |
 | 💾 Save layout | `Alt + Shift + S` |
 | 🔁 Restore layout | `Alt + Shift + R` |
-| 📌 Gather all windows | `Alt + Shift + G` |
+| 🧲 Gather all windows | `Alt + Shift + G` |
 | 🔍 Window transparency | `Alt + Mouse Wheel` |
 | 📌 Toggle always-on-top | `Alt + T` |
 | ❌ Close window under mouse | `Alt + Q` |
-| 🔄 Reload script | `Alt + R` |
+| 🔃 Reload script | `Alt + R` |
 | 🛑 Safe exit | `Alt + F12` |
 | ⚡ Power menu | `Alt + X` |
 | 🥧 Pie menu | `Space + Right Mouse` |
