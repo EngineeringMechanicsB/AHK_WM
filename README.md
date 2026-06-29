@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🔲 AHK WM <sub>v2.6.4</sub>
+# 🔲 AHK WM <sub>v2.8.0</sub>
 
 <p>
   <img src="https://img.shields.io/badge/AutoHotkey-v2.0-brightgreen?style=flat-square" alt="AutoHotkey v2" />
@@ -60,9 +60,9 @@
 | 📄 **Single file** | One `.ahk` script, no dependencies | 🧩 **Smart Tiling** | One-key layout per monitor |
 | ⚡ **Fast** | No background framework | 🖥️ **9 Virtual Desktops** | Switch, move, gather via hotkeys |
 | 🖥️ **Win 7 ~ 11** | All modern Windows versions | 🥧 **Pie Menu** | `Space + Right Mouse` |
-| 🧹 **Low interference** | Shared-computer friendly | 📊 **Status Bar** | Desktop, clock, date, progress |
+| 🧹 **Low interference** | Shared-computer friendly | 📊 **Status Bar** | Gradient, rounded, multi-monitor |
 | ⚙️ **INI config** | Edit and reload on the fly | 🎨 **20+ Themes** | Nord, Dracula, Catppuccin, etc. |
-| 🛡️ **Fault isolation** | Errors caught — won't crash | 📋 **Clipboard History** | Built-in logger & viewer |
+| 🌈 **Gradient colors** | Bar, borders, PowerMenu | 📋 **Clipboard History** | Built-in logger & viewer |
 
 > Built over two years of daily use because every other Windows WM felt too heavy and made my computer unusable for anyone else.
 
@@ -79,8 +79,40 @@
 | ![Status Bar](docs/images/status-bar.png) | **Status Bar** — desktop indicator, clock, date, progress bar |
 | ![Help Page](docs/images/help-menu.png) | **Built-in Help** — `Alt + /` for full hotkey reference |
 
----
+### 🎨 Bar Customization (v2.8)
 
+Per-element gradient backgrounds, rounded corners, and text styles on the status bar.
+
+<p align="center">
+  <img src="docs/images/bar-layout.png" alt="Bar Layout" width="80%" />
+  <br/><em>Gradient backgrounds with rounded corners (bg mode)</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/bar-config.png" alt="Bar Config" width="80%" />
+  <br/><em>Configuration format: N,element,span,colors,bg|tx,on|off</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/bar-fullscreen.png" alt="Bar Fullscreen" width="80%" />
+  <br/><em>Full customization overview</em>
+</p>
+
+### 🌈 Gradient Borders (v2.8)
+
+`BorderDrag`, `BorderPin`, and `BorderUnfocus` now support comma-separated gradient colors.
+
+<p align="center">
+  <img src="docs/images/border-gradient.png" alt="Border Gradient" width="80%" />
+  <br/><em>Drag border with gradient color</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/border-fullscreen.png" alt="Border Fullscreen" width="80%" />
+  <br/><em>Border gradient in action</em>
+</p>
+
+---
 ## 📦 Installation
 
 ### Option 1: Run the `.ahk` script ⭐ Recommended
@@ -218,7 +250,7 @@ FontSizeActive=22
 
 ### 📊 Status Bar
 
-Multi-monitor bar with proportional layout. Shows virtual desktops, clock, date, work progress, and custom text/emoji/icons.
+Multi-monitor bar with proportional layout, **gradient colors**, and rounded corners. Shows virtual desktops, clock, date, work progress, and custom text/icons.
 
 ```ini
 [Bar]
@@ -228,21 +260,25 @@ MonitorIdx=1
 position=top              ; top | bottom
 ```
 
-Custom items:
+**Element layout format** (gradient + rounded support):
 ```ini
-custom_items=text1;icon1;text2
-layout=custom_1:1/10;custom_2:2/10;desktops:(1-3)/20
+; N,element,span,c1..cn,bg|tx,on|off
+layout=1,time,20/20,ff0000,00ff00,bg,on;desktops,(1-3)/20;custom_1,5/20,FAB387,bg,on
 ```
 
+- `bg` = gradient/solid background · `tx` = gradient text · `on|off` = rounded corners (bg only)
+- Colors support `#` prefix: `#FF0000,#00FF00`
+- Legacy `element:span,color` format still compatible
+
 - Auto-hides when a fullscreen app is detected
-- Toggle: `Ctrl + Alt + B`
-- Rounded corners, per-monitor instances
+- Pause-on-fullscreen option (`[General] PauseOnFullscreen=on`)
+- Toggle: `Ctrl + Alt + B` · Reload: `Alt + R`
 
 ---
 
 ### 🖼️ Window Borders
 
-Visual borders for active, dragged, pinned, and managed windows.
+Visual borders for active, dragged, pinned, and managed windows. **Now with gradient color support.**
 
 | Mode | Purpose |
 |------|---------|
@@ -253,12 +289,14 @@ Visual borders for active, dragged, pinned, and managed windows.
 
 ```ini
 [Border]
-DragMode=full             ; full = 4-sided | top = top strip only
-DragThickness=15
-DragRounded=on
-DragRadius=10
-PinMode=top
+Mode=full                  ; full | top
+Thickness=15
+RoundedCorners=on
+Radius=10
+; Colors support gradients: color1,color2,...
 ```
+
+Border colors (`BorderDrag`, `BorderPin`, `BorderUnfocus`) support comma-separated gradient colors.
 
 ---
 
@@ -422,27 +460,22 @@ Single INI file:
 
 ## 🛠️ Changelog
 
+### v2.8.0 (2026-06-29)
+
+- 🌈 **Gradient colors** — bar elements, borders, and PowerMenu now support gradient backgrounds and gradient text
+- 🔲 **Bar rounded corners** — per-element `on|off` switch for bg-mode rounded corners
+- 🎨 **Bar layout overhaul** — new `N,element,span,colors,bg|tx,on|off` format with granular control
+- 🔧 **Border gradient** — `BorderDrag`/`BorderPin`/`BorderUnfocus` support comma-separated gradient colors
+- ⚙️ **Pause-on-fullscreen** — `[General] PauseOnFullscreen=on` suspends hotkeys when gaming
+- 🔍 **Transparency step** — configurable step size (`TransparencyStep=20`), snap to multiples
+- 🧹 **Code cleaned** — removed legacy migration, legacy WTM globals, redundant sections
+- 🐛 **Fixed** — bg rounded corners, single-color bg rendering, transparency minimum, help/OSD theme follow
+
 ### v2.6.4 (2026-06-18)
 
 - 🆕 **Config integrity check** — auto-detect missing keys & add defaults on every startup
-- 🆕 **Encoding enforcement** — force UTF-16 LE on startup to prevent editor corruption
 - 🐛 **Pin border rounding** — `Border_Pin_Rounded`/`Pin_Radius` now read from config
-- 🔧 **DWM compensation** — extracted into shared `GetDWMGapCompensation()` function
-- 🔧 **Template-based config** — default config template moved to module level for reuse
-
-### v2.6.3 (2026-06-16)
-- Updated compiled executables (64-bit & 32-bit)
-
-### v2.6.2 (2026-06-15)
-
-| # | Issue | Fix |
-|---|-------|-----|
-| 1️⃣ | Bar text vertical centering | Proper padding to avoid tall-glyph clipping |
-| 2️⃣ | Tiling gap vs snapping mismatch | Auto DWM frame detection for visual zero-gap |
-| 3️⃣ | WinSelect strips AlwaysOnTop | `_RestoreAll()` reapplies topmost for pinned windows |
-| 4️⃣ | Bottom-right resize pixel offset | Full `frameDW`/`frameDH` compensation |
-| 5️⃣ | Border colors mismatch theme | `Border_Drag_Color` unified with `Color_Active` |
-| 6️⃣ | Welcome screen behind bar | Force `WinSetAlwaysOnTop()` after welcome GUI |
+- 🔧 **DWM compensation** — extracted into shared function
 
 ---
 

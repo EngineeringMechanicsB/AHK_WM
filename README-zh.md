@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🔲 AHK WM <sub>v2.6.4</sub>
+# 🔲 AHK WM <sub>v2.8.0</sub>
 
 <p>
   <img src="https://img.shields.io/badge/AutoHotkey-v2.0-brightgreen?style=flat-square" alt="AutoHotkey v2" />
@@ -62,7 +62,7 @@
 | 🖥️ **Win 7 ~ 11** | 覆盖所有版本 | 🥧 **饼菜单** | `空格 + 右键` 触发 |
 | 🧹 **低侵入** | 公用电脑友好 | 📊 **状态栏** | 桌面、时钟、日期、进度 |
 | ⚙️ **INI 配置** | 编辑即重载 | 🎨 **20+ 主题** | Nord、Dracula、Catppuccin 等 |
-| 🛡️ **故障隔离** | 出错不崩溃 | 📋 **剪贴板历史** | 内置记录与查看 |
+| 🌈 **渐变色** | 状态栏、边框、电源菜单 | 📋 **剪贴板历史** | 内置记录与查看 |
 
 > 两年日常使用打磨。起因是市面上的 Windows 窗口管理器都太重，别人完全没法用我的电脑。
 
@@ -78,6 +78,39 @@
 | ![窗口选择](docs/images/window-Select.gif) | **WinSelect** — 字母标签叠加层，快速切换 |
 | ![状态栏](docs/images/status-bar.png) | **状态栏** — 桌面指示器、时钟、日期、进度条 |
 | ![帮助页](docs/images/help-menu.png) | **内置帮助** — `Alt + /` 查看全部快捷键 |
+
+### 🎨 Bar 自定义（v2.8）
+
+逐元素渐变背景、圆角和文字样式。
+
+<p align="center">
+  <img src="docs/images/bar-layout.png" alt="Bar Layout" width="80%" />
+  <br/><em>渐变背景 + 圆角（bg 模式）</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/bar-config.png" alt="Bar Config" width="80%" />
+  <br/><em>配置格式：N,element,span,colors,bg|tx,on|off</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/bar-fullscreen.png" alt="Bar Fullscreen" width="80%" />
+  <br/><em>自定义效果一览</em>
+</p>
+
+### 🌈 边框渐变（v2.8）
+
+`BorderDrag`、`BorderPin`、`BorderUnfocus` 支持逗号分隔渐变色。
+
+<p align="center">
+  <img src="docs/images/border-gradient.png" alt="Border Gradient" width="80%" />
+  <br/><em>拖拽边框渐变效果</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/border-fullscreen.png" alt="Border Fullscreen" width="80%" />
+  <br/><em>边框渐变实机展示</em>
+</p>
 
 ---
 
@@ -218,7 +251,7 @@ FontSizeActive=22
 
 ### 📊 状态栏
 
-多显示器状态栏，比例布局。显示虚拟桌面、时钟、日期、工作进度、自定义文字/图标/emoji。
+多显示器状态栏，比例布局，**支持渐变色和圆角**。显示虚拟桌面、时钟、日期、工作进度、自定义文字/图标。
 
 ```ini
 [Bar]
@@ -228,15 +261,18 @@ MonitorIdx=1
 position=top              ; top | bottom
 ```
 
-自定义内容：
+**元素布局格式**（渐变 + 圆角）：
 ```ini
-custom_items=文字1;图标1;文字2
-layout=custom_1:1/10;custom_2:2/10;desktops:(1-3)/20
+; N,element,span,c1..cn,bg|tx,on|off
+layout=1,time,20/20,ff0000,00ff00,bg,on;desktops,(1-3)/20;custom_1,5/20,FAB387,bg,on
 ```
 
-- 全屏应用自动隐藏
-- 手动切换：`Ctrl + Alt + B`
-- 圆角支持，每个显示器独立实例
+- `bg` = 渐变/纯色背景 · `tx` = 渐变文字 · `on|off` = 圆角开关（仅 bg）
+- 颜色支持 `#` 前缀：`#FF0000,#00FF00`
+- 兼容旧格式：`element:span,color`
+
+- 全屏应用自动隐藏 · 全屏暂停选项（`PauseOnFullscreen=on`）
+- 切换：`Ctrl + Alt + B` · 重新加载：`Alt + R`
 
 ---
 
@@ -253,9 +289,12 @@ layout=custom_1:1/10;custom_2:2/10;desktops:(1-3)/20
 
 ```ini
 [Border]
-DragMode=full             ; full = 四边框 | top = 仅顶条
-DragThickness=15
-DragRounded=on
+Mode=full                  ; full | top
+Thickness=15
+RoundedCorners=on
+Radius=10
+; 边框颜色支持渐变：color1,color2,...
+```
 DragRadius=10
 PinMode=top
 ```
@@ -422,23 +461,22 @@ Terminal=wt.exe           ; Windows Terminal
 
 ## 🛠️ 更新日志
 
+### v2.8.0 (2026-06-29)
+
+- 🌈 **渐变色** — 状态栏元素、边框、电源菜单支持渐变背景和渐变文字
+- 🔲 **状态栏圆角** — 逐元素 `on|off` 开关，bg 模式圆角控制
+- 🎨 **状态栏布局重构** — 新格式 `N,element,span,colors,bg|tx,on|off`
+- 🔧 **边框渐变** — `BorderDrag`/`BorderPin`/`BorderUnfocus` 支持逗号分隔渐变色
+- ⚙️ **全屏暂停** — `PauseOnFullscreen=on` 游戏时自动暂停热键
+- 🔍 **透明度步长** — 可配置步长，吸附到步长倍数
+- 🧹 **代码清理** — 移除旧版迁移、旧 WTM 变量、冗余代码
+- 🐛 **修复** — bg 圆角开关无效、单色渲染黑框、透明度最小值、帮助页/OSD 不跟随主题
+
 ### v2.6.4 (2026-06-18)
 
-- 🆕 **配置完整性检查** — 每次启动自动对比模板，补充缺失键、标注多余键
-- 🆕 **编码强制确保** — 启动时检测并强制转为 UTF-16 LE，防编辑器改编码导致乱码
-- 🐛 **Pin 边框圆角** — `Border_Pin_Rounded`/`Pin_Radius` 改为从配置读取
-- 🔧 **DWM 补偿去重** — 提取为 `GetDWMGapCompensation()` 公共函数
-- 🔧 **配置模板化** — 默认配置模板提至模块级供多处复用
-
-### v2.6.3 (2026-06-16)
-- 更新编译版可执行文件（64 位 & 32 位）
-
-### v2.6.2 (2026-06-15)
-
-| # | 问题 | 修复 |
-|---|------|------|
-| 1️⃣ | 状态栏文字垂直居中 | 合适边距，避免高字符裁切 |
-| 2️⃣ | 平铺间隙与吸附坐标不一致 | 自动 DWM 边框检测，零间隙对齐 |
+- 🆕 **配置完整性检查** — 每次启动自动对比模板，补充缺失键
+- 🐛 **Pin 边框圆角** — 改为从配置读取
+- 🔧 **DWM 补偿去重** — 提取为公共函数
 | 3️⃣ | WinSelect 取消置顶 | `_RestoreAll()` 恢复后重新置顶 |
 | 4️⃣ | 右下角拖拽像素偏移 | 补全 `frameDW`/`frameDH` 尺寸补偿 |
 | 5️⃣ | 边框颜色与主题不搭 | `Border_Drag_Color` 统一为 `Color_Active` |
