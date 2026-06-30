@@ -3,10 +3,53 @@
 #WinActivateForce
 
 ; ==============================================================================
+; 📂 TABLE OF CONTENTS
+; ==============================================================================
+;
+; 1.  Environment & Global Directives
+; 2.  Constants & Shared State
+;   ├─ Theme/Colors · Status Bar · Pie Menu · Paths/Editor · OSD
+;   ├─ Borders · Pinning · Tiling/Snapping · Virtual Desktops · 22 Built-in Themes
+;   └─ GUI Rounding · WinSelect · Window Snapping
+; 3.  Utility Functions
+;   ├─ Math · Color/Gradient Parsing · GDI Bitmaps · Rounding · Logging
+;   ├─ Window Exclusion · Layout Rules · Hotkey Formatting · Snapshots
+;   └─ Reload Persistence (save/restore desktop layout)
+; 4.  Startup Sequence
+; 5.  Hotkey Registration
+; 6.  Configuration Template (Default INI)
+; 7.  Configuration Loading & Parsing
+; 8.  Common GUI
+;   ├─ Help Menu · Welcome Screen · OSD · 8-Dir Button Templates
+;   └─ Window-Select Mode (WinSelect)
+; 9.  Border System
+;   ├─ HollowFrame · DragBorder · PinBorder
+;   └─ All-Window Borders Mode
+; 10. Window Actions (close, minimize, maximize, toggle-top, transparency)
+; 11. Pie Menu (radial menu)
+; 12. Virtual Desktops
+;   ├─ Switch · Move · MoveAndSwitch
+;   └─ Layout Save/Restore · Reload Persistence
+; 13. Status Bar
+;   ├─ BarInstance class · Gradient/bg/tx rendering · Per-element config
+;   └─ System widgets: WiFi · Bluetooth · Battery · Volume · Disk · Memory · CPU
+; 14. Smart Tiling (TileSmart)
+; 15. Window Snapping
+; 16. Drag Move / Resize & Directional Snap
+; 17. WTM Tiling Mode (hyprland-like)
+; 18. All-Window Borders Mode
+; 19. Enhanced Window-Select Mode (WinSelect)
+; 20. Clipboard / Editor / Terminal / Power Menu
+; 21. Theme Switching
+; 22. Tray Menu & Exit
+; 23. External 8-Direction Button Scripts
+;
+; ==============================================================================
 ; 一、环境与全局指令 / 1. Environment & Global Directives
 ; ==============================================================================
 
-global WM_Version := "2.8.0-fixed"
+global WM_Version := "2.8.3"
+global FontName
 
 SetWorkingDir(A_ScriptDir)
 CoordMode("Mouse", "Screen")
@@ -18,13 +61,13 @@ SetControlDelay(0)
 ; 二、常量与共享状态 / 2. Constants & Shared State
 ; ==============================================================================
 
-; ---- 主题与界面颜色 / Theme & UI colors ----
+; ---- Theme & UI colors / 主题颜色 ----
 global Color_Bg, Color_Text, Color_Active, Color_Task
 global Border_Drag_Color, Border_Pin_Color
 global PM_Bg, PM_BtnShutdown, PM_BtnSleep, PM_BtnReboot
-; 组件专属颜色 / Per-component colors (v2.8)
+; Per-component colors (v2.8) / 组件色
 
-; ---- 状态栏状态 / Status-bar state ----
+; ---- Status-bar state / 状态栏 ----
 global Bar_Height, Bar_Transparent, Bar_FontSize
 global Bar_MonitorIdx := 1
 global Bar_Visible    := true
@@ -39,23 +82,24 @@ global Bar_MarginLeft  := 0
 global Bar_MarginRight := 0
 global Bars := []
 global Bar_Cfg := Map()
+global SysInfo_WiFi, SysInfo_BT, SysInfo_Batt, SysInfo_Vol
 
-; ---- 功能环参数 / Pie-menu parameters ----
+; ---- Pie-menu parameters / 功能环 ----
 global Pie_Size, Pie_Radius, Pie_CenterZone
 global Pie_FontSize, Pie_FontSizeActive, Pie_Transparent
 global Pie_Config
 
-; ---- 路径与编辑器 / Paths & editor ----
+; ---- Paths & editor / 路径 ----
 global Path_Button, Path_Output, Path_OutputFile, Path_Vim, Path_Terminal
 global Vim_X, Vim_Y, Vim_Width, Vim_Height
 global Vim_CurrentPID := 0
 
-; ---- OSD 与工作时间 / OSD & work-time ----
+; ---- OSD & work-time / OSD工时 ----
 global OSD_Height, OSD_Transparent, OSD_FontSize
 global Work_Start, Work_End, Work_WeekendBar, Work_Mode, Work_TaskTimes
 global ActiveTheme
 
-; ---- 统一边框模型 / Unified border model ----
+; ---- Unified border model / 边框模型 ----
 global Border_Enable      := "on"
 global Border_Mode        := "full"
 global Border_FocusColor  := "A020F0"
@@ -69,17 +113,17 @@ global Border_Radius      := 10
 global Border_Gap         := 10
 global Border_SizeStep    := 3
 
-; ---- 置顶窗口指示条 / Pinned-window indicator ----
+; ---- Pinned-window indicator / 置顶指示 ----
 global Border_Pin_Thickness, Border_Pin_Offset, Border_Pin_OffsetTop, Border_Pin_Transparent
 global Border_Pin_Mode  := "top"
 global Border_Pin_Rounded, Border_Pin_Radius
 
-; ---- 边框刷新间隔 / Shared border refresh interval ----
+; ---- Shared border refresh interval / 刷新间隔 ----
 global Border_RefreshMs := 10
 global TransparencyStep := 20
 global PauseOnFullscreen := false
 
-; ---- 平铺与窗口排除 / Tiling & window exclusion ----
+; ---- Tiling & window exclusion / 平铺排除 ----
 global CurrentTileGap := 0
 global Tile_Gap        := 15
 global LayoutRules     := Map()
@@ -90,25 +134,25 @@ global Tile_IncludeAlwaysOnTop := true
 global TileBound_L := 0, TileBound_T := 0, TileBound_R := 0, TileBound_B := 0
 global TileBoundSet := false
 
-; ---- GUI 圆角 / GUI rounding ----
+; ---- GUI rounding / GUI圆角 ----
 global GUI_Rounded     := "on"
 global GUI_CornerRadius := 12
 global Help_Rounded, Help_Radius, PM_Rounded, PM_Radius
 global OSD_Rounded, OSD_Radius
 
-; ---- 窗口吸附 / Window snapping ----
+; ---- Window snapping / 窗口吸附 ----
 global Snap_Enable   := true
 global Snap_Distance := 12
 global Snap_Release  := 8
 
-; ---- 启动延迟警告 / Deferred startup warning ----
+; ---- Deferred startup warning / 启动警告 ----
 global PathWarning := ""
 
-; ---- 帮助与电源菜单尺寸 / Help & power-menu sizing ----
+; ---- Help & power-menu sizing / 菜单尺寸 ----
 global Help_FontSize := 10, Help_Width := 620, Help_Height := 0, Help_Opacity := 255
 global PM_FontSize := 12, PM_Width := 500, PM_Height := 160, PM_Opacity := 255
 
-; ---- 虚拟桌面 / Virtual desktops ----
+; ---- Virtual desktops / 虚拟桌面 ----
 global Desktop_HideMethod := "minimize"
 global DesktopFocus := Map()
 global CurrentDesktop  := 1
@@ -116,7 +160,7 @@ global DesktopCount    := 9
 global Desktops        := Map()
 global AlwaysVisible   := Map()
 
-; ---- 其他共享状态 / Other shared state ----
+; ---- Other shared state / 共享状态 ----
 global HelpGuiObj    := ""
 global PowerMenuObj  := ""
 global ConfigDir  := EnvGet("USERPROFILE") . "\.config\AHK_WM"
@@ -125,7 +169,7 @@ global LastClipContent := ""
 global LayoutSnapshot  := Map()
 global HK := Map()
 
-; ---- 窗口选择模式配置 / Window-select mode settings ----
+; ---- Window-select mode settings / 窗口选择 ----
 global WS_Scale := 0.85
 global WS_Letters := "ASDFGHJKLQWERTYUIOPZXCVBNM"
 global WS_SizeMap := Map()
@@ -135,20 +179,20 @@ global WS_FontSize := 14, WS_Opacity := 217
 global WS_Rounded := "on", WS_Radius := 10, WS_CornerMode := "top"
 global WS_Timeout := 12
 
-; ---- 窗口选择侧边栏配置 / Window-select sidebar settings ----
+; ---- Window-select sidebar settings / 侧边栏 ----
 global WS_Sidebar_FontSize := 14
 global WS_Sidebar_Width := 80
 global WS_Sidebar_Position := "left"
 global WS_Sidebar_OffsetX := 10
 global WS_Sidebar_OffsetY := 0
 
-; ---- 功能环方向符号 / Pie-menu direction symbols ----
+; ---- Pie-menu direction symbols / 方向符号 ----
 Pie_Config := Map(
     "Top","↑", "TopRight","↗", "Right","→", "DownRight","↘",
     "Down","↓", "DownLeft","↙", "Left","←", "TopLeft","↖", "Center","●"
 )
 
-; ---- 内置主题 / Built-in themes ----
+; ---- Built-in themes / 内置主题 ----
 global Themes := Map(
     "nord",             Map("Color_Bg","2E3440","Color_Text","D8DEE9","Color_Active","88C0D0","Color_Task","A3BE8C","Border_Drag_Color","88C0D0","Border_Pin_Color","BF616A","PM_Bg","3B4252","PM_BtnShutdown","BF616A","PM_BtnSleep","5E81AC","PM_BtnReboot","D08770","WTM_BorderFocusColor","88C0D0","WTM_BorderUnfocusColor","4C566A"),
     "tokyonight",       Map("Color_Bg","1A1B26","Color_Text","C0CAF5","Color_Active","7AA2F7","Color_Task","9ECE6A","Border_Drag_Color","7AA2F7","Border_Pin_Color","F7768E","PM_Bg","24283B","PM_BtnShutdown","F7768E","PM_BtnSleep","7AA2F7","PM_BtnReboot","E0AF68","WTM_BorderFocusColor","7AA2F7","WTM_BorderUnfocusColor","414868"),
@@ -172,7 +216,7 @@ global Themes := Map(
     "oxocarbon",        Map("Color_Bg","161616","Color_Text","F2F4F8","Color_Active","82CFFF","Color_Task","42BE65","Border_Drag_Color","82CFFF","Border_Pin_Color","FF7EB6","PM_Bg","262626","PM_BtnShutdown","FF7EB6","PM_BtnSleep","82CFFF","PM_BtnReboot","BE95FF","WTM_BorderFocusColor","82CFFF","WTM_BorderUnfocusColor","393939")
 )
 
-; ---- 主题键补全 / Theme key normalization (v2.8: per-component) ----
+; ---- Theme key normalization (v2.8: per-component) / 主题补全 ----
 for _tname, _tmap in Themes {
     ; 边框色：从预设旧键推导 / Border: derive from legacy preset keys
     if !_tmap.Has("Border_FocusColor")
@@ -192,39 +236,37 @@ for _tname, _tmap in Themes {
 ; 三、通用工具函数 / 3. Utility Functions
 ; ==============================================================================
 
-; ---- 百分比换算 / Percent-to-unit scaling ----
+; ---- Pct2Alpha / 百分比 ----
 Pct2Alpha(p) => Round(Max(0, Min(100, p+0)) * 255 / 100)
 
-; ---- 主屏工作区尺寸 / Primary work-area dimensions ----
+; ---- GetPrimaryDim / 主屏尺寸 ----
 GetPrimaryDim(&pw, &ph) {
     MonitorGetWorkArea(MonitorGetPrimary(), &l, &t, &r, &b)
     pw := r - l, ph := b - t
 }
 
-; ---- 百分比转像素（高）/ Percent to pixels (height) ----
+; ---- Pct2PxH / 转高度 ----
 Pct2PxH(p)   {
     GetPrimaryDim(&pw, &ph)
     return Round(p * ph / 100)
 }
 
-; ---- 百分比转像素（宽）/ Percent to pixels (width) ----
+; ---- Pct2PxW / 转宽度 ----
 Pct2PxW(p)   {
     GetPrimaryDim(&pw, &ph)
     return Round(p * pw / 100)
 }
 
-; ---- 百分比转像素（短边）/ Percent to pixels (min side) ----
+; ---- Pct2PxMin / 转短边 ----
 Pct2PxMin(p) {
     GetPrimaryDim(&pw, &ph)
     return Round(p * Min(pw, ph) / 100)
 }
 
-; ---- 百分比转边框厚度 / Percent to border thickness ----
+; ---- Pct2Border / 转边框 ----
 Pct2Border(p) => Round(Max(0, Min(100, p+0)) * 20 / 100)
 
-; ---- DWM 边框补偿量 / DWM frame-gap compensation ----
-; Windows 窗口实际可见区域与 WinGetPos 之间存在不可见边框，
-; 导致平铺间隙出现空位。此函数计算需补偿的像素量。
+; ---- DWM frame-gap compensation / DWM补偿 ----
 GetDWMGapCompensation(hwnds) {
     for _hw in hwnds {
         WinGetPos(&_wx, &_wy, &_ww, &_wh, _hw)
@@ -234,7 +276,7 @@ GetDWMGapCompensation(hwnds) {
     return 0
 }
 
-; ---- 容错整数解析 / Tolerant integer parse ----
+; ---- SafeInt / 整数解析 ----
 SafeInt(val, def := 0) {
     val := Trim(val "")
     if (val = "")
@@ -246,7 +288,7 @@ SafeInt(val, def := 0) {
     return def
 }
 
-; ---- Vim风格转义拆分 / Split by delimiter respecting '\' escape ----
+; ---- SplitEscaped / 转义拆分 ----
 SplitEscaped(str, delim) {
     out := [], buf := "", i := 1
     while (i <= StrLen(str)) {
@@ -263,7 +305,7 @@ SplitEscaped(str, delim) {
     return out
 }
 
-; ---- 颜色解析 / ParseColor (supports gradient: c1,c2,...) ----
+; ---- ParseColor (supports gradient: c1,c2,...) / 颜色解析 ----
 ParseColor(cstr) {
     cstr := Trim(cstr)
     if (cstr = "")
@@ -283,14 +325,14 @@ ParseColor(cstr) {
         return {isGrad:false, first:"", colors:[]}
     return {isGrad: colors.Length > 1, first: colors[1], colors: colors}
 }
-; 取首色 (空值回退) / C1 - first color from gradient string
+; ---- C1 (first color) / 取首色 ----
 C1(raw, def := "000000") {
     pc := ParseColor(raw)
     return (pc.first != "") ? pc.first : def
 }
 
 ; ---- GDI helpers ----
-; 圆角矩形区域
+; RgnRoundRect / 圆角矩形 ----
 RgnRoundRect(w, h, r) {
     d := Max(1, r * 2)
     return DllCall("Gdi32\CreateRoundRectRgn"
@@ -298,21 +340,21 @@ RgnRoundRect(w, h, r) {
 }
 ; RGB→BGR / Convert RGB hex to GDI BGR COLORREF
 BgrFromRgb(hex) => ((hex & 0xFF) << 16) | (hex & 0xFF00) | (hex >> 16)
-; 屏幕兼容位图 / Screen-compatible bitmap
+; Screen-compatible bitmap / 兼容位图
 ScrBitmap(w, h) {
     scrDC := DllCall("Gdi32\CreateDC", "Str","DISPLAY", "Ptr",0, "Ptr",0, "Ptr",0, "Ptr")
     hBM := DllCall("Gdi32\CreateCompatibleBitmap", "Ptr",scrDC, "Int",w,"Int",h,"Ptr")
     DllCall("Gdi32\DeleteDC", "Ptr",scrDC)
     return hBM
 }
-; 创建字体(ClearType) / Create font with ClearType quality
-MakeFont(fh, name := "Segoe UI") {
+; Create font with ClearType quality / 创建字体(ClearType)
+MakeFont(fh, name := FontName) {
     return DllCall("Gdi32\CreateFontW"
         , "Int",fh, "Int",0, "Int",0, "Int",0, "Int",700
         , "Int",0, "Int",0, "Int",0, "Int",0, "Int",0
         , "Int",5, "Int",0, "Int",0, "Str",name, "Ptr")
 }
-; 圆角裁剪位图 / Clip bitmap to rounded rect, bgColor fills corners (hex RRGGBB)
+; Clip bitmap to rounded rect, bgColor fills corners (hex RRGGBB) / 圆角裁剪
 RoundClipBM(hBM, w, h, r, bgColor := "") {
     hOut := ScrBitmap(w, h)
     if !hOut
@@ -344,7 +386,7 @@ RoundClipBM(hBM, w, h, r, bgColor := "") {
     return hOut
 }
 
-; ---- 渐变位图 / Gradient bitmap ----
+; ---- CreateGradient / 渐变位图 ----
 CreateGradient(W, H, V := 0, Colors*) {
     N := Colors.Length
     if (N < 1)
@@ -391,8 +433,8 @@ CreateGradient(W, H, V := 0, Colors*) {
     return hBM
 }
 
-; ---- 渐变文字位图 / Gradient text bitmap ----
-TextOnGradient(W, H, Colors, Text, FontSize, Style := "text", FontName := "Segoe UI", BgBM := 0, BgOffX := 0, RoundedBg := "") {
+; ---- TextOnGradient / 渐变文字 ----
+TextOnGradient(W, H, Colors, Text, FontSize, Style := "text", FontName := FontName, BgBM := 0, BgOffX := 0, RoundedBg := "") {
     if (W < 2 || H < 2 || Colors.Length < 2 || Text = "")
         return 0
     if (W > 4096 || H > 512)
@@ -516,11 +558,10 @@ TextOnGradient(W, H, Colors, Text, FontSize, Style := "text", FontName := "Segoe
     return hFinal
 }
 
-; ---- 日志全局状态 / Logging state ----
 global WM_LogFile := ""
 global WM_LogSeen := Map()
 
-; ---- 静默文件日志 / Silent file log ----
+; ---- WMLog / 日志 ----
 WMLog(msg, level := "INFO") {
     global ConfigDir, WM_LogFile
     if (WM_LogFile = "")
@@ -529,7 +570,7 @@ WMLog(msg, level := "INFO") {
                  , WM_LogFile, "UTF-8")
 }
 
-; ---- 异常格式化 / Format a thrown value into one diagnostic string ----
+; ---- WMFormatErr / 异常格式 ----
 WMFormatErr(context, err) {
     if !IsObject(err)
         return context . ": " . err
@@ -545,7 +586,7 @@ WMFormatErr(context, err) {
     return out
 }
 
-; ---- 异常日志（去重防刷屏）/ Log a fault once per distinct message ----
+; ---- WMLogErr / 异常日志 ----
 WMLogErr(context, err) {
     global WM_LogSeen
     key := context . "|" . (IsObject(err) ? err.Message : err)
@@ -557,7 +598,7 @@ WMLogErr(context, err) {
     WMLog(WMFormatErr(context, err), "ERROR")
 }
 
-; ---- 故障隔离执行 / Run fn() with fault isolation & logging ----
+; ---- WMGuard / 故障隔离 ----
 WMGuard(context, fn) {
     try {
         fn()
@@ -568,13 +609,13 @@ WMGuard(context, fn) {
     }
 }
 
-; ---- GUI 圆角（全局设置）/ Rounded corners using global [GUI] settings ----
+; ---- Rounded corners using global [GUI] settings / 全局圆角 ----
 RoundWindow(guiOrHwnd) {
     global GUI_Rounded, GUI_CornerRadius
     RoundWindowEx(guiOrHwnd, GUI_Rounded, GUI_CornerRadius)
 }
 
-; ---- GUI 圆角（独立参数）/ Rounded corners with per-GUI overrides ----
+; ---- Rounded corners with per-GUI overrides / 独立圆角 ----
 RoundWindowEx(guiOrHwnd, enabled, radius, corners := "all") {
     if (enabled != "on")
         return
@@ -606,7 +647,7 @@ RoundWindowEx(guiOrHwnd, enabled, radius, corners := "all") {
     }
 }
 
-; ---- 排除列表拆分 / Split ';'-separated exclusion list ----
+; ---- SplitExclude / 排除列表 ----
 SplitExcludeList(str) {
     out := []
     for part in StrSplit(str, ";") {
@@ -617,7 +658,7 @@ SplitExcludeList(str) {
     return out
 }
 
-; ---- 标题规则匹配 / Title rule matching (contains | re: | =) ----
+; ---- MatchTitle / 标题匹配 ----
 MatchTitleRule(text, rule) {
     rule := Trim(rule)
     if (rule = "")
@@ -631,7 +672,7 @@ MatchTitleRule(text, rule) {
     return InStr(text, rule, false) ? true : false
 }
 
-; ---- 窗口排除判定 / Window exclusion check ----
+; ---- IsExcluded / 窗口排除 ----
 IsExcludedWindow(hwnd) {
     global Excl_Titles, Excl_Classes, Excl_Processes
     if (Excl_Titles.Length = 0 && Excl_Classes.Length = 0 && Excl_Processes.Length = 0)
@@ -652,7 +693,7 @@ IsExcludedWindow(hwnd) {
     return false
 }
 
-; ---- 布局轴解析 / Parse one layout axis token ----
+; ---- ParseAxis / 轴解析 ----
 ParseAxis(tok) {
     tok := Trim(tok)
     if (tok = "")
@@ -674,7 +715,7 @@ ParseAxis(tok) {
     throw Error("unrecognized axis: " tok)
 }
 
-; ---- 自定义平铺规则解析 / Parse custom tiling rules ----
+; ---- ParseLayoutRules / 平铺规则 ----
 ParseLayoutRules(str) {
     result := Map()
     str := Trim(str)
@@ -771,7 +812,7 @@ ParseLayoutRules(str) {
     return result
 }
 
-; ---- 自定义布局查询 / Resolve custom rules for monitor + count ----
+; ---- GetCustomLayout / 布局查询 ----
 GetCustomLayout(monIdx, n) {
     global LayoutRules
     if (n < 1)
@@ -783,7 +824,7 @@ GetCustomLayout(monIdx, n) {
     return ""
 }
 
-; ---- 自定义布局应用 / Apply a matching custom layout ----
+; ---- ApplyCustomLayout / 布局应用 ----
 ApplyCustomLayout(wins, X, Y, W, H, monIdx := 0) {
     n := wins.Length
     rules := GetCustomLayout(monIdx, n)
@@ -802,7 +843,7 @@ ApplyCustomLayout(wins, X, Y, W, H, monIdx := 0) {
     return true
 }
 
-; ---- 热键记法转换 / Natural hotkey notation -> AHK notation ----
+; ---- NormalizeHotkey / 热键转换 ----
 NormalizeHotkey(s) {
     s := Trim(s)
     if (s = "")
@@ -829,7 +870,7 @@ NormalizeHotkey(s) {
     return mods . key
 }
 
-; ---- 热键美化显示 / Prettify hotkey for display ----
+; ---- PrettifyHotkey / 热键显示 ----
 PrettifyHotkey(s) {
     s := Trim(s)
     if (s = "")
@@ -852,7 +893,7 @@ PrettifyHotkey(s) {
     return out . rest
 }
 
-; ---- 修饰键前缀转换 / Modifier-only prefix normalization ----
+; ---- NormalizeModifiers / 修饰键 ----
 NormalizeModifiersOnly(s) {
     s := Trim(s)
     if (s = "")
@@ -871,7 +912,7 @@ NormalizeModifiersOnly(s) {
     return out
 }
 
-; ---- DWM 可视矩形 / DWM visible rect ----
+; ---- VisualRect / DWM矩形 ----
 GetWindowVisualRect(hwnd, &x, &y, &w, &h) {
     rect := Buffer(16, 0)
     hr := DllCall("dwmapi\DwmGetWindowAttribute"
@@ -888,7 +929,7 @@ GetWindowVisualRect(hwnd, &x, &y, &w, &h) {
     return false
 }
 
-; ---- 窗口不可见边框偏移 / Get the invisible DWM frame border delta ----
+; ---- FrameDelta / 边框偏移 ----
 GetFrameDelta(hwnd, &dx, &dy, &dw, &dh) {
     WinGetPos(&wx, &wy, &ww, &wh, hwnd)
     if !GetWindowVisualRect(hwnd, &vx, &vy, &vw, &vh) {
@@ -902,7 +943,7 @@ GetFrameDelta(hwnd, &dx, &dy, &dw, &dh) {
     return true
 }
 
-; ---- 坐标所在显示器 / Monitor index at a point ----
+; ---- MonitorAtPoint / 显示器坐标 ----
 GetMonitorIndexAtPoint(x, y) {
     loop MonitorGetCount() {
         MonitorGet(A_Index, &mL, &mT, &mR, &mB)
@@ -912,7 +953,7 @@ GetMonitorIndexAtPoint(x, y) {
     return 1
 }
 
-; ---- 窗口所在显示器 / Monitor index of a window ----
+; ---- MonitorOfWindow / 显示器窗口 ----
 GetMonitorIndex(hwnd := 0) {
     if !hwnd || !WinExist(hwnd) {
         MouseGetPos(&mx, &my)
@@ -922,13 +963,13 @@ GetMonitorIndex(hwnd := 0) {
     return GetMonitorIndexAtPoint(wx + ww/2, wy + wh/2)
 }
 
-; ---- Alt 菜单屏蔽 / Mask the Alt key-up menu activation ----
+; ---- MaskAlt / Alt屏蔽 ----
 MaskAltMenu() {
     if GetKeyState("Alt", "P")
         try Send("{Blind}{vkE8}")
 }
 
-; ---- 可靠窗口激活 / Reliable window activation (Alt-held safe) ----
+; ---- FocusSafely / 窗口激活 ----
 FocusWindowSafely(hwnd) {
     if (!hwnd || !WinExist(hwnd))
         return false
@@ -944,14 +985,132 @@ FocusWindowSafely(hwnd) {
     return false
 }
 
+; ---- Save desktop layout before Reload / 存布局 ----
+SaveLayoutStateForReload() {
+    global Desktops, DesktopFocus, CurrentDesktop, AlwaysVisible, ConfigDir
+    stateFile := ConfigDir . "\wm_layout.dat"
+    try FileDelete(stateFile)
+    catch
+    try {
+        f := FileOpen(stateFile, "w", "UTF-8")
+        f.WriteLine("CURRENT=" CurrentDesktop)
+        for dNum, winList in Desktops {
+            parts := []
+            for h in winList {
+                if WinExist(h)
+                    parts.Push(h)
+            }
+            if parts.Length > 0
+                f.WriteLine("D" dNum "=" HwndListStr(parts))
+        }
+        for dNum, hwnd in DesktopFocus {
+            if WinExist(hwnd)
+                f.WriteLine("F" dNum "=" hwnd)
+        }
+        avParts := []
+        for hwnd, _ in AlwaysVisible {
+            if WinExist(hwnd)
+                avParts.Push(hwnd)
+        }
+        if avParts.Length > 0
+            f.WriteLine("AV=" HwndListStr(avParts))
+        f.Close()
+    }
+}
+
+HwndListStr(arr) {
+    s := ""
+    for i, v in arr
+        s .= (i = 1 ? "" : ",") . v
+    return s
+}
+
+; ---- Restore desktop layout after Reload / 恢复布局 ----
+RestoreLayoutState() {
+    global Desktops, DesktopFocus, CurrentDesktop, AlwaysVisible, ConfigDir
+    stateFile := ConfigDir . "\wm_layout.dat"
+    if !FileExist(stateFile)
+        return false
+    restored := false
+    try {
+        f := FileOpen(stateFile, "r", "UTF-8")
+        content := f.Read()
+        f.Close()
+        for line in StrSplit(content, "`n", "`r") {
+            line := Trim(line)
+            if line = ""
+                continue
+            if RegExMatch(line, "i)^CURRENT=(\d+)$", &m) {
+                d := Integer(m[1])
+                if d >= 1 && d <= DesktopCount {
+                    CurrentDesktop := d
+                    restored := true
+                }
+                continue
+            }
+            if RegExMatch(line, "i)^AV=(.+)$", &m) {
+                for h in StrSplit(m[1], ",") {
+                    hw := Integer(Trim(h))
+                    if hw && WinExist(hw) {
+                        AlwaysVisible[hw] := true
+                    }
+                }
+                continue
+            }
+            if RegExMatch(line, "i)^D(\d+)=(.+)$", &m) {
+                dNum := Integer(m[1])
+                if dNum < 1 || dNum > DesktopCount
+                    continue
+                parts := []
+                for h in StrSplit(m[2], ",") {
+                    hw := Integer(Trim(h))
+                    if hw && WinExist(hw)
+                        parts.Push(hw)
+                }
+                if parts.Length > 0 {
+                    Desktops[dNum] := parts
+                    restored := true
+                }
+                continue
+            }
+            if RegExMatch(line, "i)^F(\d+)=(.+)$", &m) {
+                hw := Integer(Trim(m[2]))
+                if hw && WinExist(hw)
+                    DesktopFocus[m[1]] := hw
+                continue
+            }
+        }
+        FileDelete(stateFile)
+    }
+    if restored {
+        ; 显示当前桌面窗口 / Show current desktop windows
+        if Desktops.Has(CurrentDesktop) {
+            loop Desktops[CurrentDesktop].Length {
+                h := Desktops[CurrentDesktop][Desktops[CurrentDesktop].Length - A_Index + 1]
+                ShowWin(h)
+            }
+        }
+        for hwnd, _ in AlwaysVisible
+            ShowWin(hwnd)
+        if DesktopFocus.Has(CurrentDesktop) && DesktopFocus[CurrentDesktop]
+               && WinExist(DesktopFocus[CurrentDesktop])
+            FocusWindowSafely(DesktopFocus[CurrentDesktop])
+    }
+    return restored
+}
+
+; ---- Reload script with layout save / 存后重载 ----
+ScriptReload(*) {
+    SaveLayoutStateForReload()
+    Reload()
+}
+
 ; ==============================================================================
 ; 四、启动流程 / 4. Startup Sequence
 ; ==============================================================================
 
-; ---- 全局错误回调注册 / Global error sink registration ----
 OnError(WM_OnError)
 
-; ---- 未处理错误回调 / Unhandled-error handler ----
 WM_OnError(err, mode) {
     WMLogErr("Unhandled runtime error (" . mode . ")", err)
     return true
@@ -963,6 +1122,10 @@ LoadOrInitConfig()
 
 Loop DesktopCount
     Desktops[A_Index] := []
+
+; Restore layout from prior reload / 尝试恢复
+if RestoreLayoutState()
+    isFirstRun := false
 
 if !DirExist(Path_Output) {
     try DirCreate(Path_Output)
@@ -997,7 +1160,7 @@ OnClipboardChange(OnClipboardChanged)
 if (PathWarning != "")
     SetTimer(ShowPathWarning, -1500)
 
-; ---- 启动警告弹窗 / Deferred startup warning popup ----
+; ---- ShowPathWarning / 启动弹窗 ----
 ShowPathWarning() {
     global PathWarning
     if (PathWarning = "")
@@ -1011,7 +1174,7 @@ ShowPathWarning() {
 ; 五、热键注册 / 5. Hotkey Registration
 ; ==============================================================================
 
-; ---- 单条热键注册 / Register one configured hotkey ----
+; ---- RegHotkey / 热键注册 ----
 RegHotkey(key, fn) {
     global HK
     if !HK.Has(key)
@@ -1028,7 +1191,7 @@ RegHotkey(key, fn) {
     }
 }
 
-; ---- 全部热键注册 / Register all hotkeys ----
+; ---- RegisterAll / 注册全部 ----
 RegisterAllHotkeys() {
     global HK, DesktopCount
 
@@ -1075,7 +1238,7 @@ RegisterAllHotkeys() {
     RegHotkey("SaveLayout",    SaveLayout)
     RegHotkey("RestoreLayout", RestoreLayout)
 
-    RegHotkey("Reload", (*) => Reload())
+    RegHotkey("Reload", (*) => ScriptReload())
     RegHotkey("ClipboardHistory", (*) => ToggleVimWindow())
 
     if RegHotkey("PieMenuTrigger", (*) => PieMenu.Start()) {
@@ -1101,7 +1264,7 @@ RegisterAllHotkeys() {
     RegHotkey("WTMMoveRight",  (*) => WTM.MoveDir("R"))
 }
 
-; ---- 功能环松开执行（Space）/ Pie-menu execute on Space release ----
+; ---- PieMenuExecute / 饼菜单 ----
 PieMenuExecute(*) {
     if PieMenu.IsActive
         PieMenu.Execute()
@@ -1115,7 +1278,7 @@ PieMenuRButtonUp(*) {
     PieMenu.PendingRUp := false
 }
 
-; ---- 置顶切换分发 / Toggle-top dispatch (WTM-aware) ----
+; ---- ToggleTop / 置顶分发 ----
 ToggleTopDispatch(*) {
     if WTM.Active
         WTM.TogglePinExclude()
@@ -1123,7 +1286,7 @@ ToggleTopDispatch(*) {
         ToggleTopUnderMouse()
 }
 
-; ---- 关闭窗口分发 / Close-window dispatch (WTM-aware) ----
+; ---- CloseWindow / 关闭分发 ----
 CloseWindowDispatch(*) {
     if WTM.Active
         WTM.CloseFocused()
@@ -1135,7 +1298,7 @@ CloseWindowDispatch(*) {
 ; 六、配置生成与迁移 / 6. Configuration Generation & Migration
 ; ==============================================================================
 
-; ---- 配置读取（含旧版回退）/ Config read with legacy fallbacks ----
+; ---- CfgRead / 配置读取 ----
 CfgRead(sec, key, defVal, fallbacks*) {
     global ConfigFile
     miss := "__WM_MISSING__"
@@ -1150,7 +1313,7 @@ CfgRead(sec, key, defVal, fallbacks*) {
     return defVal
 }
 
-; ---- 自定义项解析 / Parse unified custom_items list ----
+; ---- ParseCustomItems / 自定义项 ----
 ParseCustomItems(itemsRaw, iconRaw := "", textRaw := "") {
     out := []
     if (Trim(itemsRaw) != "") {
@@ -1168,15 +1331,15 @@ ParseCustomItems(itemsRaw, iconRaw := "", textRaw := "") {
     return out
 }
 
-; ---- 旧版配置结构迁移 / Migrate legacy [section] layout ----
-; ---- 配置文件编码强制确保 / Enforce UTF-16 LE encoding ----
-; ---- 配置模板解析 / Parse the default INI template into a structured map ----
-; ---- 配置完整性检查 / Config integrity check ----
+; ---- Migrate legacy [section] layout / 旧版迁移 ----
+
+; ---- Parse the default INI template into a structured map / 模板解析 ----
+
 ; ==============================================================================
 ; 七、配置读取与解析 / 7. Configuration Loading & Parsing
 ; ==============================================================================
 
-; ---- 配置加载（缺失时生成默认）/ Load config, creating defaults when missing ----
+; ---- LoadOrInitConfig / 配置加载 ----
 LoadOrInitConfig() {
     global
 
@@ -1191,23 +1354,25 @@ LoadOrInitConfig() {
     DefaultIni := "
     (
 ;==========================================================================
-; AHK WM 配置文件 / AHK WM Configuration
+; AHK WM Configuration / AHK WM 配置文件
 ;==========================================================================
 
 [General]
-; 主题名称 / Theme name. 内置示例 / built-in examples:
+; Theme name / 主题名称
 ; custom, nord, tokyonight, dracula, gruvbox, monokai, solarized-dark,
 ; solarized-light, catppuccin-mocha, catppuccin-latte, onedark, ayu-dark,
 ; github-dark, rose-pine, everforest, kanagawa, material-deep, nightfox,
 ; palenight, horizon, oxocarbon.
 ActiveTheme=custom
-; 透明度调整步长 1-50 / Transparency step
+; Font name (Nerd Font for icons) / 字体名称 (Nerd Font 用于图标)
+FontName=Segoe UI
+; Transparency step / 透明度调
 TransparencyStep=10
-; 全屏时暂停脚本 on|off / Pause script when fullscreen
+; Pause script when fullscreen / 全屏时暂
 PauseOnFullscreen=off
 
 [Theme]
-; 所有颜色支持渐变 / All colors support gradient: color1,color2,...  (不带 #)
+; All colors support gradient / 渐变色支持
 Background=0e050f
 Text=e5e9f0
 Active=744da9
@@ -1218,28 +1383,29 @@ PowerMenuBg=2E3440
 PowerBtnShutdown=B48EAD
 PowerBtnSleep=5E81AC
 PowerBtnReboot=BF616A
-; 组件专属色 (默认=基础色) / Per-component (default = base color)
+; Per-component (default = base color) / 组件专属
 
 [Paths]
-; 按钮脚本目录 / Button scripts dir
+; Button scripts dir / 按钮脚本
 ButtonDir=Buttons
-; 剪贴板输出目录 / Clipboard output dir
+; Clipboard output dir / 剪贴板输
 OutputDir=%OUTPUTDIR%
-; 剪贴板文件名 / Clipboard filename
+; Clipboard filename / 剪贴板文
 OutputFile=CB.txt
-; 编辑器 / Editor
+; Editor / 编辑器
 VimPath=C:\Windows\system32\notepad.exe
+; terminal / 终端
 TerminalExe=C:\Windows\system32\cmd.exe
-; 编辑器窗口位置与大小 / Editor geometry in screen percent.
+; Editor geometry in screen percent. / 编辑器窗
 EditorXPct=20
 EditorYPct=0
 EditorWidthPct=52
 EditorHeightPct=74
 
 [Desktop]
-; 虚拟桌面数量 1-9 / Virtual desktop count: 1-9.
+; Virtual desktop count: 1-9. / 虚拟桌面
 Count=9
-; 非当前桌面的处理方式 / Inactive-desktop handling: minimize | hide
+; Inactive-desktop handling: minimize | hide / 非当前桌
 HideMethod=minimize
 
 [Bar]
@@ -1277,7 +1443,7 @@ margin_right=0
 ;   N=bar#(default 1), span=(a-c)/d, bg=gradient bg, tx=gradient text
 ;   on|off=rounded switch (bg only), colors=6hex comma sep
 ;   Legacy compatible: element:span,color,...
-;   Available elements: desktops, time, date, progress, custom_1..n
+;   Available elements: desktops, time, date, progress, wifi, bluetooth, battery, volume, disk, mem, cpu, custom_1..n
 ; Examples:
 ;   1,time,20/20,ff0000,00ff00,bg,on;date,18/20,tx;desktops,(1-3)/20;
 ;----------------------------------------------------------------------
@@ -1292,43 +1458,43 @@ CornerRadius=10
 CornerMode=bottom
 
 [Border]
-; 边框刷新间隔 ms / Border refresh interval
+; Border refresh interval / 边框刷新
 RefreshMs=10
-; 拖拽边框开关 on|off / Drag border enable
+; Drag border enable / 拖拽边框
 Enable=on
-; 边框模式 top|full / Border mode
+; Border mode / 边框模式 top|full
 Mode=full
-; 厚度 / Thickness
+; Thickness / 厚度
 Thickness=35
-; 内缩 / Offset
+; Offset / 内缩
 Offset=15
-; 顶部内缩 / Top offset
+; Top offset / 顶部内缩
 OffsetTop=5
-; 不透明度 0-100 / Opacity
+; Opacity / 不透明度 0-100
 Opacity=80
-; 圆角开关 on|off / Rounded corners
+; Rounded corners / 圆角开关 on|off
 RoundedCorners=on
-; 圆角半径 px / Radius
+; Radius / 圆角半径 px
 Radius=10
-; 圆角模式 all|top|bottom / Corner mode
+; Corner mode / 圆角模式 all|top|bottom
 CornerMode=all
-; WTM 平铺间隙 px / WTM gap
+; WTM gap / WTM 平铺间隙 px
 Gap=10
-; WTM 调整步长 / WTM size step
+; WTM size step / WTM 调整步长
 SizeStep=3
-; 置顶指示模式 top|full / Pin mode
+; Pin mode / 置顶指示
 PinMode=top
-; 置顶指示粗细 / Pin thickness
+; Pin thickness / 置顶指示
 PinThickness=35
-; 置顶指示内缩 / Pin offset
+; Pin offset / 置顶指示
 PinOffset=0
-; 置顶指示顶缩 / Pin top offset
+; Pin top offset / 置顶指示
 PinOffsetTop=5
-; 置顶不透明度 0-100 / Pin opacity
+; Pin opacity / 置顶不透
 PinOpacity=90
-; 置顶圆角 on|off / Pin rounded
+; Pin rounded / 置顶圆角 on|off
 PinRounded=off
-; 置顶圆角半径 px / Pin radius
+; Pin radius / 置顶圆角
 PinRadius=0
 
 [Tiling]
@@ -1355,11 +1521,11 @@ TileAlwaysOnTop=off
 Rules=1,3,1,1/2,1;1,3,2,2/2,1/2;1,3,3,2/2,2/2;1,5,1,(2-4)/5,1;1,5,2,1/5,1/2;1,5,3,1/5,2/2;1,5,4,5/5,(1-2)/3;1,5,5,5/5,3/3;
 
 [Snapping]
-; 吸附开关 on|off / Snap enable
-Enable=off
-; 触发距离 px / Snap distance
+; Snap enable / 吸附开关 on|off
+Enable=on
+; Snap distance / 触发距离 px
 Distance=0
-; 脱离距离 px / Snap release
+; Snap release / 脱离距离 px
 Release=5
 
 [PieMenu]
@@ -1375,31 +1541,31 @@ FontSize=14
 FontSizeActive=22
 
 [GUI]
-; 全局圆角 on|off / Global rounded
+; Global rounded / 全局圆角 on|off
 RoundedCorners=on
-; 全局圆角半径 px / Global corner radius
+; Global corner radius / 全局圆角
 CornerRadius=12
-; 帮助字体大小 / Help font size
+; Help font size / 帮助字体
 HelpFontSize=10
-; 帮助宽度 px / Help width
+; Help width / 帮助宽度 px
 HelpWidth=620
-; 帮助高度 px (0=auto) / Help height
+; Help height / 帮助高度 px (0=auto)
 HelpHeight=0
-; 帮助不透明度 0-255 / Help opacity
+; Help opacity / 帮助不透
 HelpOpacity=255
-; 电源字体大小 / Power font size
+; Power font size / 电源字体
 PowerFontSize=12
-; 电源宽度 px / Power width
+; Power width / 电源宽度 px
 PowerWidth=500
-; 电源高度 px / Power height
+; Power height / 电源高度 px
 PowerHeight=160
-; 电源不透明度 0-255 / Power opacity
+; Power opacity / 电源不透
 PowerOpacity=255
-; OSD 位置 % / OSD position pct
+; OSD position pct / OSD 位置 %
 OSDPositionPct=80
-; OSD 不透明度 / OSD opacity
+; OSD opacity / OSD 不透明度
 OSDOpacity=78
-; OSD 字体大小 / OSD font size
+; OSD font size / OSD 字体大小
 OSDFontSize=20
 
 [WorkTime]
@@ -1416,51 +1582,51 @@ WorkEnd=1745
 TaskTimes=1_1200_1300,CDD6F4;2_1200_1300,CDD6F4;3_1200_1300,CDD6F4;4_1200_1300,CDD6F4;5_1200_1300,CDD6F4;6_1200_1300,CDD6F4;7_1200_1300,CDD6F4;2_1700_1745;3_0900_0920;1_1545_1600;2_1545_1600;3_1545_1600;4_1545_1600;5_1545_1600;1_1330_1500;
 
 [Exclude]
-; 排除标题 contains|re:|= / Excluded titles
+; Excluded titles / 排除标题 contains|re:|=
 Titles=Picture-in-Picture
-; 排除类名 / Excluded classes
+; Excluded classes / 排除类名
 Classes=
-; 排除进程 / Excluded processes
+; Excluded processes / 排除进程
 Processes=
 
 [WinSelect]
-; 缩放比例 / Scale ratio
+; Scale ratio / 缩放比例
 ScaleRatio=0.85
-; 字母池 / Letter pool
+; Letter pool / 字母池
 Letters=ASDFGHJKLQWERTYUIOPZXCVBNM
-; 尺寸映射 N:ratio|WxH;... / Size map
+; Size map / 尺寸映射 N:ratio|WxH;...
 SizeMap=1:0.5;2:0.8;3:1.2;9:1920x1080
-; 标签条颜色 (空=主题) / Bar color (empty=theme)
+; Bar color (empty=theme) / 标签条颜
 BarColor=
 TextColor=
-; 标签条高度 / Bar height, width (0=window width)
+; Bar height, width (0=window width) / 标签条高
 Height=28
 Width=0
-; 标签偏移 / Label offset
+; Label offset / 标签偏移
 OffsetY=0
-; 标签字体 / Label font size
+; Label font size / 标签字体
 FontSize=14
-; 不透明度 0-100 / Opacity
+; Opacity / 不透明度 0-100
 Opacity=85
-; 圆角 / Rounding
+; Rounding / 圆角
 Rounded=on
 CornerRadius=10
 CornerMode=top
-; 无按键退出秒 (0=不超时) / Auto-exit seconds (0=never)
+; Auto-exit seconds (0=never) / 无按键退
 Timeout=12
 
 [WinSelectSidebar]
-; 字体大小 / Font size
+; Font size / 字体大小
 FontSize=14
-; 宽度 / Width
+; Width / 宽度
 Width=80
-; 位置 left|right / Position
+; Position / 位置 left|right
 Position=left
 OffsetX=10
 OffsetY=0
 
 ;--------------------------------------------------------------------------
-; 热键: 自然名称 '+' 连接 / Hotkeys: natural names joined by '+'
+; Hotkeys: natural names joined by '+' / 热键自然
 ; Alt / Shift / Ctrl / Win
 ;--------------------------------------------------------------------------
 
@@ -1528,19 +1694,19 @@ WTMMoveRight=Alt+Shift+L
     }
 
     ActiveTheme := IniRead(ConfigFile, "General", "ActiveTheme", "custom")
+    FontName    := IniRead(ConfigFile, "General", "FontName",    "Segoe UI")
 
-    ; -- 主题基础色 / Base theme colors --
     Color_Bg     := CfgRead("Theme", "Background", "0e050f", ["Colors","Background"])
     Color_Text   := CfgRead("Theme", "Text",       "e5e9f0", ["Colors","Text"])
     Color_Active := CfgRead("Theme", "Active",     "744da9", ["Colors","Active"])
     Color_Task   := CfgRead("Theme", "Task",       "CF8DC9", ["Colors","Task"])
-    ; -- 边框色 / Border colors --
+
     Border_FocusColor   := CfgRead("Theme", "BorderDrag",   "A020F0", ["Colors","BorderDrag"])
     Border_Pin_Color    := CfgRead("Theme", "BorderPin",    "FF5555", ["Colors","BorderPin"])
     Border_UnfocusColor := CfgRead("Theme", "BorderUnfocus","555555", ["Colors","BorderUnfocus"])
     Color_BorderUnfocus := Border_UnfocusColor  ; 向后兼容
     Border_Drag_Color   := Border_FocusColor    ; 向后兼容
-    ; -- 电源菜单色 / Power menu colors --
+
     PM_Bg          := CfgRead("Theme", "PowerMenuBg",      "2E3440", ["Colors","PowerMenuBg"])
     PM_BtnShutdown := CfgRead("Theme", "PowerBtnShutdown", "B48EAD", ["Colors","PowerBtnShutdown"])
     PM_BtnSleep    := CfgRead("Theme", "PowerBtnSleep",    "5E81AC", ["Colors","PowerBtnSleep"])
@@ -1779,7 +1945,7 @@ WTMMoveRight=Alt+Shift+L
         Bar_MonitorIdx := 1
 }
 
-; ---- 窗口选择模式尺寸映射解析 / Parse [WinSelect] SizeMap ----
+; ---- Parse [WinSelect] SizeMap / 尺寸映射 ----
 ParseWinSelectSizeMap(str) {
     out := Map()
     for clause in StrSplit(str, ";") {
@@ -1815,7 +1981,7 @@ ParseWinSelectSizeMap(str) {
 ; 八、通用界面 / 8. Common GUI (Help / Welcome / Buttons / OSD)
 ; ==============================================================================
 
-; ---- 临时 GUI 清理 / Destroy transient GUIs ----
+; ---- Destroy transient GUIs / 临时清理 ----
 DestroyTransientGuis() {
     global HelpGuiObj, PowerMenuObj
     try {
@@ -1853,7 +2019,7 @@ DestroyTransientGuis() {
     try DragBorder.Destroy()
 }
 
-; ---- 帮助界面 / Help GUI ----
+; ---- Help GUI / 帮助界面 ----
 ShowHelpGui(*) {
     global HelpGuiObj, HK
     global Help_FontSize, Help_Width, Help_Opacity, Help_Rounded, Help_Radius
@@ -1883,9 +2049,9 @@ ShowHelpGui(*) {
 
     helpGui := Gui("-Caption +AlwaysOnTop +ToolWindow -DPIScale +Owner")
     helpGui.BackColor := Color_Bg
-    helpGui.SetFont("s" Round(20*fsc) " w700 c" . Color_Active, "Segoe UI")
+    helpGui.SetFont("s" Round(20*fsc) " w700 c" . Color_Active, FontName)
     helpGui.Add("Text", "x0 y" Round(20*fsc) " w" fullW " Center", "HELP")
-    helpGui.SetFont("s" Help_FontSize " w700 c" . Color_Active, "Segoe UI")
+    helpGui.SetFont("s" Help_FontSize " w700 c" . Color_Active, FontName)
     helpGui.Add("Text", "x0 y" Round(60*fsc) " w" fullW " Center", "Natural-language hotkeys (Alt / Shift / Ctrl / Win + key)")
 
     helpGui.SetFont("s" Help_FontSize " w600 c" . Color_Active)
@@ -1942,7 +2108,7 @@ ShowHelpGui(*) {
     SetTimer CloseWatcher, 50
 }
 
-; ---- 欢迎屏 / Welcome screen ----
+; ---- Welcome screen / 欢迎屏 ----
 class WelcomeScreen {
     static GuiObj := ""
 
@@ -1958,10 +2124,10 @@ class WelcomeScreen {
         g.BackColor := Color_Bg
         g.MarginX := 0, g.MarginY := 0
         cx := vw // 2
-        g.SetFont("s64 w800 c" . Color_Active, "Segoe UI")
+        g.SetFont("s64 w800 c" . Color_Active, FontName)
         g.Add("Text", "x0 y" Round(vh*0.22) " w" vw " Center BackgroundTrans", "WM Script")
 
-        g.SetFont("s18 w400 c" . Color_Text, "Segoe UI")
+        g.SetFont("s18 w400 c" . Color_Text, FontName)
         g.Add("Text", "x0 y" Round(vh*0.35) " w" vw " Center BackgroundTrans"
             , "An AHK tiling window manager for Windows")
 
@@ -1984,16 +2150,20 @@ class WelcomeScreen {
         g.Add("Text", "x0 y" Round(vh*0.78) " w" vw " Center BackgroundTrans"
             , "Config: " . ConfigFile)
 
-        g.SetFont("s14 w600 c" . Color_Active, "Segoe UI")
+        g.SetFont("s14 w600 c" . Color_Active, FontName)
         g.Add("Text", "x0 y" Round(vh*0.84) " w" vw " Center BackgroundTrans"
             , "Made with <3 by ZXW")
 
-        g.SetFont("s10 w400 c" . Color_Text, "Segoe UI")
+        g.SetFont("s10 w400 c" . Color_Text, FontName)
         g.Add("Text", "x0 y" Round(vh*0.88) " w" vw " Center BackgroundTrans"
             , "V" . WM_Version . "  ::  AutoHotkey v2")
 
-        g.SetFont("s11 w600 c" . Color_Active, "Segoe UI")
-        hint := g.Add("Text", "x0 y" Round(vh*0.93) " w" vw " Center BackgroundTrans"
+        g.SetFont("s10 w600 c" . Color_Active, FontName)
+        g.Add("Text", "x0 y" Round(vh*0.91) " w" vw " Center BackgroundTrans"
+            , "GitHub: https://github.com/EngineeringMechanicsB/AHK_WM")
+
+        g.SetFont("s11 w600 c" . Color_Active, FontName)
+        hint := g.Add("Text", "x0 y" Round(vh*0.95) " w" vw " Center BackgroundTrans"
             , "[ Press any key or click to continue ]")
 
         g.Show(Format("x{} y{} w{} h{} NoActivate", vx, vy, vw, vh))
@@ -2040,7 +2210,7 @@ class WelcomeScreen {
     }
 }
 
-; ---- 八方向按钮模板生成 / Eight-direction button template init ----
+; ---- Eight-direction button template init / 按钮模板 ----
 InitializeButtons() {
     dirs := ["Top","TopRight","Right","DownRight","Down","DownLeft","Left","TopLeft"]
     created := false
@@ -2068,11 +2238,11 @@ InitializeButtons() {
     return created
 }
 
-; ---- 屏幕提示 / On-screen display ----
+; ---- On-screen display / 屏幕提示 ----
 class OSD {
     static GuiObj := 0, Timer := 0
 
-    ; -- 显示提示 / Show an OSD message --
+    ; -- Show an OSD message / 显示提示 --
     static Show(text, duration := 1000) {
         if IsObject(this.GuiObj) {
             try this.GuiObj.Destroy()
@@ -2081,18 +2251,35 @@ class OSD {
         if this.Timer
             SetTimer(this.Timer, 0)
 
-        g := Gui("+AlwaysOnTop -Caption +ToolWindow +Disabled +Owner -DPIScale")
-        g.BackColor := Color_Bg
-        g.SetFont("s" . OSD_FontSize . " w600 c" . Color_Active, "Segoe UI")
-        g.Add("Text", "Center", text)
-
         MouseGetPos(&mx,)
         monIdx := GetMonitorIndexAtPoint(mx, OSD_Height)
-        MonitorGet(monIdx, &mL, , &mR, )
+        MonitorGet(monIdx, &mL, &mT, &mR, &mB)
+        monW := mR - mL
         cx := (mL + mR) // 2
 
-        g.Show("NoActivate AutoSize Hide")
-        g.GetPos(, , &gw, )
+        ; Scale padding & max-width to font size / 随字号缩放
+        fScale := OSD_FontSize / 20.0
+        padX := Round(30 * fScale)
+        padY := Round(12 * fScale)
+        maxW := Round(monW * 0.85)
+
+        g := Gui("+AlwaysOnTop -Caption +ToolWindow +Disabled +Owner -DPIScale")
+        g.BackColor := Color_Bg
+        g.SetFont("s" . OSD_FontSize . " w600 c" . Color_Active, FontName)
+        g.Add("Text", "x" padX " y" padY " Center", text)
+
+        g.Show(Format("NoActivate AutoSize Hide"))
+        g.GetPos(, , &gw, &gh)
+        if (gw > maxW) {
+            ; Rebuild with constrained width, multi-line / 超宽则换行重建
+            g.Destroy()
+            g := Gui("+AlwaysOnTop -Caption +ToolWindow +Disabled +Owner -DPIScale")
+            g.BackColor := Color_Bg
+            g.SetFont("s" . OSD_FontSize . " w600 c" . Color_Active, FontName)
+            g.Add("Text", "x" padX " y" padY " w" (maxW - padX*2) " Center", text)
+            g.Show(Format("NoActivate AutoSize Hide"))
+            g.GetPos(, , &gw, &gh)
+        }
         g.Show(Format("NoActivate AutoSize x{} y{}", cx - gw//2, OSD_Height))
 
         WinSetTransparent(OSD_Transparent, g.Hwnd)
@@ -2104,24 +2291,25 @@ class OSD {
     }
 }
 
-; ---- OSD 快捷函数 / OSD shorthand ----
+; ---- OSD shorthand / OSD快捷 ----
 ShowOSD(text) => OSD.Show(text)
 
 ; ==============================================================================
-; 九、边框系统 / 9. Border System (BorderFrame / DragBorder / PinBorder)
+; Border System (BorderFrame / DragBorder / PinBorder) / 九边框系
 ; ==============================================================================
 
-; ---- 空心边框窗口 / Hollow-frame border window ----
+; ---- Hollow-frame border window / 空心边框 ----
 class BorderFrame {
     Gui   := ""
     Color := ""
     LastW := -1, LastH := -1, LastT := -1, LastR := -1
     LastMode := ""
-    _GbW := -1, _GbH := -1  ; 渐变背景缓存尺寸
+    _GbW := -1, _GbH := -1  ; Gradient cache dims / 渐变缓存尺寸
     GradCols := []
     GradPic := ""
+    BigGradBM := 0  ; Pre-rendered large gradient to reuse / 预渲染大渐变底图
 
-    ; -- 创建边框 / Create the frame --
+    ; -- 创建 / __New --
     __New(color, opacity) {
         pc := ParseColor(color)
         g := Gui("-Caption +ToolWindow +E0x20 -DPIScale")
@@ -2134,7 +2322,7 @@ class BorderFrame {
         this.GradPic  := ""
     }
 
-    ; -- 设置颜色 / Set frame color --
+    ; -- 颜色 / SetColor --
     SetColor(color) {
         if (this.Color = color)
             return
@@ -2147,23 +2335,35 @@ class BorderFrame {
         this.GradCols := pc.isGrad ? pc.colors : []
     }
 
-    ; -- 渐变背景 / Gradient background picture --
+    ; -- Gradient background / 渐变背景 --
     _GradBg(w, h) {
-        if !(this.GradCols.Length > 1)
+        if !(this.GradCols.Length > 1) && !this.BigGradBM
             return
-        if (this.GradPic && w = this._GbW && h = this._GbH)
+        if (w = this._GbW && h = this._GbH)
             return
         this._GbW := w, this._GbH := h
-        if (this.GradPic) {
-            try this.GradPic.Destroy()
-            this.GradPic := ""
+        if this.BigGradBM {
+            ; Reuse big bitmap — just Move existing Picture, no destroy/recreate
+            if IsObject(this.GradPic) {
+                try this.GradPic.Move(0, 0, w, h)
+            } else {
+                this.GradPic := this.Gui.Add("Picture", "x0 y0 w" w " h" h, "HBITMAP:" this.BigGradBM)
+            }
+            return
         }
+        ; No big bitmap — create exact-size gradient, add before destroy to avoid flash
+        oldPic := this.GradPic
         hBM := CreateGradient(w, h, 0, this.GradCols*)
-        if hBM
+        if hBM {
             this.GradPic := this.Gui.Add("Picture", "x0 y0 w" w " h" h, "HBITMAP:" hBM)
+            if IsObject(oldPic) {
+                try oldPic.Destroy()
+                oldPic := ""
+            }
+        }
     }
 
-    ; -- Z 序解析 / Resolve SetWindowPos insert-after handle --
+    ; -- Z序 / _ZOrder --
     _ZOrder(insertAfter) {
         if (insertAfter = -1 || insertAfter = 0)
             return insertAfter
@@ -2178,7 +2378,7 @@ class BorderFrame {
         return prev ? prev : 0
     }
 
-    ; -- 定位边框 / Position the frame around a rect --
+    ; -- Place border / 定位边框 --
     Place(x, y, w, h, thickness, radius, opacity, mode := "full", insertAfter := -1) {
         if !IsObject(this.Gui)
             return
@@ -2192,22 +2392,23 @@ class BorderFrame {
         }
         if (mode = "top") {
             ww := Round(Max(t, w))
+            this._GradBg(ww, t)
             try DllCall("SetWindowPos", "Ptr", this.Gui.Hwnd, "Ptr", ins
                 , "Int", Round(x), "Int", Round(y), "Int", ww, "Int", t
                 , "UInt", 0x10 | 0x40)
             this._ApplyTopRegion(ww, t)
-            this._GradBg(ww, t)
             return
         }
         w := Round(Max(t*2 + 1, w)), h := Round(Max(t*2 + 1, h))
+        ; Update gradient BEFORE resize — prevents flash / 先更新渐变再调尺寸
+        this._GradBg(w, h)
         try DllCall("SetWindowPos", "Ptr", this.Gui.Hwnd, "Ptr", ins
             , "Int", Round(x), "Int", Round(y), "Int", w, "Int", h
             , "UInt", 0x10 | 0x40)
         this._ApplyRegion(w, h, t, Max(0, Round(radius)))
-        this._GradBg(w, h)
     }
 
-    ; -- 顶条区域 / Solid top-strip region --
+    ; -- 顶条 / _ApplyTopRegion --
     _ApplyTopRegion(w, t) {
         if (this.LastMode = "top" && w = this.LastW && t = this.LastT)
             return
@@ -2215,7 +2416,7 @@ class BorderFrame {
         try DllCall("User32\SetWindowRgn", "Ptr", this.Gui.Hwnd, "Ptr", 0, "Int", 1)
     }
 
-    ; -- 空心框区域 / Hollow-frame region --
+    ; -- 空心框 / _ApplyRegion --
     _ApplyRegion(w, h, t, radius) {
         if (this.LastMode = "full" && w = this.LastW && h = this.LastH && t = this.LastT && radius = this.LastR)
             return
@@ -2235,13 +2436,13 @@ class BorderFrame {
         try DllCall("User32\SetWindowRgn", "Ptr", this.Gui.Hwnd, "Ptr", outer, "Int", 1)
     }
 
-    ; -- 隐藏 / Hide the frame --
-    Hide() {
+    ; -- 显示/隐藏 / Show, Hide --
+    Show() {
         if IsObject(this.Gui)
             try DllCall("ShowWindow", "Ptr", this.Gui.Hwnd, "Int", 0)
     }
 
-    ; -- 销毁 / Destroy the frame --
+    ; -- 销毁 / Destroy --
     Destroy() {
         if IsObject(this.Gui)
             try this.Gui.Destroy()
@@ -2249,19 +2450,27 @@ class BorderFrame {
     }
 }
 
-; ---- 拖拽边框 / Drag border (single rounded frame) ----
+; ---- Drag border (single rounded frame) / 拖拽边框 ----
 class DragBorder {
     static Frame := ""
+    static LastX := -9999, LastY := -9999, LastW := -1, LastH := -1
 
-    ; -- 显示 / Show --
+    ; -- Show border, pre-render big gradient / 显示 +预渲大渐变 --
     static Show() {
         if (Border_Enable != "on")
             return
         this.Destroy()
         this.Frame := BorderFrame(Border_FocusColor, Border_Opacity)
+        ; Pre-render one large gradient at monitor resolution — reuse during resize
+        pc := ParseColor(Border_FocusColor)
+        if (pc.isGrad) {
+            MonitorGetWorkArea(MonitorGetPrimary(), &mL, &mT, &mR, &mB)
+            this.Frame.BigGradBM := CreateGradient(mR - mL, mB - mT, 0, pc.colors*)
+        }
+        this.LastX := -9999, this.LastY := -9999, this.LastW := -1, this.LastH := -1
     }
 
-    ; -- 跟随更新 / Update to follow a window --
+    ; -- Update position / 更新位置 --
     static Update(hwnd) {
         if !IsObject(this.Frame)
             return
@@ -2273,18 +2482,27 @@ class DragBorder {
         ot := Border_OffsetTop
         x -= o, y -= (o + ot), w += 2*o, h += 2*o + ot
         rad := (Border_Rounded = "on") ? Border_Radius : 0
+        ; Skip if unchanged / 未变则跳过
+        if (x = this.LastX && y = this.LastY && w = this.LastW && h = this.LastH)
+            return
+        this.LastX := x, this.LastY := y, this.LastW := w, this.LastH := h
         this.Frame.Place(x, y, w, h, Border_Thickness, rad, Border_Opacity, Border_Mode, -1)
     }
 
-    ; -- 销毁 / Destroy --
+    ; -- Destroy / 销毁 --
     static Destroy() {
-        if IsObject(this.Frame)
+        if IsObject(this.Frame) {
+            if this.Frame.BigGradBM {
+                DllCall("Gdi32\DeleteObject", "Ptr", this.Frame.BigGradBM)
+                this.Frame.BigGradBM := 0
+            }
             this.Frame.Destroy()
+        }
         this.Frame := ""
     }
 }
 
-; ---- 置顶指示边框 / Pinned-window border ----
+; ---- Pinned-window border / 置顶边框 ----
 class PinBorder {
     static Map     := Map()
     static TimerFn := ObjBindMethod(PinBorder, "Tick")
@@ -2349,10 +2567,10 @@ class PinBorder {
 }
 
 ; ==============================================================================
-; 十、鼠标下窗口操作 / 10. Under-Cursor Window Actions
+; Window Actions / 十窗口操
 ; ==============================================================================
 
-; ---- 关闭鼠标下窗口 / Close window under mouse ----
+; ---- Close window under mouse / 关闭窗口 ----
 CloseWindowUnderMouse(*) {
     MouseGetPos(,, &hwnd)
     try {
@@ -2363,7 +2581,7 @@ CloseWindowUnderMouse(*) {
     WTM.OnWindowChanged()
 }
 
-; ---- 最小化鼠标下窗口 / Minimize window under mouse ----
+; ---- Minimize window under mouse / 最小化 ----
 HideUnderMouse(*) {
     MouseGetPos(,, &hwnd)
     try {
@@ -2373,7 +2591,7 @@ HideUnderMouse(*) {
     WTM.OnWindowChanged()
 }
 
-; ---- 最大化/还原鼠标下窗口 / Toggle maximize under mouse ----
+; ---- Toggle maximize under mouse / 最大化 ----
 ToggleMaximizeUnderMouse(*) {
     MouseGetPos(,, &hwnd)
     try {
@@ -2387,7 +2605,7 @@ ToggleMaximizeUnderMouse(*) {
     }
 }
 
-; ---- 置顶切换（鼠标下）/ Toggle always-on-top under mouse ----
+; ---- Toggle always-on-top under mouse / 置顶切换 ----
 ToggleTopUnderMouse(*) {
     MouseGetPos(,, &hwnd)
     try {
@@ -2403,7 +2621,7 @@ ToggleTopUnderMouse(*) {
     }
 }
 
-; ---- 透明度调节 / Adjust window transparency ----
+; ---- Adjust window transparency / 透明度 ----
 AdjustTransparency(amount, *) {
     global TransparencyStep
     MouseGetPos(,, &hwnd)
@@ -2429,10 +2647,10 @@ AdjustTransparency(amount, *) {
 }
 
 ; ==============================================================================
-; 十一、功能环 / 11. Pie Menu
+; Pie Menu / 十一功能
 ; ==============================================================================
 
-; ---- 功能环 / Radial pie menu ----
+; ---- Radial pie menu / 功能环 ----
 class PieMenu {
     static DirMap   := ["Right","DownRight","Down","DownLeft","Left","TopLeft","Top","TopRight"]
     static IsActive := false, GuiObj := "", Labels := Map()
@@ -2440,7 +2658,7 @@ class PieMenu {
     static TimerFn  := ObjBindMethod(PieMenu, "CheckMouse")
     static StartX   := 0, StartY := 0, CurrentSector := "", LastSector := ""
 
-    ; -- 启动 / Start the pie menu --
+    ; -- 启动 / Start --
     static Start() {
         if this.IsActive || GetKeyState("Alt", "P")
             return
@@ -2453,7 +2671,7 @@ class PieMenu {
         SetTimer(this.TimerFn, 8)
     }
 
-    ; -- 构建界面 / Build the GUI --
+    ; -- 构建 / CreateGui --
     static CreateGui() {
         this.Labels := Map()
         this.GuiObj := Gui("-Caption +AlwaysOnTop +ToolWindow +Owner +E0x20 -DPIScale")
@@ -2478,7 +2696,7 @@ class PieMenu {
                        . " w" Pie_Size " h" Pie_Size " NoActivate")
     }
 
-    ; -- 鼠标扇区检测 / Track mouse sector --
+    ; -- 扇区 / CheckMouse --
     static CheckMouse() {
         if !this.IsActive
             return
@@ -2504,7 +2722,7 @@ class PieMenu {
         }
     }
 
-    ; -- 高亮刷新 / Refresh sector highlight --
+    ; -- 高亮 / UpdateUI --
     static UpdateUI() {
         if !IsObject(this.GuiObj)
             return
@@ -2523,7 +2741,7 @@ class PieMenu {
         }
     }
 
-    ; -- 执行所选方向 / Execute the selected sector --
+    ; -- 执行 / Execute --
     static Execute() {
         this.IsActive := false
         if !GetKeyState("RButton", "P")
@@ -2540,10 +2758,10 @@ class PieMenu {
 }
 
 ; ==============================================================================
-; 十二、虚拟桌面 / 12. Virtual Desktops
+; Virtual Desktops / 十二虚拟
 ; ==============================================================================
 
-; ---- 隐藏窗口 / Hide one window per configured method ----
+; ---- HideWin / 隐藏窗口 ----
 HideWin(hwnd) {
     global Desktop_HideMethod
     if (Desktop_HideMethod = "hide"){
@@ -2554,7 +2772,7 @@ HideWin(hwnd) {
     }
 }
 
-; ---- 显示窗口 / Show one window per configured method ----
+; ---- ShowWin / 显示窗口 ----
 ShowWin(hwnd) {
     global Desktop_HideMethod
     if (Desktop_HideMethod = "hide"){
@@ -2565,7 +2783,7 @@ ShowWin(hwnd) {
     }
 }
 
-; ---- 切换桌面 / Switch virtual desktop ----
+; ---- SwitchDesktop / 切换桌面 ----
 SwitchDesktop(target, *) {
     global CurrentDesktop, Desktops, AlwaysVisible, DesktopFocus
     if (target == CurrentDesktop) {
@@ -2590,8 +2808,11 @@ SwitchDesktop(target, *) {
         if !AlwaysVisible.Has(hwnd)
             HideWin(hwnd)
     }
-    for hwnd in Desktops[target]
-        ShowWin(hwnd)
+    ; 从底到顶恢复 Z 序 / Restore bottom→top to preserve Z-order
+    loop Desktops[target].Length {
+        h := Desktops[target][Desktops[target].Length - A_Index + 1]
+        ShowWin(h)
+    }
     for hwnd, _ in AlwaysVisible
         ShowWin(hwnd)
 
@@ -2609,7 +2830,7 @@ SwitchDesktop(target, *) {
         AllBorders.Rebuild()
 }
 
-; ---- 移动窗口到桌面 / Move active window to a desktop ----
+; ---- MoveWindowToDesktop / 移至桌面 ----
 MoveWindowToDesktop(target, *) {
     global CurrentDesktop, Desktops, AlwaysVisible
 
@@ -2644,7 +2865,7 @@ MoveWindowToDesktop(target, *) {
     WTM.OnWindowChanged()
 }
 
-; ---- 携带窗口切换桌面（保持焦点）/ Move window and switch, keeping its focus ----
+; ---- Move window and switch, keeping its focus / 携带切换 ----
 MoveAndSwitch(target, *) {
     global CurrentDesktop, DesktopFocus
 
@@ -2672,7 +2893,7 @@ MoveAndSwitch(target, *) {
 ; 十三、状态栏 / 13. Status Bar
 ; ==============================================================================
 
-; ---- 开关值判定 / Truthy-flag parsing for config values ----
+; ---- Truthy-flag parsing for config values / 开关判定 ----
 BarShown(str) {
     s := StrLower(Trim(str))
     return !(s = "" || s = "false" || s = "off" || s = "0")
@@ -2680,10 +2901,10 @@ BarShown(str) {
 ; 通用别名（非 Bar 场景使用更清晰的命名）
 BoolCfg(str) => BarShown(str)
 
-; ---- 状态栏布局解析 / Parse "element:expr;..." bar layout ----
+; ---- Parse "element:expr;..." bar layout / 布局解析 ----
 ParseBarLayout(str) {
     result := Map()
-    ; 旧格式 / Legacy: element:span,color;...
+    
     if InStr(str, ":") && !InStr(str, "bg") && !InStr(str, "tx") {
         for clause in SplitEscaped(str, ";") {
             clause := Trim(clause)
@@ -2713,7 +2934,7 @@ ParseBarLayout(str) {
         }
         return result
     }
-    ; 新格式 / New: N,element,span,c1..cn,bg|tx,on|off;...
+    
     for clause in SplitEscaped(str, ";") {
         clause := Trim(clause)
         if (clause = "")
@@ -2721,7 +2942,7 @@ ParseBarLayout(str) {
         fields := SplitEscaped(clause, ",")
         if (fields.Length < 2)
             continue
-        ; 首字段: 数字=bar编号, 字母=元素名(默认1)
+        
         idx := 1, barNum := 1
         if IsInteger(Trim(fields[1])) {
             barNum := Integer(Trim(fields[1]))
@@ -2759,7 +2980,7 @@ ParseBarLayout(str) {
     return result
 }
 
-; ---- 工作时间范围（分钟）/ Work-time range in minutes ----
+; ---- Work-time range in minutes / 工时范围 ----
 WorkRangeMins(&baseStart, &baseEnd) {
     global Work_Mode, Work_WeekendBar, Work_Start, Work_End
     baseStart := 0, baseEnd := 1439
@@ -2772,7 +2993,7 @@ WorkRangeMins(&baseStart, &baseEnd) {
     }
 }
 
-; ---- 当日任务时段 / Today's task slots ----
+; ---- Today's task slots / 任务时段 ----
 ; 支持颜色: weekday_start_end,color1,color2,...;  颜色可选，无则用主题色
 WorkDayTasks(baseStart, baseEnd) {
     global Work_TaskTimes
@@ -2812,7 +3033,86 @@ WorkDayTasks(baseStart, baseEnd) {
     return out
 }
 
-; ---- 工作进度百分比 / Work-time progress percent ----
+; ---- System status (Wi-Fi, BT, Batt, Vol, Disk, Mem, CPU) / 系统状态 ----
+GetSysInfo(what) {
+    ; CPU sampling state (function-level, not inside case) / CPU采样状态
+    static cpuLastIdle := 0, cpuLastKernel := 0, cpuLastUser := 0
+    try {
+        switch what {
+        case "wifi":
+            tmpFile := A_Temp "\_wm_wifi.tmp"
+            RunWait(A_ComSpec ' /c netsh wlan show interfaces > "' tmpFile '"',, "Hide")
+            out := FileRead(tmpFile)
+            FileDelete(tmpFile)
+            if RegExMatch(out, "im)(State|状态)\s*:\s*(.+)", &m) && Trim(m[2]) ~= "i)connected|已连接" {
+                ssid := "", sig := 0
+                if RegExMatch(out, "im)SSID\s*:\s*(.+)", &ss)
+                    ssid := Trim(ss[1])
+                if RegExMatch(out, "im)Signal\s*:\s*(\d+)", &si)
+                    sig := Integer(si[1])
+                wifiIcon := sig >= 75 ? Chr(0xF1EB) : sig >= 40 ? Chr(0xF1EB) : Chr(0xF1EB)
+                return wifiIcon " " ssid "  " sig "%"
+            }
+            return Chr(0xF1EB) " off"
+        case "bt":
+            try {
+                s := RegRead("HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\BTHPORT\Parameters", "BluetoothEnable")
+                return Chr(0xF293) " " (s ? "ON" : "OFF")
+            }
+            return Chr(0xF293) " ?"
+        case "battery":
+            st := Buffer(12, 0)
+            DllCall("kernel32\GetSystemPowerStatus", "Ptr", st)
+            pct := NumGet(st, 2, "UChar")
+            acl := NumGet(st, 0, "UChar")
+            if pct = 255
+                return Chr(0xF244) " --"
+            code := pct >= 90 ? 0xF240 : pct >= 70 ? 0xF241 : pct >= 40 ? 0xF242 : pct >= 15 ? 0xF243 : 0xF244
+            return Chr(code) " " pct "%" (acl = 1 ? " " Chr(0xF1E6) : "")
+        case "volume":
+            vol := Round(SoundGetVolume())
+            code := vol = 0 ? 0xF026 : vol < 33 ? 0xF027 : 0xF028
+            return Chr(code) " " vol
+        case "disk":
+            try {
+                free := DriveGetSpaceFree("C:\")
+                freeGB := Round(free / 1024)
+                code := freeGB < 10 ? 0xF071 : 0xF0C7
+                return Chr(code) " C " freeGB "G"
+            }
+            return Chr(0xF071) " C ?"
+        case "mem":
+            info := GlobalMemoryStatusEx()
+            used := info.MemoryLoad
+            code := used >= 90 ? 0xF071 : 0xF0E4
+            return Chr(code) " " used "%"
+        case "cpu":
+            idle := Buffer(8, 0), kernel := Buffer(8, 0), user := Buffer(8, 0)
+            if !DllCall("kernel32\GetSystemTimes", "Ptr", idle, "Ptr", kernel, "Ptr", user)
+                return Chr(0xF085) " ?"
+            i := NumGet(idle, 0, "Int64"), k := NumGet(kernel, 0, "Int64"), u := NumGet(user, 0, "Int64")
+            usage := 0
+            if (cpuLastIdle > 0) {
+                dIdle := i - cpuLastIdle, dKernel := k - cpuLastKernel, dUser := u - cpuLastUser
+                dTotal := dKernel + dUser
+                if (dTotal > 0)
+                    usage := Round((dTotal - dIdle) / dTotal * 100)
+            }
+            cpuLastIdle := i, cpuLastKernel := k, cpuLastUser := u
+            code := usage >= 90 ? 0xF071 : usage >= 70 ? 0xF200 : 0xF085
+            return Chr(code) " " usage "%"
+        }
+    }
+    return ""
+}
+GlobalMemoryStatusEx() {
+    buf := Buffer(64, 0)
+    NumPut("UInt", 64, buf, 0)
+    DllCall("kernel32\GlobalMemoryStatusEx", "Ptr", buf)
+    return { MemoryLoad: NumGet(buf, 4, "UInt") }
+}
+
+; ---- Work-time progress percent / 工时进度 ----
 WorkPercent() {
     global Work_Mode, Work_WeekendBar, Work_Start, Work_End
     NowTime := A_Now, TodayDate := FormatTime(NowTime, "yyyyMMdd"), WDay := A_WDay
@@ -2835,7 +3135,7 @@ WorkPercent() {
     return (ElapsedSec / TotalSec) * 100
 }
 
-; ---- 状态栏实例 / One bar strip on one monitor edge ----
+; ---- One bar strip on one monitor edge / 状态栏实例 ----
 class BarInstance {
     Mon := 1, Pos := "top", Offset := 0, Thick := 30
     BarNum := 1
@@ -2844,17 +3144,19 @@ class BarInstance {
     ProgX := 0, ProgY := 0, ProgW := 0, ProgH := 0
     ProgHasGradient := false, ProgGradientColors := []
     ProgGradientPic := "", ProgOldBM := 0
-    GradText := Map()   ; 渐变文字: {colors, w, h, cx, cy, oldBM, mode, rounded}
+    WifiCtrl := "", BtCtrl := "", BattCtrl := "", VolCtrl := "", DiskCtrl := "", MemCtrl := "", CpuCtrl := ""
+    LastVals := Map()
+    GradText := Map()   ; 渐变文字
     BgGradBM := 0       ; bar背景渐变
 
-    ; -- 构造 / Construct & build --
+    ; -- 构造 / __New --
     __New(mon, pos, offset, barNum := 1) {
         this.Mon := mon, this.Pos := pos, this.Offset := offset
         this.BarNum := barNum
         this.Build()
     }
 
-    ; -- 是否水平 / Horizontal orientation check --
+    ; -- 水平检测 / IsHorizontal --
     IsHorizontal() => (this.Pos = "top" || this.Pos = "bottom")
 
     ; -- 获取当前bar的布局 / Get this bar's layout Map --
@@ -2888,24 +3190,40 @@ class BarInstance {
             "custom_2",  {lo:0.48, hi:0.62, colors:[], mode:"text", rounded:"off"},
             "progress",  {lo:0.40, hi:0.62, colors:[], mode:"text", rounded:"off"},
             "date",      {lo:0.64, hi:0.82, colors:[], mode:"text", rounded:"off"},
-            "time",      {lo:0.82, hi:1.00, colors:[], mode:"text", rounded:"off"}
+            "time",      {lo:0.82, hi:1.00, colors:[], mode:"text", rounded:"off"},
+            "wifi",      {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off"},
+            "bluetooth", {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off"},
+            "battery",   {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off"},
+            "volume",    {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off"},
+            "disk",      {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off"},
+            "mem",       {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off"},
+            "cpu",       {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off"}
         )
         return defaults.Has(name) ? defaults[name] : {lo:0.0, hi:1.0, colors:[], mode:"text", rounded:"off"}
     }
 
-    ; -- 行高计算 / Text line-height --
+    ; -- 行高 / _LineHeight (GDI 实测字体避免偏移) --
     _LineHeight() {
-        global Bar_FontSize
-        px := Bar_FontSize * A_ScreenDPI / 72
-        return Round(px * 1.4) + 2
+        global Bar_FontSize, FontName
+        fh := -Round(Bar_FontSize * A_ScreenDPI / 72)
+        hFont := DllCall("Gdi32\CreateFontW", "Int",fh,"Int",0,"Int",0,"Int",0,"Int",700
+            ,"Int",0,"Int",0,"Int",0,"Int",0,"Int",0,"Int",5,"Int",0,"Int",0,"Str",FontName,"Ptr")
+        dc := DllCall("Gdi32\CreateCompatibleDC", "Ptr",0, "Ptr")
+        old := DllCall("Gdi32\SelectObject", "Ptr",dc, "Ptr",hFont, "Ptr")
+        tm := Buffer(57, 0)
+        DllCall("Gdi32\GetTextMetricsW", "Ptr",dc, "Ptr",tm)
+        DllCall("Gdi32\SelectObject", "Ptr",dc, "Ptr",old, "Ptr")
+        DllCall("Gdi32\DeleteDC", "Ptr",dc)
+        DllCall("Gdi32\DeleteObject", "Ptr",hFont)
+        return NumGet(tm, 0, "Int") + 4  ; tmHeight + padding
     }
 
-    ; -- 控件选项串 / Control option string --
+    ; -- 控件选项 / _Opt --
     _Opt(x, y, w, h, align) {
         return Format("x{} y{} w{} h{} BackgroundTrans {}", Round(x), Round(y), Round(w), Round(h), align)
     }
 
-    ; -- 构建状态栏 / Build the bar window --
+    ; -- 构建 / Build --
     Build() {
         global Color_Bg, Color_Active, Bar_FontSize, Bar_Height, Bar_Transparent
         global Bar_Rounded, Bar_Radius, Bar_CornerMode
@@ -2939,7 +3257,7 @@ class BarInstance {
         g := Gui("-Caption +AlwaysOnTop +ToolWindow +Owner +E0x08000000 -DPIScale")
         pcBg := ParseColor(Color_Bg)
         g.BackColor := pcBg.first
-        g.SetFont("s" Bar_FontSize " w600 c" C1(Color_Active), "Segoe UI")
+        g.SetFont("s" Bar_FontSize " w600 c" C1(Color_Active), FontName)
         this.Gui := g
         ; 渐变背景 / Gradient bar background
         if (pcBg.isGrad) {
@@ -2958,7 +3276,7 @@ class BarInstance {
         this.UpdateDesktops()
     }
 
-    ; -- 构建元素 / Build bar elements (layout驱动) --
+    ; -- 构建元素 / _BuildElements --
     _BuildElements(L, T, horiz) {
         global Bar_Cfg, Bar_FontSize
         g := this.Gui
@@ -2982,6 +3300,20 @@ class BarInstance {
             elements.Push("date")
         if layout.Has("time")
             elements.Push("time")
+        if layout.Has("wifi")
+            elements.Push("wifi")
+        if layout.Has("bluetooth")
+            elements.Push("bluetooth")
+        if layout.Has("battery")
+            elements.Push("battery")
+        if layout.Has("volume")
+            elements.Push("volume")
+        if layout.Has("disk")
+            elements.Push("disk")
+        if layout.Has("mem")
+            elements.Push("mem")
+        if layout.Has("cpu")
+            elements.Push("cpu")
 
         for el in elements {
             seg := this._Seg(el)
@@ -3033,6 +3365,62 @@ class BarInstance {
                         mode := "text"
                     }
                     this._BuildProgress(s, segLen, T, horiz, colors)
+                case "wifi":
+                    if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
+                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("wifi") || "WiFi")
+                    else {
+                        this.WifiCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), GetSysInfo("wifi") || "WiFi")
+                        if (colors.Length = 1)
+                            this.WifiCtrl.SetFont("c" colors[1])
+                    }
+                case "bluetooth":
+                    if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
+                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("bt") || "BT")
+                    else {
+                        this.BtCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), GetSysInfo("bt") || "BT")
+                        if (colors.Length = 1)
+                            this.BtCtrl.SetFont("c" colors[1])
+                    }
+                case "battery":
+                    if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
+                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("battery") || "Batt")
+                    else {
+                        this.BattCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), GetSysInfo("battery") || "Batt")
+                        if (colors.Length = 1)
+                            this.BattCtrl.SetFont("c" colors[1])
+                    }
+                case "volume":
+                    if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
+                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("volume") || "Vol")
+                    else {
+                        this.VolCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), GetSysInfo("volume") || "Vol")
+                        if (colors.Length = 1)
+                            this.VolCtrl.SetFont("c" colors[1])
+                    }
+                case "disk":
+                    if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
+                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("disk") || "Disk")
+                    else {
+                        this.DiskCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), GetSysInfo("disk") || "Disk")
+                        if (colors.Length = 1)
+                            this.DiskCtrl.SetFont("c" colors[1])
+                    }
+                case "mem":
+                    if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
+                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("mem") || "Mem")
+                    else {
+                        this.MemCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), GetSysInfo("mem") || "Mem")
+                        if (colors.Length = 1)
+                            this.MemCtrl.SetFont("c" colors[1])
+                    }
+                case "cpu":
+                    if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
+                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("cpu") || "CPU")
+                    else {
+                        this.CpuCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), GetSysInfo("cpu") || "CPU")
+                        if (colors.Length = 1)
+                            this.CpuCtrl.SetFont("c" colors[1])
+                    }
                 default:
                     if RegExMatch(el, "^custom_(\d+)$", &mm) {
                         n := Integer(mm[1])
@@ -3049,7 +3437,7 @@ class BarInstance {
         }
     }
 
-    ; -- 渐变文字控件 / Add gradient-text Picture --
+    ; -- 渐变文字控件 / _AddGradTextCtrl --
     _AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode := "text", rounded := "off", txt := "") {
         global Bar_FontSize, Color_Bg
         w := Round(cw), h := Round(ch)
@@ -3072,26 +3460,33 @@ class BarInstance {
             tColor := C1(Color_Bg)
             ctrl := g.Add("Text", Format("x{} y{} w{} h{} Center BackgroundTrans c{}"
                 , Round(cx), Round(cy), w, h, tColor), txt)
-            ctrl.SetFont("s" Bar_FontSize " w600", "Segoe UI")
+            ctrl.SetFont("s" Bar_FontSize " w600", FontName)
             this.GradText[el] := {colors: colors, w: w, h: h, cx: Round(cx), cy: Round(cy)
                 , ctrl: ctrl, oldBM: hBM, mode: mode, rounded: rounded, isSimple: true}
 
         ; ===== text 模式：原有渐变文字 bitmap 渲染 =====
         } else {
-            hBM := TextOnGradient(w, h, colors, txt, Bar_FontSize, "text", "Segoe UI", this.BgGradBM, bgOff, C1(Color_Bg))
+            hBM := TextOnGradient(w, h, colors, txt, Bar_FontSize, "text", FontName, this.BgGradBM, bgOff, C1(Color_Bg))
             ctrl := g.Add("Picture", Format("x{} y{} w{} h{}", Round(cx), Round(cy), w, h)
                 , hBM ? "HBITMAP:" hBM : "")
             this.GradText[el] := {colors: colors, w: w, h: h, cx: Round(cx), cy: Round(cy)
                 , ctrl: ctrl, oldBM: hBM, mode: mode, rounded: rounded, isSimple: false}
         }
         switch el {
-            case "desktops": this.DesktopsCtrl := ctrl
-            case "time":     this.TimeCtrl := ctrl
-            case "date":     this.DateCtrl := ctrl
+            case "desktops":  this.DesktopsCtrl := ctrl
+            case "time":      this.TimeCtrl := ctrl
+            case "date":      this.DateCtrl := ctrl
+            case "wifi":      this.WifiCtrl := ctrl
+            case "bluetooth": this.BtCtrl := ctrl
+            case "battery":   this.BattCtrl := ctrl
+            case "volume":    this.VolCtrl := ctrl
+            case "disk":      this.DiskCtrl := ctrl
+            case "mem":       this.MemCtrl := ctrl
+            case "cpu":       this.CpuCtrl := ctrl
         }
     }
 
-    ; -- 更新渐变文字 / Refresh gradient-text Picture --
+    ; -- 更新渐变文字 / _UpdateGradText --
     _UpdateGradText(el, newText) {
         global Bar_FontSize, Color_Bg
         if !this.GradText.Has(el)
@@ -3108,7 +3503,7 @@ class BarInstance {
         if (gi.mode = "bg") {
             style := gi.rounded = "on" ? "bg_rounded" : "bg"
         }
-        hBM := TextOnGradient(gi.w, gi.h, gi.colors, newText, Bar_FontSize, style, "Segoe UI", this.BgGradBM, gi.cx, C1(Color_Bg))
+        hBM := TextOnGradient(gi.w, gi.h, gi.colors, newText, Bar_FontSize, style, FontName, this.BgGradBM, gi.cx, C1(Color_Bg))
         if (!hBM)
             return
         try gi.ctrl.Value := "HBITMAP:" hBM
@@ -3158,7 +3553,7 @@ class BarInstance {
         }
     }
 
-    ; -- 任务标记 / Task-slot markers --
+    ; -- 任务标记 / _BuildTaskMarkers --
     _BuildTaskMarkers(progX, progW, progY) {
         global Color_Task
         WorkRangeMins(&bs, &be)
@@ -3199,7 +3594,7 @@ class BarInstance {
         }
     }
 
-    ; -- 桌面指示更新 / Update the desktops widget --
+    ; -- 桌面更新 / UpdateDesktops --
     UpdateDesktops() {
         global CurrentDesktop, DesktopCount, Desktops, Bar_Cfg
         if !IsObject(this.DesktopsCtrl)
@@ -3222,10 +3617,13 @@ class BarInstance {
             cell := (i = CurrentDesktop) ? (lft lbl rgt) : lbl
             str .= (str = "" ? "" : sep) cell
         }
-        if this.GradText.Has("desktops")
-            this._UpdateGradText("desktops", str)
-        else
-            try this.DesktopsCtrl.Value := str
+        if (str != (this.LastVals.Has("desktops") ? this.LastVals["desktops"] : "")) {
+            if this.GradText.Has("desktops")
+                this._UpdateGradText("desktops", str)
+            else
+                try this.DesktopsCtrl.Value := str
+            this.LastVals["desktops"] := str
+        }
     }
 
     ; -- 时钟/进度更新 / Update clock & progress --
@@ -3233,16 +3631,96 @@ class BarInstance {
     UpdateClock(pct) {
         global Bar_Cfg
         if IsObject(this.TimeCtrl) {
-            if this.GradText.Has("time")
-                this._UpdateGradText("time", FormatTime(, Bar_Cfg["time_format"]))
-            else
-                try this.TimeCtrl.Value := FormatTime(, Bar_Cfg["time_format"])
+            val := FormatTime(, Bar_Cfg["time_format"])
+            if (val != (this.LastVals.Has("time") ? this.LastVals["time"] : "")) {
+                if this.GradText.Has("time")
+                    this._UpdateGradText("time", val)
+                else
+                    try this.TimeCtrl.Value := val
+                this.LastVals["time"] := val
+            }
         }
         if IsObject(this.DateCtrl) {
-            if this.GradText.Has("date")
-                this._UpdateGradText("date", FormatTime(, Bar_Cfg["date_format"]))
-            else
-                try this.DateCtrl.Value := FormatTime(, Bar_Cfg["date_format"])
+            val := FormatTime(, Bar_Cfg["date_format"])
+            if (val != (this.LastVals.Has("date") ? this.LastVals["date"] : "")) {
+                if this.GradText.Has("date")
+                    this._UpdateGradText("date", val)
+                else
+                    try this.DateCtrl.Value := val
+                this.LastVals["date"] := val
+            }
+        }
+        ; 系统状态组件 / System status widgets
+        if IsObject(this.WifiCtrl) {
+            val := GetSysInfo("wifi")
+            if (val != (this.LastVals.Has("wifi") ? this.LastVals["wifi"] : "")) {
+                if this.GradText.Has("wifi")
+                    this._UpdateGradText("wifi", val)
+                else
+                    try this.WifiCtrl.Value := val
+                this.LastVals["wifi"] := val
+            }
+        }
+        if IsObject(this.BtCtrl) {
+            val := GetSysInfo("bt")
+            if (val != (this.LastVals.Has("bt") ? this.LastVals["bt"] : "")) {
+                if this.GradText.Has("bluetooth")
+                    this._UpdateGradText("bluetooth", val)
+                else
+                    try this.BtCtrl.Value := val
+                this.LastVals["bt"] := val
+            }
+        }
+        if IsObject(this.BattCtrl) {
+            val := GetSysInfo("battery")
+            if (val != (this.LastVals.Has("battery") ? this.LastVals["battery"] : "")) {
+                if this.GradText.Has("battery")
+                    this._UpdateGradText("battery", val)
+                else
+                    try this.BattCtrl.Value := val
+                this.LastVals["battery"] := val
+            }
+        }
+        if IsObject(this.VolCtrl) {
+            val := GetSysInfo("volume")
+            if (val != (this.LastVals.Has("volume") ? this.LastVals["volume"] : "")) {
+                if this.GradText.Has("volume")
+                    this._UpdateGradText("volume", val)
+                else
+                    try this.VolCtrl.Value := val
+                this.LastVals["volume"] := val
+            }
+        }
+        ; disk / mem
+        if IsObject(this.DiskCtrl) {
+            val := GetSysInfo("disk")
+            if (val != (this.LastVals.Has("disk") ? this.LastVals["disk"] : "")) {
+                if this.GradText.Has("disk")
+                    this._UpdateGradText("disk", val)
+                else
+                    try this.DiskCtrl.Value := val
+                this.LastVals["disk"] := val
+            }
+        }
+        if IsObject(this.MemCtrl) {
+            val := GetSysInfo("mem")
+            if (val != (this.LastVals.Has("mem") ? this.LastVals["mem"] : "")) {
+                if this.GradText.Has("mem")
+                    this._UpdateGradText("mem", val)
+                else
+                    try this.MemCtrl.Value := val
+                this.LastVals["mem"] := val
+            }
+        }
+        if IsObject(this.CpuCtrl) {
+            val := GetSysInfo("cpu")
+            if (val != (this.LastVals.Has("cpu") ? this.LastVals["cpu"] : "")) {
+                if this.GradText.Has("cpu")
+                    this._UpdateGradText("cpu", val)
+                else
+                    try this.CpuCtrl.Value := val
+                this.LastVals["cpu"] := val
+            }
         }
         ; 渐变进度条
         if (this.ProgHasGradient && IsObject(this.ProgGradientPic)) {
@@ -3276,7 +3754,7 @@ class BarInstance {
             try this.Progress.Value := Integer(pct)
     }
 
-    ; -- 显示 / Show --
+    ; -- 显示/隐藏 / Show, Hide --
     Show()    => (this.Gui ? this.Gui.Show("NoActivate") : 0)
     ; -- 隐藏 / Hide --
     Hide()    => (this.Gui ? this.Gui.Hide() : 0)
@@ -3286,6 +3764,7 @@ class BarInstance {
             if (gi.oldBM)
                 DllCall("Gdi32.dll\DeleteObject", "Ptr", gi.oldBM)
         }
+        this.LastVals := Map()
         this.GradText := Map()
         if (this.ProgOldBM)
             DllCall("Gdi32.dll\DeleteObject", "Ptr", this.ProgOldBM)
@@ -3297,7 +3776,7 @@ class BarInstance {
     }
 }
 
-; ---- 状态栏实例解析 / Resolve configured bar instances ----
+; ---- BarInstances / 实例解析 ----
 BarInstances() {
     global Bar_Cfg, Bar_MonitorIdx
     out := []
@@ -3342,7 +3821,7 @@ BarInstances() {
     return out
 }
 
-; ---- 状态栏窗口判定 / Bar-window check ----
+; ---- IsBarWindow / 窗口判定 ----
 IsBarWindow(hwnd) {
     global Bars
     if !IsSet(Bars)
@@ -3354,7 +3833,7 @@ IsBarWindow(hwnd) {
     return false
 }
 
-; ---- 状态栏区域预留 / Subtract bars from a work-area rect ----
+; ---- BarReserve / 区域预留 ----
 BarReserve(monIdx, &L, &T, &R, &B) {
     global Bars, Bar_ShownState
     if (!IsSet(Bars) || !Bar_ShownState)
@@ -3371,7 +3850,7 @@ BarReserve(monIdx, &L, &T, &R, &B) {
     }
 }
 
-; ---- 销毁全部状态栏 / Destroy all bars ----
+; ---- DestroyAllBars / 销毁全部 ----
 DestroyAllBars() {
     global Bars
     if !IsSet(Bars)
@@ -3381,7 +3860,7 @@ DestroyAllBars() {
     Bars := []
 }
 
-; ---- 创建状态栏 / Create all configured bars ----
+; ---- CreateStatusBar / 创建全部 ----
 CreateStatusBar() {
     global Bars, Bar_ShownState
     DestroyAllBars()
@@ -3398,7 +3877,7 @@ CreateStatusBar() {
     UpdateStatusBar()
 }
 
-; ---- 桌面指示刷新 / Refresh the desktops widget on every bar ----
+; ---- UpdateStatusBar / 桌面刷新 ----
 UpdateStatusBar() {
     global Bars
     if !IsSet(Bars)
@@ -3407,7 +3886,7 @@ UpdateStatusBar() {
         try b.UpdateDesktops()
 }
 
-; ---- 每秒时钟刷新 / Per-second clock & progress tick ----
+; ---- UpdateClockAndProgress / 每秒刷新 ----
 UpdateClockAndProgress() {
     global Bars
     static LastDay := ""
@@ -3431,7 +3910,7 @@ UpdateClockAndProgress() {
         WMLogErr("Tick: ApplyPauseOnFullscreen", e)
 }
 
-; ---- 全屏检测 / Fullscreen window detection ----
+; ---- HasFullscreenWindow / 全屏检测 ----
 HasFullscreenWindow(targetMon) {
     for hwnd in GetVisibleWindow() {
         try {
@@ -3454,7 +3933,7 @@ HasFullscreenWindow(targetMon) {
     return false
 }
 
-; ---- 状态栏可见性 / Bar visibility (manual + fullscreen auto-hide) ----
+; ---- ApplyBarVisibility / 可见性 ----
 ApplyBarVisibility() {
     global Bars, Bar_Visible, Bar_AutoHide, Bar_FsHidden, Bar_ShownState
     if !IsSet(Bars)
@@ -3484,7 +3963,7 @@ ApplyBarVisibility() {
     Bar_ShownState := anyShown
 }
 
-; ---- 全屏暂停 / Pause when fullscreen ----
+; ---- ApplyPauseOnFullscreen / 全屏暂停 ----
 ApplyPauseOnFullscreen() {
     global PauseOnFullscreen
     static wasPaused := false
@@ -3512,14 +3991,14 @@ ApplyPauseOnFullscreen() {
     }
 }
 
-; ---- 状态栏显隐切换 / Toggle bar visibility ----
+; ---- ToggleBar / 切换显隐 ----
 ToggleBar(*) {
     global Bar_Visible
     Bar_Visible := !Bar_Visible
     ApplyBarVisibility()
 }
 
-; ---- 常显窗口切换 / Toggle always-visible pin ----
+; ---- Toggle always-visible pin / 常显窗口 ----
 TogglePin(*) {
     global AlwaysVisible
     hwnd := 0
@@ -3538,7 +4017,7 @@ TogglePin(*) {
     }
 }
 
-; ---- 聚集全部窗口 / Gather all windows to the current desktop ----
+; ---- Gather all windows to the current desktop / 聚集全部 ----
 GatherAllToCurrent(*) {
     global Desktops, CurrentDesktop, AlwaysVisible
     ShowOSD("Gathering All Windows...")
@@ -3580,20 +4059,20 @@ GatherAllToCurrent(*) {
 ; 十四、智能平铺 / 14. Smart Tiling
 ; ==============================================================================
 
-; ---- 平铺外边界设置 / Set protected tiling boundary ----
+; ---- Set protected tiling boundary / 平铺外边 ----
 SetTileBound(l, t, r, b) {
     global TileBound_L, TileBound_T, TileBound_R, TileBound_B, TileBoundSet
     TileBound_L := l, TileBound_T := t, TileBound_R := r, TileBound_B := b
     TileBoundSet := true
 }
 
-; ---- 平铺外边界清除 / Clear protected tiling boundary ----
+; ---- Clear protected tiling boundary / 平铺外边 ----
 ClearTileBound() {
     global TileBoundSet
     TileBoundSet := false
 }
 
-; ---- 当前显示器智能平铺 / Smart-tile the monitor under the mouse ----
+; ---- Smart-tile the monitor under the mouse / 当前显示 ----
 TileCurrentMonitor(*) {
     global CurrentTileGap, Tile_Gap
 
@@ -3646,7 +4125,7 @@ TileCurrentMonitor(*) {
     ClearTileBound()
 }
 
-; ---- 摆放窗口（含间隙与边界保护）/ Place one window with gap & bound clamp ----
+; ---- Place one window with gap & bound clamp / 摆放窗口 ----
 PlaceWin(hwnd, x, y, w, h) {
     global CurrentTileGap, TileBound_L, TileBound_T, TileBound_R, TileBound_B, TileBoundSet
     if (CurrentTileGap != 0) {
@@ -3671,7 +4150,7 @@ PlaceWin(hwnd, x, y, w, h) {
     }
 }
 
-; ---- 网格平铺 / Grid tiling ----
+; ---- Grid tiling / 网格平铺 ----
 TileGrid(wins, X, Y, W, H, isVertical := false) {
     n := wins.Length
     if (n == 0)
@@ -3708,7 +4187,7 @@ TileGrid(wins, X, Y, W, H, isVertical := false) {
     }
 }
 
-; ---- 常规屏平铺 / Normal-aspect tiling ----
+; ---- Normal-aspect tiling / 常规屏平 ----
 TileNormal(wins, WL, WT, W, H) {
     n := wins.Length
     switch n {
@@ -3729,7 +4208,7 @@ TileNormal(wins, WL, WT, W, H) {
     TileGrid(wins, WL, WT, W, H, false)
 }
 
-; ---- 竖屏平铺 / Vertical-monitor tiling ----
+; ---- Vertical-monitor tiling / 竖屏平铺 ----
 TileVertical(wins, X, Y, W, H) {
     n := wins.Length
     if (n <= 3) {
@@ -3741,7 +4220,7 @@ TileVertical(wins, X, Y, W, H) {
     TileGrid(wins, X, Y, W, H, true)
 }
 
-; ---- 超宽屏平铺 / Ultrawide-monitor tiling ----
+; ---- Ultrawide-monitor tiling / 超宽屏平 ----
 TileUltrawide(wins, X, Y, W, H) {
     n := wins.Length
     if (n == 1) {
@@ -3774,7 +4253,7 @@ TileUltrawide(wins, X, Y, W, H) {
     }
 }
 
-; ---- 可平铺判定 / Tiling eligibility check ----
+; ---- Tiling eligibility check / 可平铺判 ----
 IsTilableWindow(hwnd) {
     global Tile_IncludeAlwaysOnTop
     if Tile_IncludeAlwaysOnTop
@@ -3784,7 +4263,7 @@ IsTilableWindow(hwnd) {
     return !(ex & 0x8)
 }
 
-; ---- 显示器可见窗口 / Visible windows on one monitor ----
+; ---- Visible windows on one monitor / 显示器可 ----
 GetVisibleWindowsOnMonitor(monIdx) {
     out := []
     for hwnd in GetVisibleWindow() {
@@ -3800,7 +4279,7 @@ GetVisibleWindowsOnMonitor(monIdx) {
     return out
 }
 
-; ---- 当前桌面可见窗口（含过滤）/ Visible windows, exclusion-aware ----
+; ---- Visible windows, exclusion-aware / 当前桌面 ----
 GetVisibleWindow() {
     windows := []
     ids := WinGetList(,, "Program Manager")
@@ -3831,7 +4310,7 @@ GetVisibleWindow() {
     return windows
 }
 
-; ---- 可见窗口（桌面切换用）/ Visible windows for desktop bookkeeping ----
+; ---- Visible windows for desktop bookkeeping / 可见窗口 ----
 GetVisibleWindows() {
     list := WinGetList()
     windows := []
@@ -3856,13 +4335,13 @@ GetVisibleWindows() {
 ; 十五、窗口吸附 / 15. Window Snapping
 ; ==============================================================================
 
-; ---- 吸附状态上下文 / Per-axis sticky-snap context ----
+; ---- Per-axis sticky-snap context / 吸附状态 ----
 class SnapCtx {
     xOn := false, xLine := 0, xEdge := ""
     yOn := false, yLine := 0, yEdge := ""
 }
 
-; ---- 收集吸附线 / Gather candidate snap lines ----
+; ---- Gather candidate snap lines / 收集吸附 ----
 GatherSnapLines(skipHwnd, &vLines, &hLines) {
     vLines := [], hLines := []
     mon := GetMonitorIndex(skipHwnd)
@@ -3892,7 +4371,7 @@ GatherSnapLines(skipHwnd, &vLines, &hLines) {
     }
 }
 
-; ---- 移动吸附（单轴）/ Snap one axis of a move ----
+; ---- Snap one axis of a move / 移动吸附 ----
 _SnapMoveAxis(edgeLo, edgeHi, size, lines, ctx, axis, &outLo) {
     global Snap_Distance, Snap_Release
     rad := Max(1, Abs(Snap_Distance)), gap := Snap_Distance, rel := Max(0, Snap_Release)
@@ -3932,7 +4411,7 @@ _SnapMoveAxis(edgeLo, edgeHi, size, lines, ctx, axis, &outLo) {
     }
 }
 
-; ---- 移动吸附 / Snap a window move ----
+; ---- Snap a window move / 移动吸附 ----
 SnapMove(rawX, rawY, w, h, vLines, hLines, ctx, &outX, &outY) {
     global Snap_Enable
     outX := rawX, outY := rawY
@@ -3942,7 +4421,7 @@ SnapMove(rawX, rawY, w, h, vLines, hLines, ctx, &outX, &outY) {
     _SnapMoveAxis(rawY, rawY + h, h, hLines, ctx, "y", &outY)
 }
 
-; ---- 缩放吸附（单轴）/ Snap one moving edge of a resize ----
+; ---- Snap one moving edge of a resize / 缩放吸附 ----
 _SnapResizeAxis(movingEdge, isLowEdge, lines, ctx, axis, &outEdge) {
     global Snap_Distance, Snap_Release
     rad := Max(1, Abs(Snap_Distance)), gap := Snap_Distance, rel := Max(0, Snap_Release)
@@ -3977,7 +4456,7 @@ _SnapResizeAxis(movingEdge, isLowEdge, lines, ctx, axis, &outEdge) {
     }
 }
 
-; ---- 缩放吸附 / Snap a window resize ----
+; ---- Snap a window resize / 缩放吸附 ----
 SnapResize(nX, nW, nY, nH, winX, winY, fixedRight, fixedBottom, isLeft, isUp, vLines, hLines, ctx, &oX, &oW, &oY, &oH) {
     global Snap_Enable
     oX := nX, oW := nW, oY := nY, oH := nH
@@ -4003,13 +4482,13 @@ SnapResize(nX, nW, nY, nH, winX, winY, fixedRight, fixedBottom, isLeft, isUp, vL
 ; 十六、拖拽移动/缩放与方向吸附 / 16. Drag Move / Resize & Directional Snap
 ; ==============================================================================
 
-; ---- 拖拽时边框跟随 / Keep WTM / all-window borders glued while dragging ----
+; ---- Keep WTM / all-window borders glued while dragging / 拖拽时边 ----
 BorderFollowDrag(hwnd) {
     try WTM.DrawOne(hwnd)
     try AllBorders.DrawOne(hwnd)
 }
 
-; ---- 拖拽移动 / Drag-move handler ----
+; ---- Drag-move handler / 拖拽移动 ----
 DragMoveHandler(*) {
     MouseGetPos(,, &hwnd)
     if !hwnd
@@ -4062,7 +4541,7 @@ DragMoveHandler(*) {
     WTM.OnWindowChanged()
 }
 
-; ---- 拖拽缩放 / Drag-resize handler ----
+; ---- Drag-resize handler / 拖拽缩放 ----
 DragResizeHandler(*) {
     MouseGetPos(,, &hwnd)
     if !hwnd
@@ -4113,7 +4592,7 @@ DragResizeHandler(*) {
     WTM.OnWindowChanged()
 }
 
-; ---- 方向吸附 / Directional snap (left/right halves, max/min) ----
+; ---- Directional snap (left/right halves, max/min) / 方向吸附 ----
 SnapWindow(direction, *) {
     hwnd := 0
     try hwnd := WinExist("A")
@@ -4145,7 +4624,7 @@ SnapWindow(direction, *) {
     }
 }
 
-; ---- 布局快照保存 / Save layout snapshot ----
+; ---- Save layout snapshot / 布局快照 ----
 SaveLayout(*) {
     global LayoutSnapshot
     LayoutSnapshot := Map()
@@ -4158,7 +4637,7 @@ SaveLayout(*) {
     ShowOSD("Layout Saved (" . LayoutSnapshot.Count . ")")
 }
 
-; ---- 布局快照恢复 / Restore layout snapshot ----
+; ---- Restore layout snapshot / 布局快照 ----
 RestoreLayout(*) {
     global LayoutSnapshot
     if (LayoutSnapshot.Count = 0) {
@@ -4182,7 +4661,7 @@ RestoreLayout(*) {
 ; 十七、WTM 平铺模式 / 17. WTM - Windows Tile Manager (hyprland-like)
 ; ==============================================================================
 
-; ---- WTM 动态平铺模式 / Dynamic tiling mode ----
+; ---- Dynamic tiling mode / 动态平铺 ----
 class WTM {
     static Active     := false
     static TileOrder  := []
@@ -4721,7 +5200,7 @@ class WTM {
 ; 十八、全窗口边框模式 / 18. All-Window Borders Mode
 ; ==============================================================================
 
-; ---- 全窗口边框 / Borders on every window (defers to WTM) ----
+; ---- Borders on every window (defers to WTM) / 全窗口边 ----
 class AllBorders {
     static Active  := false
     static Frames  := Map()
@@ -4874,27 +5353,7 @@ class AllBorders {
 ; ==============================================================================
 ; 十九、增强窗口选择模式 / 19. Enhanced Window-Select Mode (WinSelect)
 ; ==============================================================================
-; 按下激活热键后：当前桌面所有窗口按配置比例缩小，每个窗口上方显示一个字母
-; 标签条（样式可在 [WinSelect] 配置）。松开热键后标签仍保留，直到按下任意键：
-;   字母            -> 还原全部窗口，并把所选窗口移到鼠标所在屏幕中央；
-;   数字 + 字母     -> 同上，且按 [WinSelect] SizeMap 调整所选窗口尺寸；
-;   其他任意键      -> 直接还原退出。
-; 选中即把该字母锁定到该窗口：之后即使在其他桌面，按同一字母也会调取该窗口；
-; 锁定期间其他窗口不会复用该字母；窗口关闭后锁定自动释放。
-; ------------------------------------------------------------------------------
-; On the activation hotkey: every window on the current desktop is scaled down
-; by the configured ratio and a letter bar is shown above it. The labels stay
-; after the hotkey is released until one key is pressed:
-;   letter          -> restore all windows, center the chosen one on the
-;                      monitor under the mouse cursor;
-;   digit + letter  -> same, and resize per the [WinSelect] SizeMap entry;
-;   any other key   -> restore and exit.
-; Selecting locks the letter to that window: pressing the same letter later -
-; even on another desktop - summons the same window; while locked no other
-; window reuses the letter; the lock auto-releases when the window closes.
-; ==============================================================================
-
-; ---- 窗口选择模式 / Window-select mode ----
+; ---- Window-select mode / 窗口选择 ----
 class WinSelect {
     static Active := false
     static Items  := []
@@ -5074,7 +5533,7 @@ class WinSelect {
         try {
             g := Gui("-Caption +AlwaysOnTop +ToolWindow +Owner +E0x20 -DPIScale")
             g.BackColor := bg
-            g.SetFont("s" WS_FontSize " w700 c" fg, "Segoe UI")
+            g.SetFont("s" WS_FontSize " w700 c" fg, FontName)
             g.Add("Text", Format("x0 y0 w{} h{} Center +0x200 BackgroundTrans", bw, bh), it.letter)
             g.Show(Format("x{} y{} w{} h{} NoActivate", bx, by, bw, bh))
             try WinSetTransparent(WS_Opacity, g.Hwnd)
@@ -5223,14 +5682,14 @@ class WinSelect {
         g.MarginX := 0, g.MarginY := 0
         ; 标题 / Title
         titleH := Round(WS_Sidebar_FontSize * 2.2)
-        g.SetFont("s" WS_Sidebar_FontSize " w700 c" Color_Active, "Segoe UI")
+        g.SetFont("s" WS_Sidebar_FontSize " w700 c" Color_Active, FontName)
         g.Add("Text", "x0 y4 w" sw " h" titleH " Center +0x200 BackgroundTrans", "Locks")
         ; 分隔线 / Separator
         g.Add("Text", "x8 y" (titleH+2) " w" (sw-16) " h1 Background" Color_Active, "")
         ; 字母项 / Letter items
         itemH := Max(36, Round(WS_Sidebar_FontSize * 2.6))
         itemY := titleH + 10
-        g.SetFont("s" WS_Sidebar_FontSize " w600 c" Color_Active, "Segoe UI")
+        g.SetFont("s" WS_Sidebar_FontSize " w600 c" Color_Active, FontName)
         for L in sidebarLetters {
             ctl := g.Add("Text", "x0 y" itemY " w" sw " h" itemH " Center +0x200 BackgroundTrans", L)
             ctl.OnEvent("Click", ObjBindMethod(this, "_SidebarClick", L))
@@ -5326,14 +5785,14 @@ class WinSelect {
 ; 二十、剪贴板 / 编辑器 / 终端 / 电源 / 20. Clipboard / Editor / Terminal / Power
 ; ==============================================================================
 
-; ---- 剪贴板变更回调 / Clipboard-change callback ----
+; ---- Clipboard-change callback / 剪贴板变 ----
 OnClipboardChanged(dataType) {
     if (dataType != 1)
         return
     RecordClipboard()
 }
 
-; ---- 剪贴板历史记录 / Append clipboard text to the history file ----
+; ---- Append clipboard text to the history file / 剪贴板历 ----
 RecordClipboard() {
     global LastClipContent, Path_OutputFile
     txt := ""
@@ -5343,10 +5802,10 @@ RecordClipboard() {
     LastClipContent := txt
     Content := "------------------------------------------------------------------------------------------------`r`n"
              . FormatTime(, "yyyy-MM-dd HH:mm:ss") . "`r`n" . txt . "`r`n`r`n"
-    try FileAppend(Content, Path_OutputFile, "UTF-8")
+; 二十、剪贴板 / 编辑器 / 终端 / 电源 / 20. Clipboard / Editor / Terminal / Power
 }
 
-; ---- 剪贴板查看窗口 / Toggle the clipboard-history viewer ----
+; ---- Toggle the clipboard-history viewer / 剪贴板查 ----
 ToggleVimWindow() {
     global Vim_CurrentPID, Path_Vim, Path_OutputFile, Vim_X, Vim_Y, Vim_Width, Vim_Height
     if (Vim_CurrentPID && WinExist("ahk_pid " . Vim_CurrentPID)) {
@@ -5372,14 +5831,14 @@ ToggleVimWindow() {
     }
 }
 
-; ---- 启动终端 / Launch the terminal ----
+; ---- Launch the terminal / 启动终端 ----
 LaunchTerminal(*) {
     global Path_Terminal
     path := Explorer_GetPath()
     try Run('"' . Path_Terminal . '"' . (path ? ' -d "' . path . '"' : ""))
 }
 
-; ---- 用编辑器打开选中文件 / Open the selected file in the editor ----
+; ---- Open the selected file in the editor / 用编辑器 ----
 OpenWithVim(*) {
     global Path_Vim
     targetPath := Explorer_GetSelection()
@@ -5392,7 +5851,7 @@ OpenWithVim(*) {
         ShowOSD("Vim Launch Failed")
 }
 
-; ---- 电源菜单 / Power menu ----
+; ---- Power menu / 电源菜单 ----
 ShowPowerMenu(*) {
     global PowerMenuObj
     global PM_FontSize, PM_Width, PM_Height, PM_Opacity, PM_Rounded, PM_Radius
@@ -5446,7 +5905,7 @@ ShowPowerMenu(*) {
     PowerMenuObj := pGui
 }
 
-; ---- 资源管理器选中项 / Selected item in Explorer ----
+; ---- Selected item in Explorer / 资源管理 ----
 Explorer_GetSelection() {
     hwnd := WinExist("A")
     if !hwnd
@@ -5473,7 +5932,7 @@ Explorer_GetSelection() {
     return ""
 }
 
-; ---- 资源管理器当前路径 / Current folder of Explorer ----
+; ---- Current folder of Explorer / 资源管理 ----
 Explorer_GetPath() {
     hwnd := WinExist("A")
     if !hwnd
@@ -5493,18 +5952,18 @@ Explorer_GetPath() {
 }
 
 ; ==============================================================================
-; 二十一、主题切换 / 21. Theme Switching
+; 21. Theme Switching / 二十一主
 ; ==============================================================================
 
-; ---- 应用主题 / Apply a theme & reload ----
+; ---- Apply a theme & reload / 应用主题 ----
 ApplyTheme(themeName, *) {
     IniWrite(themeName, ConfigFile, "General", "ActiveTheme")
     ShowOSD("Theme: " . themeName)
     Sleep(400)
-    Reload()
+    ScriptReload()
 }
 
-; ---- 导出主题到 custom / Export the active theme to [Theme] ----
+; ---- Export the active theme to [Theme] / 导出主题 ----
 ExportThemeToCustom(*) {
     global ActiveTheme, Themes, ConfigFile
     if (ActiveTheme = "custom" || !Themes.Has(ActiveTheme)) {
@@ -5513,7 +5972,7 @@ ExportThemeToCustom(*) {
     }
     palette := Themes[ActiveTheme]
     nameMap := Map(
-        "Color_Bg","Background", "Color_Text","Text", "Color_Active","Active",
+; 二十一、主题切换 / 21. Theme Switching
         "Border_FocusColor","BorderDrag",
         "Border_Pin_Color","BorderPin", "Border_UnfocusColor","BorderUnfocus",
         "PM_Bg","PowerMenuBg", "PM_BtnShutdown","PowerBtnShutdown",
@@ -5532,14 +5991,14 @@ ExportThemeToCustom(*) {
     IniWrite("custom", ConfigFile, "General", "ActiveTheme")
     ShowOSD("Exported -> custom")
     Sleep(400)
-    Reload()
+    ScriptReload()
 }
 
 ; ==============================================================================
-; 二十二、托盘菜单与退出 / 22. Tray Menu & Exit
+; 22. Tray Menu & Exit / 二十二托
 ; ==============================================================================
 
-; ---- 托盘菜单 / Tray menu setup ----
+; ---- Tray menu setup / 托盘菜单 ----
 SetupTrayIcon() {
     global Themes, ActiveTheme
     A_TrayMenu.Delete()
@@ -5556,7 +6015,7 @@ SetupTrayIcon() {
         themeMenu.Add(name, ApplyTheme.Bind(name))
     try themeMenu.Check(ActiveTheme = "custom" ? "custom (use [Colors])" : ActiveTheme)
     A_TrayMenu.Add("Theme", themeMenu)
-    A_TrayMenu.Add("Export Theme -> custom", ExportThemeToCustom)
+; 二十二、托盘菜单与退出 / 22. Tray Menu & Exit
     A_TrayMenu.Add()
 
     Loop DesktopCount {
@@ -5567,13 +6026,13 @@ SetupTrayIcon() {
     A_TrayMenu.Add()
     A_TrayMenu.Add("Show Welcome",        (*) => WelcomeScreen.Show())
     A_TrayMenu.Add("Open Config Folder",  (*) => Run('explorer.exe "' . ConfigDir . '"'))
-    A_TrayMenu.Add("Reload Script",       (*) => Reload())
+    A_TrayMenu.Add("Reload Script",       (*) => ScriptReload())
     A_TrayMenu.Add("Restore && Exit",     RestoreAndExit)
 
     A_IconTip := "AHK WM - Desktop " . CurrentDesktop
 }
 
-; ---- 还原并退出 / Restore everything & exit ----
+; ---- Restore everything & exit / 还原并退 ----
 RestoreAndExit(*) {
     global Desktops, AlwaysVisible
     ShowOSD("Script Shutting Down ...")
@@ -5604,7 +6063,7 @@ RestoreAndExit(*) {
 }
 
 ; ==============================================================================
-; 二十三、外部八方向按钮脚本 / 23. External Eight-Direction Button Scripts
+; 23. External Eight-Direction Button Scripts / 二十三外
 ; ==============================================================================
 
 #Include "*i %A_ScriptDir%\Buttons\Top.ahk"
