@@ -1,6 +1,7 @@
 ﻿#Requires AutoHotkey v2.0
 #SingleInstance Force
 #WinActivateForce
+Persistent
 
 ; ==============================================================================
 ; 📂 TABLE OF CONTENTS
@@ -48,7 +49,7 @@
 ; 一、环境与全局指令 / 1. Environment & Global Directives
 ; ==============================================================================
 
-global WM_Version := "2.8.3"
+global WM_Version := "2.8.4"
 global FontName
 
 SetWorkingDir(A_ScriptDir)
@@ -71,7 +72,7 @@ global PM_Bg, PM_BtnShutdown, PM_BtnSleep, PM_BtnReboot
 global Bar_Height, Bar_Transparent, Bar_FontSize
 global Bar_MonitorIdx := 1
 global Bar_Visible    := true
-global Bar_Gui := "", Bar_LeftText := "", Bar_RightText := "", Bar_Progress := ""
+; (已移除旧版全局 Bar 控件引用，现由 BarInstance 类管理)
 global Bar_AutoHide   := false
 global Bar_FsHidden   := false
 global Bar_ShownState := true
@@ -305,6 +306,27 @@ SplitEscaped(str, delim) {
     return out
 }
 
+; ---- UnescapeSpaces / 转义空格还原 ----
+; 将 \s 转为空格、\\ 转为反斜杠。IniRead 会修剪尾随空格，用此函数还原
+UnescapeSpaces(str) {
+    result := "", i := 1
+    while (i <= StrLen(str)) {
+        c := SubStr(str, i, 1)
+        if (c = "\" && i < StrLen(str)) {
+            next := SubStr(str, i + 1, 1)
+            if (next = "s")
+                result .= " ", i += 2
+            else if (next = "\")
+                result .= "\", i += 2
+            else
+                result .= c, i++
+        } else {
+            result .= c, i++
+        }
+    }
+    return result
+}
+
 ; ---- ParseColor (supports gradient: c1,c2,...) / 颜色解析 ----
 ParseColor(cstr) {
     cstr := Trim(cstr)
@@ -386,6 +408,70 @@ RoundClipBM(hBM, w, h, r, bgColor := "") {
     return hOut
 }
 
+; ---- MakeGradientBM / 统一渐变位图（含可选圆角）----
+; fillColor: ""且bgBM=0 → 不填充(黑色); ""且bgBM≠0 → 从bgBM取样填充; 指定颜色 → 填充该色
+MakeGradientBM(w, h, colors, rounded := "off", radius := 0, fillColor := "", bgBM := 0, bgOffX := 0, bgOffY := 0) {
+    global Color_Bg, Color_Active
+    if (w < 2 || h < 2)
+        return 0
+    useColors := colors.Length > 0 ? colors : [C1(Color_Active)]
+    if (useColors.Length = 1)
+        useColors.Push(useColors[1])
+    hGrad := CreateGradient(w, h, 0, useColors*)
+    if !(hGrad && rounded = "on")
+        return hGrad
+    ; --- 圆角裁剪 / Rounded clip ---
+    r := radius > 0 ? radius : Max(4, Min(w, h) // 6)
+    hOut := ScrBitmap(w, h)
+    if !hOut {
+        DllCall("Gdi32\DeleteObject", "Ptr", hGrad)
+        return 0
+    }
+    dcD := DllCall("Gdi32\CreateCompatibleDC", "Ptr", 0, "Ptr")
+    hOldD := DllCall("Gdi32\SelectObject", "Ptr", dcD, "Ptr", hOut, "Ptr")
+    ; 填充角部 / Fill corners
+    if (fillColor != "") {
+        ; 显式指定色 / Explicit fill color
+        rc := Buffer(16, 0)
+        NumPut("Int", 0, "Int", 0, "Int", w, "Int", h, rc)
+        bgVal := Integer("0x" fillColor)
+        hBgBr := DllCall("Gdi32\CreateSolidBrush", "UInt", BgrFromRgb(bgVal), "Ptr")
+        DllCall("User32\FillRect", "Ptr", dcD, "Ptr", rc, "Ptr", hBgBr)
+        DllCall("Gdi32\DeleteObject", "Ptr", hBgBr)
+    } else if (bgBM != 0) {
+        ; 渐变 bar：从背景位图取样 / Gradient bar: sample from bg bitmap
+        dcBg := DllCall("Gdi32\CreateCompatibleDC", "Ptr", 0, "Ptr")
+        hOldBg := DllCall("Gdi32\SelectObject", "Ptr", dcBg, "Ptr", bgBM, "Ptr")
+        DllCall("Gdi32\BitBlt", "Ptr", dcD, "Int", 0, "Int", 0, "Int", w, "Int", h
+            , "Ptr", dcBg, "Int", bgOffX, "Int", bgOffY, "UInt", 0xCC0020)
+        DllCall("Gdi32\SelectObject", "Ptr", dcBg, "Ptr", hOldBg, "Ptr")
+        DllCall("Gdi32\DeleteDC", "Ptr", dcBg)
+    } else {
+        ; 纯色 bar：回退用 bar 底色 / Solid bar: fallback to bar bg color
+        rc := Buffer(16, 0)
+        NumPut("Int", 0, "Int", 0, "Int", w, "Int", h, rc)
+        bgVal := Integer("0x" C1(Color_Bg))
+        hBgBr := DllCall("Gdi32\CreateSolidBrush", "UInt", BgrFromRgb(bgVal), "Ptr")
+        DllCall("User32\FillRect", "Ptr", dcD, "Ptr", rc, "Ptr", hBgBr)
+        DllCall("Gdi32\DeleteObject", "Ptr", hBgBr)
+    }
+    ; 圆角裁剪 + 渐变覆绘 / Clip & draw gradient
+    hRgn := RgnRoundRect(w, h, r)
+    DllCall("Gdi32\SelectClipRgn", "Ptr", dcD, "Ptr", hRgn)
+    dcS := DllCall("Gdi32\CreateCompatibleDC", "Ptr", 0, "Ptr")
+    hOldS := DllCall("Gdi32\SelectObject", "Ptr", dcS, "Ptr", hGrad, "Ptr")
+    DllCall("Gdi32\BitBlt", "Ptr", dcD, "Int", 0, "Int", 0, "Int", w, "Int", h
+        , "Ptr", dcS, "Int", 0, "Int", 0, "UInt", 0xCC0020)
+    DllCall("Gdi32\SelectObject", "Ptr", dcS, "Ptr", hOldS, "Ptr")
+    DllCall("Gdi32\DeleteDC", "Ptr", dcS)
+    DllCall("Gdi32\SelectClipRgn", "Ptr", dcD, "Ptr", 0)
+    DllCall("Gdi32\DeleteObject", "Ptr", hRgn)
+    DllCall("Gdi32\SelectObject", "Ptr", dcD, "Ptr", hOldD, "Ptr")
+    DllCall("Gdi32\DeleteDC", "Ptr", dcD)
+    DllCall("Gdi32\DeleteObject", "Ptr", hGrad)
+    return hOut
+}
+
 ; ---- CreateGradient / 渐变位图 ----
 CreateGradient(W, H, V := 0, Colors*) {
     N := Colors.Length
@@ -434,11 +520,14 @@ CreateGradient(W, H, V := 0, Colors*) {
 }
 
 ; ---- TextOnGradient / 渐变文字 ----
-TextOnGradient(W, H, Colors, Text, FontSize, Style := "text", FontName := FontName, BgBM := 0, BgOffX := 0, RoundedBg := "") {
+TextOnGradient(W, H, Colors, Text, FontSize, Style := "text", FontName := FontName, BgBM := 0, BgOffX := 0, RoundedBg := "", Align := "Center") {
     if (W < 2 || H < 2 || Colors.Length < 2 || Text = "")
         return 0
     if (W > 4096 || H > 512)
         return 0
+    ; 对齐标志 / Alignment flags
+    alignFlags := (Align = "Left") ? 0x0 : (Align = "Right") ? 0x2 : 0x1
+    drawFlags := alignFlags | 0x20 | 0x4   ; DT_SINGLELINE | DT_VCENTER
     ; bg / bg_rounded 模式 / gradient bg + white text
     if (Style = "bg" || Style = "bg_rounded") {
         hBM := CreateGradient(W, H, 0, Colors*)
@@ -454,7 +543,7 @@ TextOnGradient(W, H, Colors, Text, FontSize, Style := "text", FontName := FontNa
         rc := Buffer(16, 0)
         NumPut("Int", 0, "Int", 0, "Int", W, "Int", H, rc)
         DllCall("User32.dll\DrawTextW", "Ptr", hDC, "Str", Text, "Int", -1, "Ptr", rc
-            , "UInt", 0x1|0x20|0x4)
+            , "UInt", drawFlags)
         DllCall("Gdi32.dll\DeleteObject", "Ptr", hFont)
         DllCall("Gdi32.dll\SelectObject", "Ptr", hDC, "Ptr", hOldBM, "Ptr")
         DllCall("Gdi32.dll\DeleteDC", "Ptr", hDC)
@@ -492,7 +581,7 @@ TextOnGradient(W, H, Colors, Text, FontSize, Style := "text", FontName := FontNa
     DllCall("Gdi32.dll\SetBkMode", "Ptr", maskDC, "Int", 1)
     DllCall("Gdi32.dll\SetTextColor", "Ptr", maskDC, "UInt", 0xFFFFFF)
     DllCall("User32.dll\DrawTextW", "Ptr", maskDC, "Str", Text, "Int", -1, "Ptr", rc
-        , "UInt", 0x1|0x20|0x4)
+        , "UInt", drawFlags)
 
     ; ---- 3) 创建 NOT-mask：黑字白底 / Black text on white bg ----
     notDC := DllCall("Gdi32.dll\CreateCompatibleDC", "Ptr", 0, "Ptr")
@@ -504,7 +593,7 @@ TextOnGradient(W, H, Colors, Text, FontSize, Style := "text", FontName := FontNa
     DllCall("Gdi32.dll\SetBkMode", "Ptr", notDC, "Int", 1)
     DllCall("Gdi32.dll\SetTextColor", "Ptr", notDC, "UInt", 0x000000)
     DllCall("User32.dll\DrawTextW", "Ptr", notDC, "Str", Text, "Int", -1, "Ptr", rc
-        , "UInt", 0x1|0x20|0x4)
+        , "UInt", drawFlags)
 
     ; ---- 4) 填充bar背景色 / filled with bar bg ----
     finalDC := DllCall("Gdi32.dll\CreateCompatibleDC", "Ptr", 0, "Ptr")
@@ -629,6 +718,9 @@ RoundWindowEx(guiOrHwnd, enabled, radius, corners := "all") {
         d := r * 2
         if (d <= 0)
             return
+        ; 禁用 DWM 非客户区渲染，消除 Win10 19041+ SetWindowRgn 白边
+        ; Disable DWM non-client rendering to fix SetWindowRgn white artifacts
+        DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", hwnd, "UInt", 2, "Int*", 1, "UInt", 4)
         hRgn := DllCall("Gdi32\CreateRoundRectRgn"
             , "Int", 0, "Int", 0, "Int", w + 1, "Int", h + 1
             , "Int", d, "Int", d, "Ptr")
@@ -699,18 +791,24 @@ ParseAxis(tok) {
     if (tok = "")
         throw Error("empty axis")
     if (tok = "1")
-        return {lo: 0.0, hi: 1.0}
-    if RegExMatch(tok, "^\((\d+)\s*-\s*(\d+)\)/(\d+)$", &m) {
-        a := Integer(m[1]), c := Integer(m[2]), b := Integer(m[3])
+        return {lo: 0.0, hi: 1.0, align: "Center"}
+    ; 范围格式 / Range format: (a-c)/b, (a-c)/+b, (a-c)/-b
+    if RegExMatch(tok, "^\((\d+)\s*-\s*(\d+)\)/([+\-]?)(\d+)$", &m) {
+        a := Integer(m[1]), c := Integer(m[2]), b := Integer(m[4])
+        sign := m[3]
         if (b <= 0 || a < 1 || c < 1 || a > c || c > b)
             throw Error("bad range axis: " tok)
-        return {lo: (a - 1) / b, hi: c / b}
+        align := (sign = "+") ? "Right" : (sign = "-") ? "Left" : "Center"
+        return {lo: (a - 1) / b, hi: c / b, align: align}
     }
-    if RegExMatch(tok, "^(\d+)/(\d+)$", &m) {
-        a := Integer(m[1]), b := Integer(m[2])
+    ; 简单格式 / Simple format: a/b, a/+b, a/-b
+    if RegExMatch(tok, "^(\d+)/([+\-]?)(\d+)$", &m) {
+        a := Integer(m[1]), b := Integer(m[3])
+        sign := m[2]
         if (b <= 0 || a < 1 || a > b)
             throw Error("bad axis: " tok)
-        return {lo: (a - 1) / b, hi: a / b}
+        align := (sign = "+") ? "Right" : (sign = "-") ? "Left" : "Center"
+        return {lo: (a - 1) / b, hi: a / b, align: align}
     }
     throw Error("unrecognized axis: " tok)
 }
@@ -1318,7 +1416,7 @@ ParseCustomItems(itemsRaw, iconRaw := "", textRaw := "") {
     out := []
     if (Trim(itemsRaw) != "") {
         for part in StrSplit(itemsRaw, ";") {
-            part := Trim(part)
+            part := UnescapeSpaces(Trim(part))
             if (part != "")
                 out.Push(part)
         }
@@ -1425,9 +1523,12 @@ date_format=yyyy-MM-dd
 custom_items=✐ Edit config to hide
 ; Desktop labels (,-separated) / 桌面名称
 desktop_labels=Work,Net
-; Current desktop tags / 当前桌面标记
+; Current desktop tags / 当前桌面标记 (use \s for literal space 用\s转义空格)
 current_desktop_left=[
 current_desktop_right=]
+; Current desktop highlight gradient (same format as layout: color1,color2,bg|tx,on|off)
+; Leave empty to disable / 留空则不高亮：ffffff,cccccc,bg,on
+current_desktop_color=
 ; Desktop display mode: all|current|occupied / 桌面显示模式
 desktop_display_mode=all
 ; Edge position: top|bottom / 栏位置
@@ -1437,16 +1538,19 @@ offset=0
 ; Left/Right margin (px) / 左右边距
 margin_left=0
 margin_right=0
-;----------------------------------------------------------------------
-; Element layout / 元素布局
-;   N,element,span,c1..cn,bg|tx,on|off;...
-;   N=bar#(default 1), span=(a-c)/d, bg=gradient bg, tx=gradient text
-;   on|off=rounded switch (bg only), colors=6hex comma sep
-;   Legacy compatible: element:span,color,...
-;   Available elements: desktops, time, date, progress, wifi, bluetooth, battery, volume, disk, mem, cpu, custom_1..n
-; Examples:
-;   1,time,20/20,ff0000,00ff00,bg,on;date,18/20,tx;desktops,(1-3)/20;
-;----------------------------------------------------------------------
+	;----------------------------------------------------------------------
+	; Element layout / 元素布局
+	;   N,element,span,c1..cn,bg|tx,on|off;...
+	;   N=bar#(default 1)
+	;   span=(a-c)/d  -- +d=right-align, -d=left-align, d=center
+	;   bg=gradient background / tx=gradient text
+	;   on|off=rounded corners (bg mode) / colors=6hex comma sep, supports # prefix
+	;   Legacy compatible: element:span,color,...
+	;   Available: desktops, time, date, progress, wifi, bluetooth, battery, volume, disk, mem, cpu, custom_1..n
+	;   Current-desktop highlight: current_desktop_color=color1,color2,bg|tx,on|off
+	; Examples:
+	;   1,time,20/20,ff0000,00ff00,tx;desktops,(1-3)/-20,FAB387,bg,on;cpu,14/+20;
+	;----------------------------------------------------------------------
 layout=custom_1,(4-7)/20,B48EAD,CF8DC9,bg,on;desktops,(1-3)/20;date,(18-19)/20;time,20/20,744da9,CF8DC9;progress,3/5,744da9,e5e9f0;
 ; Multi-bar instances: M,pos,offset;...  M=monitor or * / 多栏实例
 instances=1,top,0
@@ -1822,13 +1926,14 @@ WTMMoveRight=Alt+Shift+L
         Bar_Cfg[k] := _bar1.Has(k)
     Bar_Cfg["time_format"]  := IniRead(ConfigFile, "Bar", "time_format", "HH:mm")
     Bar_Cfg["date_format"]  := IniRead(ConfigFile, "Bar", "date_format", "yyyy-MM-dd")
-    Bar_Cfg["cur_left"]     := IniRead(ConfigFile, "Bar", "current_desktop_left",  "[")
-    Bar_Cfg["cur_right"]    := IniRead(ConfigFile, "Bar", "current_desktop_right", "]")
+    Bar_Cfg["cur_left"]     := UnescapeSpaces(IniRead(ConfigFile, "Bar", "current_desktop_left",  "["))
+    Bar_Cfg["cur_right"]    := UnescapeSpaces(IniRead(ConfigFile, "Bar", "current_desktop_right", "]"))
+    Bar_Cfg["cur_color"]    := IniRead(ConfigFile, "Bar", "current_desktop_color", "")
     Bar_Cfg["display_mode"] := StrLower(IniRead(ConfigFile, "Bar", "desktop_display_mode", "all"))
     Bar_Cfg["position"]     := StrLower(IniRead(ConfigFile, "Bar", "position", "top"))
     Bar_Cfg["offset"]       := SafeInt(IniRead(ConfigFile, "Bar", "offset", "0"), 0)
     Bar_Cfg["instances"]    := IniRead(ConfigFile, "Bar", "instances", "")
-    Bar_Cfg["layout"]       := ParseBarLayout(IniRead(ConfigFile, "Bar", "layout", ""))
+    ; layout 已在上面解析，此处复用 / layout already parsed above
 
     Bar_Cfg["custom_items"] := ParseCustomItems(
         IniRead(ConfigFile, "Bar", "custom_items", ""),
@@ -2776,7 +2881,7 @@ HideWin(hwnd) {
 ShowWin(hwnd) {
     global Desktop_HideMethod
     if (Desktop_HideMethod = "hide"){
-        try DllCall("ShowWindow", "Ptr", hwnd, "Int", 8)
+        try DllCall("ShowWindow", "Ptr", hwnd, "Int", 9)   ; SW_RESTORE（非 SW_SHOWNA，避免最小化窗口无法还原）
     }
     else{
         try WinRestore(hwnd)
@@ -2930,7 +3035,7 @@ ParseBarLayout(str) {
             }
             if !result.Has(1)
                 result[1] := Map()
-            result[1][name] := {lo: axis.lo, hi: axis.hi, colors: colors, mode: "text", rounded: "off"}
+            result[1][name] := {lo: axis.lo, hi: axis.hi, colors: colors, mode: "text", rounded: "off", align: axis.align}
         }
         return result
     }
@@ -2975,9 +3080,36 @@ ParseBarLayout(str) {
         }
         if !result.Has(barNum)
             result[barNum] := Map()
-        result[barNum][elName] := {lo: axis.lo, hi: axis.hi, colors: colors, mode: mode, rounded: rounded}
+        result[barNum][elName] := {lo: axis.lo, hi: axis.hi, colors: colors, mode: mode, rounded: rounded, align: axis.align}
     }
     return result
+}
+
+; ---- ParseCurColor / 当前桌面高亮颜色解析 ----
+; 格式同 layout 颜色尾部：color1,color2,...,bg|tx,on|off
+; 返回 {colors, mode, rounded} 或空 Map（未配置）
+ParseCurColor(raw) {
+    raw := Trim(raw)
+    if (raw = "")
+        return Map()
+    fields := StrSplit(raw, ",")
+    if (fields.Length < 1)
+        return Map()
+    colors := [], mode := "bg", rounded := "off"
+    for f in fields {
+        f := Trim(f)
+        if (f = "")
+            continue
+        if RegExMatch(f, "^[0-9a-fA-F]{6}$")
+            colors.Push(f)
+        else if (f = "bg" || f = "tx")
+            mode := (f = "bg") ? "bg" : "text"
+        else if (f = "on" || f = "off")
+            rounded := f
+    }
+    if (colors.Length = 0)
+        return Map()
+    return {colors: colors, mode: mode, rounded: rounded}
 }
 
 ; ---- Work-time range in minutes / 工时范围 ----
@@ -3148,11 +3280,21 @@ class BarInstance {
     LastVals := Map()
     GradText := Map()   ; 渐变文字
     BgGradBM := 0       ; bar背景渐变
+    TaskMarkerBMs := [] ; 任务标记位图句柄（用于释放）
+    ; 桌面高亮（仅 cur_color 配置后启用）/ Desktop highlight cells
+    DesktopCellCtrls := []       ; 所有动态控件（每轮 UpdateDesktops 销毁重建）
+    DesktopCurColor  := Map()    ; 解析后的 cur_color
+    DesktopSeg       := {cx:0, cy:0, cw:0, ch:0}
+    DesktopLayoutColors := []
+    DesktopLayoutMode   := "text"
+    DesktopLayoutRounded := "off"
+    DesktopLayoutAlign   := "Center"  ; 文字对齐 / text alignment
 
     ; -- 构造 / __New --
     __New(mon, pos, offset, barNum := 1) {
         this.Mon := mon, this.Pos := pos, this.Offset := offset
         this.BarNum := barNum
+        this.DesktopCellCtrls := []   ; 每实例独立数组
         this.Build()
     }
 
@@ -3185,21 +3327,21 @@ class BarInstance {
                 return myLayout[k]
         }
         defaults := Map(
-            "desktops",  {lo:0.00, hi:0.30, colors:[], mode:"text", rounded:"off"},
-            "custom_1",  {lo:0.30, hi:0.48, colors:[], mode:"text", rounded:"off"},
-            "custom_2",  {lo:0.48, hi:0.62, colors:[], mode:"text", rounded:"off"},
-            "progress",  {lo:0.40, hi:0.62, colors:[], mode:"text", rounded:"off"},
-            "date",      {lo:0.64, hi:0.82, colors:[], mode:"text", rounded:"off"},
-            "time",      {lo:0.82, hi:1.00, colors:[], mode:"text", rounded:"off"},
-            "wifi",      {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off"},
-            "bluetooth", {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off"},
-            "battery",   {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off"},
-            "volume",    {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off"},
-            "disk",      {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off"},
-            "mem",       {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off"},
-            "cpu",       {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off"}
+            "desktops",  {lo:0.00, hi:0.30, colors:[], mode:"text", rounded:"off", align:"Center"},
+            "custom_1",  {lo:0.30, hi:0.48, colors:[], mode:"text", rounded:"off", align:"Center"},
+            "custom_2",  {lo:0.48, hi:0.62, colors:[], mode:"text", rounded:"off", align:"Center"},
+            "progress",  {lo:0.40, hi:0.62, colors:[], mode:"text", rounded:"off", align:"Center"},
+            "date",      {lo:0.64, hi:0.82, colors:[], mode:"text", rounded:"off", align:"Center"},
+            "time",      {lo:0.82, hi:1.00, colors:[], mode:"text", rounded:"off", align:"Center"},
+            "wifi",      {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off", align:"Center"},
+            "bluetooth", {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off", align:"Center"},
+            "battery",   {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off", align:"Center"},
+            "volume",    {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off", align:"Center"},
+            "disk",      {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off", align:"Center"},
+            "mem",       {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off", align:"Center"},
+            "cpu",       {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off", align:"Center"}
         )
-        return defaults.Has(name) ? defaults[name] : {lo:0.0, hi:1.0, colors:[], mode:"text", rounded:"off"}
+        return defaults.Has(name) ? defaults[name] : {lo:0.0, hi:1.0, colors:[], mode:"text", rounded:"off", align:"Center"}
     }
 
     ; -- 行高 / _LineHeight (GDI 实测字体避免偏移) --
@@ -3216,6 +3358,28 @@ class BarInstance {
         DllCall("Gdi32\DeleteDC", "Ptr",dc)
         DllCall("Gdi32\DeleteObject", "Ptr",hFont)
         return NumGet(tm, 0, "Int") + 4  ; tmHeight + padding
+    }
+
+    ; -- 文字像素宽度 / Measure text width in pixels --
+    _TextWidth(txt) {
+        global Bar_FontSize, FontName
+        fh := -Round(Bar_FontSize * A_ScreenDPI / 72)
+        hFont := DllCall("Gdi32\CreateFontW", "Int",fh,"Int",0,"Int",0,"Int",0,"Int",700
+            ,"Int",0,"Int",0,"Int",0,"Int",0,"Int",0,"Int",5,"Int",0,"Int",0,"Str",FontName,"Ptr")
+        dc := DllCall("Gdi32\CreateCompatibleDC", "Ptr",0, "Ptr")
+        old := DllCall("Gdi32\SelectObject", "Ptr",dc, "Ptr",hFont, "Ptr")
+        sz := Buffer(8, 0)
+        DllCall("Gdi32\GetTextExtentPoint32W", "Ptr",dc, "Str",txt, "Int",StrLen(txt), "Ptr",sz)
+        w := NumGet(sz, 0, "Int")
+        DllCall("Gdi32\SelectObject", "Ptr",dc, "Ptr",old, "Ptr")
+        DllCall("Gdi32\DeleteObject", "Ptr",hFont)
+        DllCall("Gdi32\DeleteDC", "Ptr",dc)
+        return w
+    }
+
+    ; -- 统一渐变位图（含圆角）/ Unified gradient bitmap — 委托给全局 MakeGradientBM --
+    _GradBgBM(w, h, colors, rounded := "off", radius := 0, fillColor := "", bgOffX := 0, bgOffY := 0) {
+        return MakeGradientBM(w, h, colors, rounded, radius, fillColor, this.BgGradBM, bgOffX, bgOffY)
     }
 
     ; -- 控件选项 / _Opt --
@@ -3259,9 +3423,9 @@ class BarInstance {
         g.BackColor := pcBg.first
         g.SetFont("s" Bar_FontSize " w600 c" C1(Color_Active), FontName)
         this.Gui := g
-        ; 渐变背景 / Gradient bar background
+        ; 渐变背景 / Gradient bar background (位图圆角，不经 SetWindowRgn)
         if (pcBg.isGrad) {
-            hBMBg := CreateGradient(bw, bh, 0, pcBg.colors*)
+            hBMBg := this._GradBgBM(bw, bh, pcBg.colors, Bar_Rounded, Bar_Radius, pcBg.first)
             if hBMBg {
                 this.BgGradBM := hBMBg
                 g.Add("Picture", "x0 y0 w" bw " h" bh, "HBITMAP:" hBMBg)
@@ -3272,7 +3436,10 @@ class BarInstance {
 
         g.Show(Format("x{} y{} w{} h{} NoActivate", bx, by, bw, bh))
         WinSetTransparent(Bar_Transparent, g.Hwnd)
-        RoundWindowEx(g, Bar_Rounded, Bar_Radius, Bar_CornerMode)
+        ; 纯色背景用 SetWindowRgn（已加 DWM 修复）；渐变背景位图已有圆角无需再设
+        ; Solid bg: SetWindowRgn (DWM fix applied); Gradient bg: bitmap already rounded
+        if (!pcBg.isGrad)
+            RoundWindowEx(g, Bar_Rounded, Bar_Radius, Bar_CornerMode)
         this.UpdateDesktops()
     }
 
@@ -3333,29 +3500,52 @@ class BarInstance {
             try rounded := seg.rounded
             catch
                 rounded := "off"
+            try align := seg.align
+            catch
+                align := "Center"
 
             switch el {
                 case "desktops":
-                    if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
-                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, " ")
-                    else {
-                        this.DesktopsCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), "")
-                        if (colors.Length = 1)
-                            this.DesktopsCtrl.SetFont("c" colors[1])
+                    this.DesktopCurColor := ParseCurColor(Bar_Cfg.Has("cur_color") ? Bar_Cfg["cur_color"] : "")
+                    this.DesktopSeg := {cx: Round(cx), cy: Round(cy), cw: Round(cw), ch: Round(ch)}
+                    this.DesktopLayoutColors := colors
+                    this.DesktopLayoutMode   := mode
+                    this.DesktopLayoutRounded := rounded
+                    this.DesktopLayoutAlign   := align
+                    if (this.DesktopCurColor.HasProp("colors")) {
+                        ; 高亮模式：layoutBg 在此提前创建（与其他 bg 部件相同），桌面标签在 UpdateDesktops 刷新
+                        ; Highlight mode: layoutBg created here (same timing as other bg elements)
+                        layoutBgStatic := (colors.Length > 0 && mode = "bg")
+                        if layoutBgStatic
+                            this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, " ", align)
+                        else {
+                            this.DesktopsCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, align), "")
+                            if (colors.Length = 1)
+                                this.DesktopsCtrl.SetFont("c" colors[1])
+                        }
+                    } else {
+                        ; 原逻辑 / Legacy
+                        if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
+                            this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, " ", align)
+                        else {
+                            this.DesktopsCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, align), "")
+                            if (colors.Length = 1)
+                                this.DesktopsCtrl.SetFont("c" colors[1])
+                        }
                     }
                 case "date":
                     if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
-                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, " ")
+                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, " ", align)
                     else {
-                        this.DateCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), "")
+                        this.DateCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, align), "")
                         if (colors.Length = 1)
                             this.DateCtrl.SetFont("c" colors[1])
                     }
                 case "time":
                     if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
-                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, " ")
+                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, " ", align)
                     else {
-                        this.TimeCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), "")
+                        this.TimeCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, align), "")
                         if (colors.Length = 1)
                             this.TimeCtrl.SetFont("c" colors[1])
                     }
@@ -3367,57 +3557,57 @@ class BarInstance {
                     this._BuildProgress(s, segLen, T, horiz, colors)
                 case "wifi":
                     if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
-                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("wifi") || "WiFi")
+                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("wifi") || "WiFi", align)
                     else {
-                        this.WifiCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), GetSysInfo("wifi") || "WiFi")
+                        this.WifiCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, align), GetSysInfo("wifi") || "WiFi")
                         if (colors.Length = 1)
                             this.WifiCtrl.SetFont("c" colors[1])
                     }
                 case "bluetooth":
                     if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
-                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("bt") || "BT")
+                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("bt") || "BT", align)
                     else {
-                        this.BtCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), GetSysInfo("bt") || "BT")
+                        this.BtCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, align), GetSysInfo("bt") || "BT")
                         if (colors.Length = 1)
                             this.BtCtrl.SetFont("c" colors[1])
                     }
                 case "battery":
                     if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
-                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("battery") || "Batt")
+                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("battery") || "Batt", align)
                     else {
-                        this.BattCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), GetSysInfo("battery") || "Batt")
+                        this.BattCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, align), GetSysInfo("battery") || "Batt")
                         if (colors.Length = 1)
                             this.BattCtrl.SetFont("c" colors[1])
                     }
                 case "volume":
                     if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
-                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("volume") || "Vol")
+                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("volume") || "Vol", align)
                     else {
-                        this.VolCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), GetSysInfo("volume") || "Vol")
+                        this.VolCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, align), GetSysInfo("volume") || "Vol")
                         if (colors.Length = 1)
                             this.VolCtrl.SetFont("c" colors[1])
                     }
                 case "disk":
                     if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
-                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("disk") || "Disk")
+                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("disk") || "Disk", align)
                     else {
-                        this.DiskCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), GetSysInfo("disk") || "Disk")
+                        this.DiskCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, align), GetSysInfo("disk") || "Disk")
                         if (colors.Length = 1)
                             this.DiskCtrl.SetFont("c" colors[1])
                     }
                 case "mem":
                     if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
-                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("mem") || "Mem")
+                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("mem") || "Mem", align)
                     else {
-                        this.MemCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), GetSysInfo("mem") || "Mem")
+                        this.MemCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, align), GetSysInfo("mem") || "Mem")
                         if (colors.Length = 1)
                             this.MemCtrl.SetFont("c" colors[1])
                     }
                 case "cpu":
                     if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
-                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("cpu") || "CPU")
+                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("cpu") || "CPU", align)
                     else {
-                        this.CpuCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), GetSysInfo("cpu") || "CPU")
+                        this.CpuCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, align), GetSysInfo("cpu") || "CPU")
                         if (colors.Length = 1)
                             this.CpuCtrl.SetFont("c" colors[1])
                     }
@@ -3426,9 +3616,9 @@ class BarInstance {
                         n := Integer(mm[1])
                         txt := (n >= 1 && n <= items.Length) ? items[n] : ""
                         if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
-                            this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, txt)
+                            this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, txt, align)
                         else {
-                            ctrl := g.Add("Text", this._Opt(cx, cy, cw, ch, "Center"), txt)
+                            ctrl := g.Add("Text", this._Opt(cx, cy, cw, ch, align), txt)
                             if (colors.Length = 1)
                                 ctrl.SetFont("c" colors[1])
                         }
@@ -3438,7 +3628,7 @@ class BarInstance {
     }
 
     ; -- 渐变文字控件 / _AddGradTextCtrl --
-    _AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode := "text", rounded := "off", txt := "") {
+    _AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode := "text", rounded := "off", txt := "", align := "Center") {
         global Bar_FontSize, Color_Bg
         w := Round(cw), h := Round(ch)
         if (w < 2 || h < 2)
@@ -3447,30 +3637,25 @@ class BarInstance {
 
         ; ===== bg 模式：彩色背景 + Text 叠加（文字透明显示 bar 底色）=====
         if (mode = "bg") {
-            useColors := colors.Length > 0 ? colors : [C1(Color_Active)]
-            ; 创建背景位图
-            hBM := CreateGradient(w, h, 0, useColors*)
-            if hBM && (rounded = "on") {
-                r := Max(4, Min(w, h) // 6)
-                hBM := RoundClipBM(hBM, w, h, r, C1(Color_Bg))
-            }
+            ; 圆角用bar底色填充，保持bar背景连续感 / Fill corners with bar bg for seamless look
+            hBM := this._GradBgBM(w, h, colors, rounded, 0, C1(Color_Bg))
             if hBM
                 g.Add("Picture", Format("x{} y{} w{} h{}", Round(cx), Round(cy), w, h), "HBITMAP:" hBM)
             ; 文字浮于背景上方，背景透明，文字色=bar底色（呈现"挖空"效果）
             tColor := C1(Color_Bg)
-            ctrl := g.Add("Text", Format("x{} y{} w{} h{} Center BackgroundTrans c{}"
-                , Round(cx), Round(cy), w, h, tColor), txt)
+            ctrl := g.Add("Text", Format("x{} y{} w{} h{} {} BackgroundTrans c{}"
+                , Round(cx), Round(cy), w, h, align, tColor), txt)
             ctrl.SetFont("s" Bar_FontSize " w600", FontName)
             this.GradText[el] := {colors: colors, w: w, h: h, cx: Round(cx), cy: Round(cy)
-                , ctrl: ctrl, oldBM: hBM, mode: mode, rounded: rounded, isSimple: true}
+                , ctrl: ctrl, oldBM: hBM, mode: mode, rounded: rounded, isSimple: true, align: align}
 
         ; ===== text 模式：原有渐变文字 bitmap 渲染 =====
         } else {
-            hBM := TextOnGradient(w, h, colors, txt, Bar_FontSize, "text", FontName, this.BgGradBM, bgOff, C1(Color_Bg))
+            hBM := TextOnGradient(w, h, colors, txt, Bar_FontSize, "text", FontName, this.BgGradBM, bgOff, C1(Color_Bg), align)
             ctrl := g.Add("Picture", Format("x{} y{} w{} h{}", Round(cx), Round(cy), w, h)
                 , hBM ? "HBITMAP:" hBM : "")
             this.GradText[el] := {colors: colors, w: w, h: h, cx: Round(cx), cy: Round(cy)
-                , ctrl: ctrl, oldBM: hBM, mode: mode, rounded: rounded, isSimple: false}
+                , ctrl: ctrl, oldBM: hBM, mode: mode, rounded: rounded, isSimple: false, align: align}
         }
         switch el {
             case "desktops":  this.DesktopsCtrl := ctrl
@@ -3503,7 +3688,7 @@ class BarInstance {
         if (gi.mode = "bg") {
             style := gi.rounded = "on" ? "bg_rounded" : "bg"
         }
-        hBM := TextOnGradient(gi.w, gi.h, gi.colors, newText, Bar_FontSize, style, FontName, this.BgGradBM, gi.cx, C1(Color_Bg))
+        hBM := TextOnGradient(gi.w, gi.h, gi.colors, newText, Bar_FontSize, style, FontName, this.BgGradBM, gi.cx, C1(Color_Bg), gi.align)
         if (!hBM)
             return
         try gi.ctrl.Value := "HBITMAP:" hBM
@@ -3581,12 +3766,14 @@ class BarInstance {
                 if (pcT.isGrad && mkW > 0 && taskH > 0) {
                     hBM := CreateGradient(mkW, taskH, 0, pcT.colors*)
                     this.Gui.Add("Picture", Format("x{} y{} w{} h{}", mkX, useY, mkW, taskH), "HBITMAP:" hBM)
+                    this.TaskMarkerBMs.Push(hBM)
                 } else {
                     this.Gui.Add("Text", Format("x{} y{} w{} h{} Background{}", mkX, useY, mkW, taskH, pcT.first), "")
                 }
             } else if (tColors.Length > 1 && mkW > 0 && taskH > 0) {
                 hBM := CreateGradient(mkW, taskH, 0, tColors*)
                 this.Gui.Add("Picture", Format("x{} y{} w{} h{}", mkX, useY, mkW, taskH), "HBITMAP:" hBM)
+                this.TaskMarkerBMs.Push(hBM)
             } else {
                 tc := tColors[1]
                 this.Gui.Add("Text", Format("x{} y{} w{} h{} Background{}", mkX, useY, mkW, taskH, tc), "")
@@ -3596,12 +3783,121 @@ class BarInstance {
 
     ; -- 桌面更新 / UpdateDesktops --
     UpdateDesktops() {
-        global CurrentDesktop, DesktopCount, Desktops, Bar_Cfg
-        if !IsObject(this.DesktopsCtrl)
-            return
+        global CurrentDesktop, DesktopCount, Desktops, Bar_Cfg, Color_Bg, Color_Active, Bar_FontSize, FontName
         labels := Bar_Cfg["desktop_labels"]
         lft := Bar_Cfg["cur_left"], rgt := Bar_Cfg["cur_right"]
         mode := Bar_Cfg["display_mode"]
+
+        ; ===== 分支 B：当前桌面高亮模式 / per-desktop cells =====
+        if (this.DesktopCurColor.HasProp("colors")) {
+            seg := this.DesktopSeg
+            g := this.Gui
+            if (seg.cw < 2)
+                return
+
+            ; ========== 1. 销毁上一轮所有控件 / Destroy all previous cells ==========
+            loop this.DesktopCellCtrls.Length {
+                ctrl := this.DesktopCellCtrls[A_Index]
+                if IsObject(ctrl) {
+                    try ctrl.Visible := false
+                    try ctrl.Value := ""       ; Picture 释放位图引用
+                    if (ctrl.HasProp("hBM") && ctrl.hBM)
+                        DllCall("Gdi32.dll\DeleteObject", "Ptr", ctrl.hBM)
+                    try ctrl.Destroy()
+                }
+            }
+            this.DesktopCellCtrls := []
+
+            ; ========== 2. 计算可见桌面 + 像素宽度 ==========
+            visible := []
+            Loop DesktopCount {
+                i := A_Index
+                show := true
+                if (mode = "current")
+                    show := (i = CurrentDesktop)
+                else if (mode = "occupied")
+                    show := (i = CurrentDesktop) || (Desktops.Has(i) && Desktops[i].Length > 0)
+                if show
+                    visible.Push(i)
+            }
+            if (visible.Length = 0)
+                return
+            labelsW := Map()
+            for i in visible {
+                lbl := (i <= labels.Length) ? labels[i] : (i "")
+                label := (i = CurrentDesktop) ? (lft lbl rgt) : lbl
+                labelsW[i] := this._TextWidth(label)
+            }
+
+            ; ========== 3. 整体偏移 / Group offset from alignment ==========
+            layoutBg := (this.DesktopLayoutColors.Length > 0 && this.DesktopLayoutMode = "bg")
+            gradientTx := (!layoutBg && this.DesktopLayoutMode = "text" && this.DesktopLayoutColors.Length > 1)
+            tBgColor := C1(Color_Bg)
+            curColor := this.DesktopCurColor
+
+            sepW := this._TextWidth("  ")
+            totalW := 0
+            for i in visible {
+                lbl := (i <= labels.Length) ? labels[i] : (i "")
+                label := (i = CurrentDesktop) ? (lft lbl rgt) : lbl
+                totalW += this._TextWidth(label)
+            }
+            totalW += (visible.Length - 1) * sepW
+            groupOff := 0
+            if (this.DesktopLayoutAlign = "Right")
+                groupOff := seg.cw - totalW
+            else if (this.DesktopLayoutAlign = "Center")
+                groupOff := (seg.cw - totalW) / 2
+            if (groupOff < 0)
+                groupOff := 0
+            x := seg.cx + groupOff
+            curCellX := 0, curCellW := 0
+
+            ; ========== 4. 桌面标签 + 当前高亮（layoutBg 已在 _BuildElements 创建）==========
+            for idx, i in visible {
+                w := labelsW[i]
+                if (i = CurrentDesktop) {
+                    curCellX := x, curCellW := w
+                } else {
+                    lbl := (i <= labels.Length) ? labels[i] : (i "")
+                    if gradientTx {
+                        ; 渐变文字 / Gradient text bitmap per label
+                        hBM := TextOnGradient(w, seg.ch, this.DesktopLayoutColors, lbl, Bar_FontSize, "text", FontName, this.BgGradBM, Round(x), C1(Color_Bg), this.DesktopLayoutAlign)
+                        ctrl := g.Add("Picture", Format("x{} y{} w{} h{}", Round(x), seg.cy, w, seg.ch), hBM ? "HBITMAP:" hBM : "")
+                        ctrl.hBM := hBM
+                    } else {
+                        cOpt := layoutBg ? "c" tBgColor : ""
+                        ctrl := g.Add("Text", Format("x{} y{} w{} h{} {} BackgroundTrans {}"
+                            , Round(x), seg.cy, w, seg.ch, this.DesktopLayoutAlign, cOpt), lbl)
+                        ctrl.SetFont("s" Bar_FontSize " w600", FontName)
+                    }
+                    this.DesktopCellCtrls.Push(ctrl)
+                }
+                x += w + sepW
+            }
+
+            ; ========== 5. 当前桌面高亮 ==========
+            if (curCellW > 0) {
+                if (curColor.HasProp("colors") && curColor.colors.Length > 0) {
+                    hBM := this._GradBgBM(curCellW, seg.ch, curColor.colors, curColor.rounded, 0, tBgColor)
+                    if hBM {
+                        pic := g.Add("Picture", Format("x{} y{} w{} h{}", Round(curCellX), seg.cy, curCellW, seg.ch), "HBITMAP:" hBM)
+                        this.DesktopCellCtrls.Push(pic)
+                    }
+                }
+                curLbl := (CurrentDesktop <= labels.Length) ? labels[CurrentDesktop] : (CurrentDesktop "")
+                curLabel := lft curLbl rgt
+                curCtrl := g.Add("Text", Format("x{} y{} w{} h{} {} BackgroundTrans c{}"
+                    , Round(curCellX), seg.cy, curCellW, seg.ch, this.DesktopLayoutAlign, tBgColor), curLabel)
+                curCtrl.SetFont("s" Bar_FontSize " w600", FontName)
+                this.DesktopCellCtrls.Push(curCtrl)
+            }
+            return
+        }
+
+        ; ===== 分支 A：原逻辑 / legacy single-control mode =====
+        if !IsObject(this.DesktopsCtrl)
+            return
         sep := this.IsHorizontal() ? "  " : "`n"
         str := ""
         Loop DesktopCount {
@@ -3770,6 +4066,16 @@ class BarInstance {
             DllCall("Gdi32.dll\DeleteObject", "Ptr", this.ProgOldBM)
         if (this.BgGradBM)
             DllCall("Gdi32.dll\DeleteObject", "Ptr", this.BgGradBM)
+        ; 任务标记位图 / Task marker bitmaps
+        for hBM in this.TaskMarkerBMs
+            DllCall("Gdi32.dll\DeleteObject", "Ptr", hBM)
+        this.TaskMarkerBMs := []
+        ; Desktop 控件由 GUI 销毁时自动释放，无需手动清理位图
+        this.DesktopCellCtrls := []
+        this.DesktopCurColor := Map()
+        this.DesktopLayoutColors := []
+        this.DesktopLayoutMode := "text"
+        this.DesktopLayoutRounded := "off"
         if IsObject(this.Gui)
             try this.Gui.Destroy()
         this.Gui := ""
@@ -5789,6 +6095,11 @@ class WinSelect {
 OnClipboardChanged(dataType) {
     if (dataType != 1)
         return
+    ; 防抖：200ms 内重复触发忽略 / Debounce: ignore rapid re-fires
+    static lastTick := 0
+    if (A_TickCount - lastTick < 200)
+        return
+    lastTick := A_TickCount
     RecordClipboard()
 }
 
@@ -5802,7 +6113,7 @@ RecordClipboard() {
     LastClipContent := txt
     Content := "------------------------------------------------------------------------------------------------`r`n"
              . FormatTime(, "yyyy-MM-dd HH:mm:ss") . "`r`n" . txt . "`r`n`r`n"
-; 二十、剪贴板 / 编辑器 / 终端 / 电源 / 20. Clipboard / Editor / Terminal / Power
+    try FileAppend(Content, Path_OutputFile, "`n")
 }
 
 ; ---- Toggle the clipboard-history viewer / 剪贴板查 ----
@@ -5880,11 +6191,7 @@ ShowPowerMenu(*) {
     AddBtn(x, y, txt, fn, col) {
         bw := Round(120*wsc), bh := Round(60*hsc)
         pc := ParseColor(col)
-        gradColors := pc.isGrad ? pc.colors : [col, col]
-        hBM := CreateGradient(bw, bh, 0, gradColors*)
-        ; 圆角裁剪 / Rounded clip
-        if (PM_Rounded = "on" && hBM)
-            hBM := RoundClipBM(hBM, bw, bh, Max(4, Min(bw, bh) // 6), pcBg.first)
+        hBM := MakeGradientBM(bw, bh, pc.isGrad ? pc.colors : [col, col], PM_Rounded, 0, pcBg.first)
         pPic := pGui.Add("Picture"
             , "x" Round(x*wsc) " y" Round(y*hsc) " w" bw " h" bh
             , hBM ? "HBITMAP:" hBM : "")

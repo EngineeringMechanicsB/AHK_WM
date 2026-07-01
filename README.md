@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🔲 AHK WM <sub>v2.8.0</sub>
+# 🔲 AHK WM <sub>v2.8.4</sub>
 
 <p>
   <img src="https://img.shields.io/badge/AutoHotkey-v2.0-brightgreen?style=flat-square" alt="AutoHotkey v2" />
@@ -57,14 +57,14 @@
 
 |  |  |  |
 |---|---|---|
-| 📄 **Single file** | One `.ahk` script, no dependencies | 🧩 **Smart Tiling** | One-key layout per monitor |
-| ⚡ **Fast** | No background framework | 🖥️ **9 Virtual Desktops** | Switch, move, gather via hotkeys |
+| 📄 **Single file** | One `.ahk` script, zero dependencies | 🧩 **Smart Tiling** | One-key layout per monitor |
+| ⚡ **Fast** | No runtime framework | 🖥️ **9 Virtual Desktops** | Switch, move, gather via hotkeys |
 | 🖥️ **Win 7 ~ 11** | All modern Windows versions | 🥧 **Pie Menu** | `Space + Right Mouse` |
 | 🧹 **Low interference** | Shared-computer friendly | 📊 **Status Bar** | Gradient, rounded, multi-monitor |
-| ⚙️ **INI config** | Edit and reload on the fly | 🎨 **20+ Themes** | Nord, Dracula, Catppuccin, etc. |
+| ⚙️ **INI config** | Edit and reload instantly | 🎨 **20+ Themes** | Nord, Dracula, Catppuccin, etc. |
 | 🌈 **Gradient colors** | Bar, borders, PowerMenu | 📋 **Clipboard History** | Built-in logger & viewer |
 
-> Built over two years of daily use because every other Windows WM felt too heavy and made my computer unusable for anyone else.
+> Two years of daily-use refinement. Built because every other Windows WM was too heavy and made my machine unusable for anyone else.
 
 ---
 
@@ -79,13 +79,23 @@
 | ![Status Bar](docs/images/status-bar.png) | **Status Bar** — desktop indicator, clock, date, progress bar |
 | ![Help Page](docs/images/help-menu.png) | **Built-in Help** — `Alt + /` for full hotkey reference |
 
-### 🎨 Bar Customization (v2.8)
+### 🎨 Bar Widgets (v2.8)
 
-Per-element gradient backgrounds, rounded corners, and text styles on the status bar.
+Per-element gradient backgrounds (`bg`), gradient text (`tx`), rounded corners, and **span-based alignment** — each widget is independently styled via the layout string.
+
+<p align="center">
+  <img src="docs/images/bar-widgets-2.png" alt="Bar Widgets Full" width="95%" />
+  <br/><em>Gradient bg widgets with rounded corners (desktops, date, time, progress, CPU, mem, disk)</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/bar-widgets-1.png" alt="Bar Widgets Detail" width="60%" />
+  <br/><em>Close-up: gradient backgrounds and current-desktop highlight with rounded corners</em>
+</p>
 
 <p align="center">
   <img src="docs/images/bar-layout.png" alt="Bar Layout" width="80%" />
-  <br/><em>Gradient backgrounds with rounded corners (bg mode)</em>
+  <br/><em>Layout configuration in action</em>
 </p>
 
 <p align="center">
@@ -93,14 +103,9 @@ Per-element gradient backgrounds, rounded corners, and text styles on the status
   <br/><em>Configuration format: N,element,span,colors,bg|tx,on|off</em>
 </p>
 
-<p align="center">
-  <img src="docs/images/bar-fullscreen.png" alt="Bar Fullscreen" width="80%" />
-  <br/><em>Full customization overview</em>
-</p>
-
 ### 🌈 Gradient Borders (v2.8)
 
-`BorderDrag`, `BorderPin`, and `BorderUnfocus` now support comma-separated gradient colors.
+`BorderDrag`, `BorderPin`, and `BorderUnfocus` support comma-separated gradient colors.
 
 <p align="center">
   <img src="docs/images/border-gradient.png" alt="Border Gradient" width="80%" />
@@ -113,13 +118,14 @@ Per-element gradient backgrounds, rounded corners, and text styles on the status
 </p>
 
 ---
+
 ## 📦 Installation
 
 ### Option 1: Run the `.ahk` script ⭐ Recommended
 
 1. Install **AutoHotkey v2** → https://www.autohotkey.com/
-2. Download `wm_V2.6.4.ahk` from the [latest release](https://github.com/EngineeringMechanicsB/AHK_WM/releases/latest)
-3. **Run as Administrator** (required for operations on elevated windows)
+2. Download `wm.ahk` from the [latest release](https://github.com/EngineeringMechanicsB/AHK_WM/releases/latest)
+3. **Run as Administrator** (required for elevated windows)
 
 Done.
 
@@ -133,7 +139,7 @@ Run the pre-compiled executable — no AHK installation needed for basic use.
   </a>
 </p>
 
-> ⚠️ Pie menu customization and some advanced features require AHK v2. Running the script is recommended.
+> ⚠️ Pie menu customization and some advanced features require AHK v2. Running the `.ahk` script is recommended.
 
 ---
 
@@ -250,7 +256,7 @@ FontSizeActive=22
 
 ### 📊 Status Bar
 
-Multi-monitor bar with proportional layout, **gradient colors**, and rounded corners. Shows virtual desktops, clock, date, work progress, and custom text/icons.
+Multi-monitor bar with proportional layout, **gradient colors**, **rounded corners**, and **alignment control**. Shows virtual desktops, clock, date, work progress, system stats, and custom text/icons.
 
 ```ini
 [Bar]
@@ -260,16 +266,38 @@ MonitorIdx=1
 position=top              ; top | bottom
 ```
 
-**Element layout format** (gradient + rounded support):
+**Element layout format** (gradient + rounded + alignment):
+
 ```ini
-; N,element,span,c1..cn,bg|tx,on|off
-layout=1,time,20/20,ff0000,00ff00,bg,on;desktops,(1-3)/20;custom_1,5/20,FAB387,bg,on
+; N,element,span,colors,bg|tx,on|off
+layout=1,time,20/20,ff0000,00ff00,tx;desktops,(1-3)/20,FAB387,A020F0,bg,on;cpu,14/-20
 ```
 
-- `bg` = gradient/solid background · `tx` = gradient text · `on|off` = rounded corners (bg only)
+| Parameter | Values | Notes |
+|-----------|--------|-------|
+| `N` | Bar instance # (default 1) | For multi-bar setups |
+| `element` | desktops, time, date, progress, wifi, bluetooth, battery, volume, disk, mem, cpu, custom_1..n | |
+| `span` | `a/b`, `a/+b`, `a/-b`, `(a-c)/b`, `(a-c)/+b`, `(a-c)/-b` | **`+`=right-align, `-`=left-align, none=center** |
+| `colors` | One or more 6-digit hex (comma-separated) | Supports `#` prefix |
+| `mode` | `bg` = colored background, `tx` = gradient text | |
+| `rounded` | `on` or `off` | Rounded corners (bg mode) |
+
+**Span alignment** — the `+`/`-` sign controls both individual cell text alignment AND overall group position within the span:
+
+- `(1-3)/20` → centered in span
+- `(1-3)/+20` → right-aligned group, text right-aligned
+- `(1-3)/-20` → left-aligned group, text left-aligned
+
+**Current desktop highlight** — set `current_desktop_color` with the same `colors,bg|tx,on|off` format to give the active desktop a distinct visual highlight:
+
+```ini
+current_desktop_color=FAB387,A020F0,bg,on
+```
+
+**Available elements**: `desktops`, `time`, `date`, `progress`, `wifi`, `bluetooth`, `battery`, `volume`, `disk`, `mem`, `cpu`, `custom_1`..`custom_n`
+
 - Colors support `#` prefix: `#FF0000,#00FF00`
 - Legacy `element:span,color` format still compatible
-
 - Auto-hides when a fullscreen app is detected
 - Pause-on-fullscreen option (`[General] PauseOnFullscreen=on`)
 - Toggle: `Ctrl + Alt + B` · Reload: `Alt + R`
@@ -278,7 +306,7 @@ layout=1,time,20/20,ff0000,00ff00,bg,on;desktops,(1-3)/20;custom_1,5/20,FAB387,b
 
 ### 🖼️ Window Borders
 
-Visual borders for active, dragged, pinned, and managed windows. **Now with gradient color support.**
+Visual borders for active, dragged, pinned, and managed windows — now with **gradient color support**.
 
 | Mode | Purpose |
 |------|---------|
@@ -391,11 +419,12 @@ Per-weekday task slots, weekend bar option, percentage display.
 
 ### 📋 Clipboard History
 
-Monitors clipboard changes and logs them to file. Built-in viewer for reviewing past clips.
+Monitors clipboard changes and logs them to file. Built-in viewer for reviewing past clips. Includes 200ms debounce to suppress rapid duplicate triggers.
 
 ```ini
 [Paths]
-ClipboardLog=%A_MyDocuments%\AHK_WM\clipboard.log
+OutputDir=C:\Users\...\Documents
+OutputFile=CB.txt
 ```
 
 ---
@@ -406,8 +435,8 @@ Quick-launch terminal and editor from anywhere. Explorer integration — get sel
 
 ```ini
 [Paths]
-Editor=C:\path\to\your\editor.exe
-Terminal=wt.exe           ; Windows Terminal
+VimPath=C:\path\to\your\editor.exe
+TerminalExe=wt.exe         ; Windows Terminal
 ```
 
 ---
@@ -420,7 +449,7 @@ Additional features:
 - 🖱️ **System tray** — right-click for theme switch, reload, safe exit
 - 🛡️ **Fault isolation** — `WMGuard()` wraps all operations in try/catch
 - 📝 **Error logging** — `WMLogErr()` deduplicates repeated errors
-- 🔄 **Config migration** — `MigrateLegacyConfig()` upgrades old configs
+- 🔄 **Auto config repair** — missing keys added on every startup
 - 🔍 **Transparency** — `Alt + Mouse Wheel` on any window
 - 📌 **Always-on-top** — `Alt + T`
 - 🔇 **Minimize** window under mouse
@@ -438,19 +467,19 @@ Single INI file:
 
 | Section | Purpose |
 |---------|---------|
-| `[General]` | Core behavior, language, startup |
-| `[Theme]` | Active theme |
-| `[Paths]` | Editor, terminal, clipboard log |
-| `[Desktop]` | Virtual desktop settings, hide method |
-| `[Bar]` | Status bar height, position, opacity, custom items |
-| `[Border]` | Border mode, thickness, colors, rounded corners |
-| `[Tiling]` | Gap, layout rules, exclusions |
+| `[General]` | Theme, font, transparency step, pause-on-fullscreen |
+| `[Theme]` | All color definitions (gradients supported) |
+| `[Paths]` | Editor, terminal, clipboard log paths |
+| `[Desktop]` | Virtual desktop count, hide method |
+| `[Bar]` | Height, opacity, layout, alignment, rounded corners |
+| `[Border]` | Mode, thickness, colors, rounded corners |
+| `[Tiling]` | Gap, custom layout rules, exclusions |
 | `[WTM]` | Keyboard tiling mode settings |
-| `[PieMenu]` | Pie menu size, opacity, items |
-| `[GUI]` | Help window & GUI preferences |
+| `[PieMenu]` | Size, opacity, font settings |
+| `[GUI]` | Help window & OSD preferences |
 | `[WorkTime]` | Work hours, task slots, progress bar |
 | `[Exclude]` | Window exclusions (title/class/process) |
-| `[Hotkeys]` | Custom keybindings |
+| `[Hotkeys]` | All keybindings |
 | `[Snapping]` | Snap distance, release distance |
 | `[WinSelect]` | Sidebar position, width, timeout |
 
@@ -460,6 +489,18 @@ Single INI file:
 
 ## 🛠️ Changelog
 
+### v2.8.4 (2026-07-01)
+
+- 🐛 **Clipboard fixed** — `RecordClipboard()` was missing `FileAppend`; history is now actually written to file
+- 🐛 **Bar white edge fixed** — `RoundWindowEx` now disables DWM non-client rendering before `SetWindowRgn`, eliminating white artifacts on Win10 19041+
+- 🐛 **ShowWin fixed** — `SW_SHOWNA(8)` → `SW_RESTORE(9)`; minimized windows now restore correctly
+- 🐛 **Desktops white clipping** — layoutBg creation moved to `_BuildElements` (same timing as other elements), resolving alignment-dependent white gaps
+- 🆕 **Span alignment** — `+`/`-` sign in span format now controls both group positioning and text alignment
+- 🆕 **Tx mode in highlight** — `tx` mode correctly renders desktop labels with default color when no background is specified
+- 🧹 **GDI leak** — task-marker bitmaps now tracked and released on bar destroy
+- 🧹 **Cleanup** — removed legacy globals, deduplicated INI parsing, added `Persistent` directive
+- ⚡ **Clipboard debounce** — 200ms filter suppresses rapid duplicate fires
+
 ### v2.8.0 (2026-06-29)
 
 - 🌈 **Gradient colors** — bar elements, borders, and PowerMenu now support gradient backgrounds and gradient text
@@ -467,14 +508,14 @@ Single INI file:
 - 🎨 **Bar layout overhaul** — new `N,element,span,colors,bg|tx,on|off` format with granular control
 - 🔧 **Border gradient** — `BorderDrag`/`BorderPin`/`BorderUnfocus` support comma-separated gradient colors
 - ⚙️ **Pause-on-fullscreen** — `[General] PauseOnFullscreen=on` suspends hotkeys when gaming
-- 🔍 **Transparency step** — configurable step size (`TransparencyStep=20`), snap to multiples
+- 🔍 **Transparency step** — configurable step size, snap to multiples
 - 🧹 **Code cleaned** — removed legacy migration, legacy WTM globals, redundant sections
 - 🐛 **Fixed** — bg rounded corners, single-color bg rendering, transparency minimum, help/OSD theme follow
 
 ### v2.6.4 (2026-06-18)
 
 - 🆕 **Config integrity check** — auto-detect missing keys & add defaults on every startup
-- 🐛 **Pin border rounding** — `Border_Pin_Rounded`/`Pin_Radius` now read from config
+- 🐛 **Pin border rounding** — now reads from config
 - 🔧 **DWM compensation** — extracted into shared function
 
 ---
