@@ -3,16 +3,16 @@
 # 🔲 AHK WM <sub>v2.8.5</sub>
 
 <p>
-  <img src="https://img.shields.io/badge/AutoHotkey-v2.0-cba6f7?" alt="AutoHotkey v2" />
-  <img src="https://img.shields.io/badge/platform-Windows_7_~_11-b4befe?" alt="Platform" />
-  <img src="https://img.shields.io/badge/license-MIT-f5c2e7?" alt="License" />
+  <img src="https://img.shields.io/badge/AutoHotkey-v2.0-cba6f7?style=flat-square" alt="AutoHotkey v2" />
+  <img src="https://img.shields.io/badge/platform-Windows_7_~_11-b4befe?style=flat-square" alt="Platform" />
+  <img src="https://img.shields.io/badge/license-MIT-f5c2e7?style=flat-square" alt="License" />
   <img src="https://badgen.net/github/release/EngineeringMechanicsB/AHK_WM?icon=github&color=cba6f7" alt="Release" />
   <img src="https://badgen.net/github/stars/EngineeringMechanicsB/AHK_WM?icon=github&color=b4befe" alt="Stars" />
 </p>
 
 <p>
-  <a href="README.md"><img src="https://img.shields.io/badge/README-English-cba6f7?" alt="English" /></a>
-  <a href="README-zh.md"><img src="https://img.shields.io/badge/README-简体中文-b4befe?" alt="简体中文" /></a>
+  <a href="README.md"><img src="https://img.shields.io/badge/README-English-cba6f7?style=for-the-badge" alt="English" /></a>
+  <a href="README-zh.md"><img src="https://img.shields.io/badge/README-简体中文-b4befe?style=for-the-badge" alt="简体中文" /></a>
 </p>
 
 
@@ -458,27 +458,31 @@ Additional features:
 
 ### 🔔 External OSD (v2.8.5)
 
-Other AHK scripts can display OSD messages through AHK_WM — no polling, no temp files. Uses standard `WM_COPYDATA`.
+Other AHK scripts can show OSD messages through AHK_WM via a standard `WM_COPYDATA` message. No polling, no temp files — just one function call.
 
-**Quick start** — copy this function into any AHK v2 script:
+Drop this function into your script:
 
 ```ahk
+; Show an OSD banner through AHK_WM. AHK_WM must be running.
 AHK_WM_OSD(text, duration := 1000) {
     DetectHiddenWindows(true)
     h := WinExist("wm.ahk ahk_class AutoHotkey")
     if !h
         return false
-    p := "OSD:" . text . ":" . duration
-    c := StrPut(p, "UTF-16")
+    payload := "OSD:" . text . ":" . duration
+    c := StrPut(payload, "UTF-16")
     b := Buffer(A_PtrSize * 3, 0)
-    NumPut("Ptr", 0, b, 0), NumPut("UInt", c, b, A_PtrSize), NumPut("Ptr", StrPtr(p), b, A_PtrSize * 2)
-    try SendMessage(0x4A, 0, b.Ptr, , "ahk_id " . h)
+    NumPut("Ptr",  0,             b, 0)
+    NumPut("UInt", c,             b, A_PtrSize)
+    NumPut("Ptr",  StrPtr(payload), b, A_PtrSize * 2)
+    SendMessage(0x4A, 0, b.Ptr, , "ahk_id " . h)
     return true
 }
-; Usage: AHK_WM_OSD("Build passed!", 3000)
+
+AHK_WM_OSD("Build passed!", 3000)
 ```
 
-Or use the standalone sender: `wm_osd_send.ahk "Your message" 2000`
+See `wm_osd.ahk` for a ready-to-run example.
 
 ---
 
@@ -598,10 +602,6 @@ Single INI file:
 [![Star History Chart](https://api.star-history.com/svg?repos=EngineeringMechanicsB/AHK_WM&type=Date)](https://star-history.com/#EngineeringMechanicsB/AHK_WM&Date)
 
 ---
-
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=waving&color=cba6f7&height=100&section=footer" width="100%" alt="footer wave" />
-</p>
 
 <p align="center">
   <sub>Made with AutoHotkey v2 · Two years and counting</sub>

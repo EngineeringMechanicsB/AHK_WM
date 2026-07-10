@@ -3,16 +3,16 @@
 # 🔲 AHK WM <sub>v2.8.5</sub>
 
 <p>
-  <img src="https://img.shields.io/badge/AutoHotkey-v2.0-cba6f7?" alt="AutoHotkey v2" />
-  <img src="https://img.shields.io/badge/平台-Windows_7_~_11-b4befe?" alt="平台" />
-  <img src="https://img.shields.io/badge/许可-MIT-f5c2e7?" alt="许可" />
+  <img src="https://img.shields.io/badge/AutoHotkey-v2.0-cba6f7?style=flat-square" alt="AutoHotkey v2" />
+  <img src="https://img.shields.io/badge/平台-Windows_7_~_11-b4befe?style=flat-square" alt="平台" />
+  <img src="https://img.shields.io/badge/许可-MIT-f5c2e7?style=flat-square" alt="许可" />
   <img src="https://badgen.net/github/release/EngineeringMechanicsB/AHK_WM?icon=github&color=cba6f7" alt="版本" />
   <img src="https://badgen.net/github/stars/EngineeringMechanicsB/AHK_WM?icon=github&color=b4befe" alt="Stars" />
 </p>
 
 <p>
-  <a href="README.md"><img src="https://img.shields.io/badge/README-English-cba6f7?" alt="English" /></a>
-  <a href="README-zh.md"><img src="https://img.shields.io/badge/README-简体中文-b4befe?" alt="简体中文" /></a>
+  <a href="README.md"><img src="https://img.shields.io/badge/README-English-cba6f7?style=for-the-badge" alt="English" /></a>
+  <a href="README-zh.md"><img src="https://img.shields.io/badge/README-简体中文-b4befe?style=for-the-badge" alt="简体中文" /></a>
 </p>
 
 **轻量、快速、单文件的 Windows 窗口管理器 — AutoHotkey v2 驱动**
@@ -457,27 +457,31 @@ TerminalExe=wt.exe         ; Windows Terminal
 
 ### 🔔 外部 OSD 调用（v2.8.5）
 
-其他 AHK 脚本可通过 `WM_COPYDATA` 向 AHK_WM 发送 OSD 消息，无需轮询、无需临时文件。
+其他 AHK 脚本可通过标准 `WM_COPYDATA` 消息向 AHK_WM 发送 OSD 提示。无需轮询、无需临时文件，一个函数调用即可。
 
-**快速使用** — 复制此函数到任意 AHK v2 脚本：
+复制下面这个函数到你的脚本：
 
 ```ahk
+; 通过 AHK_WM 弹出 OSD 横幅。AHK_WM 需在运行中。
 AHK_WM_OSD(text, duration := 1000) {
     DetectHiddenWindows(true)
     h := WinExist("wm.ahk ahk_class AutoHotkey")
     if !h
         return false
-    p := "OSD:" . text . ":" . duration
-    c := StrPut(p, "UTF-16")
+    payload := "OSD:" . text . ":" . duration
+    c := StrPut(payload, "UTF-16")
     b := Buffer(A_PtrSize * 3, 0)
-    NumPut("Ptr", 0, b, 0), NumPut("UInt", c, b, A_PtrSize), NumPut("Ptr", StrPtr(p), b, A_PtrSize * 2)
-    try SendMessage(0x4A, 0, b.Ptr, , "ahk_id " . h)
+    NumPut("Ptr",  0,             b, 0)
+    NumPut("UInt", c,             b, A_PtrSize)
+    NumPut("Ptr",  StrPtr(payload), b, A_PtrSize * 2)
+    SendMessage(0x4A, 0, b.Ptr, , "ahk_id " . h)
     return true
 }
-; 用法: AHK_WM_OSD("编译通过！", 3000)
+
+AHK_WM_OSD("编译完成！", 3000)
 ```
 
-或使用独立发送器：`wm_osd_send.ahk "你的消息" 2000`
+完整示例见 `wm_osd.ahk`。
 
 ---
 
@@ -597,10 +601,6 @@ AHK_WM_OSD(text, duration := 1000) {
 [![Star History Chart](https://api.star-history.com/svg?repos=EngineeringMechanicsB/AHK_WM&type=Date)](https://star-history.com/#EngineeringMechanicsB/AHK_WM&Date)
 
 ---
-
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=waving&color=cba6f7&height=100&section=footer" width="100%" alt="footer wave" />
-</p>
 
 <p align="center">
   <sub>用 AutoHotkey v2 打造 · 两年有余</sub>
