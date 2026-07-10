@@ -49,7 +49,7 @@ Persistent
 ; 一、环境与全局指令 / 1. Environment & Global Directives
 ; ==============================================================================
 
-global WM_Version := "2.8.4"
+global WM_Version := "2.8.5"
 global FontName
 
 SetWorkingDir(A_ScriptDir)
