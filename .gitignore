@@ -1,8 +1,0 @@
-# AHK 历史版本文件（已通过 wm.ahk 的 git 历史追踪）
-wm_V*.ahk
-
-# 构建脚本
-build_git_history.sh
-
-# 备份文件
-*.bak
