@@ -6,8 +6,7 @@
   <img src="https://img.shields.io/badge/AutoHotkey-v2.0-cba6f7?style=flat-square" alt="AutoHotkey v2" />
   <img src="https://img.shields.io/badge/平台-Windows_7_~_11-b4befe?style=flat-square" alt="平台" />
   <img src="https://img.shields.io/badge/许可-MIT-f5c2e7?style=flat-square" alt="许可" />
-  <img src="https://badgen.net/github/release/EngineeringMechanicsB/AHK_WM?icon=github&color=cba6f7" alt="版本" />
-  <img src="https://badgen.net/github/stars/EngineeringMechanicsB/AHK_WM?icon=github&color=b4befe" alt="Stars" />
+  <img src="https://img.shields.io/badge/版本-v2.8.5-cba6f7?style=flat-square" alt="版本" />
 </p>
 
 <p>
