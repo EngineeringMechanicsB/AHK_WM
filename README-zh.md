@@ -11,8 +11,8 @@
 </p>
 
 <p>
-  <a href="README.md"><img src="https://img.shields.io/badge/README-English-cba6f7?style=for-the-badge" alt="English" /></a>
-  <a href="README-zh.md"><img src="https://img.shields.io/badge/README-简体中文-b4befe?style=for-the-badge" alt="简体中文" /></a>
+  <a href="README.md"><img src="https://img.shields.io/badge/README-English-cba6f7?style=flat-square" alt="English" /></a>
+  <a href="README-zh.md"><img src="https://img.shields.io/badge/README-简体中文-b4befe?style=flat-square" alt="简体中文" /></a>
 </p>
 
 **轻量、快速、单文件的 Windows 窗口管理器 — AutoHotkey v2 驱动**
@@ -135,7 +135,7 @@
 
 <p align="center">
   <a href="https://github.com/EngineeringMechanicsB/AHK_WM/releases/latest">
-    <img src="https://img.shields.io/badge/下载-最新版本-cba6f7?style=for-the-badge" alt="下载最新版本" />
+    <img src="https://img.shields.io/badge/下载-最新版本-cba6f7?style=flat-square" alt="下载最新版本" />
   </a>
 </p>
 

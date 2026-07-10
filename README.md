@@ -11,8 +11,8 @@
 </p>
 
 <p>
-  <a href="README.md"><img src="https://img.shields.io/badge/README-English-cba6f7?style=for-the-badge" alt="English" /></a>
-  <a href="README-zh.md"><img src="https://img.shields.io/badge/README-简体中文-b4befe?style=for-the-badge" alt="简体中文" /></a>
+  <a href="README.md"><img src="https://img.shields.io/badge/README-English-cba6f7?style=flat-square" alt="English" /></a>
+  <a href="README-zh.md"><img src="https://img.shields.io/badge/README-简体中文-b4befe?style=flat-square" alt="简体中文" /></a>
 </p>
 
 
@@ -136,7 +136,7 @@ Run the pre-compiled executable — no AHK installation needed for basic use.
 
 <p align="center">
   <a href="https://github.com/EngineeringMechanicsB/AHK_WM/releases/latest">
-    <img src="https://img.shields.io/badge/Download-Latest_Release-cba6f7?style=for-the-badge" alt="Download Latest Release" />
+    <img src="https://img.shields.io/badge/Download-Latest_Release-cba6f7?style=flat-square" alt="Download Latest Release" />
   </a>
 </p>
 
