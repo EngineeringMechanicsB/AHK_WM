@@ -1,18 +1,18 @@
 <div align="center">
 
-# 🔲 AHK WM <sub>v2.8.4</sub>
+# 🔲 AHK WM <sub>v2.8.5</sub>
 
 <p>
-  <img src="https://img.shields.io/badge/AutoHotkey-v2.0-brightgreen?style=flat-square" alt="AutoHotkey v2" />
-  <img src="https://img.shields.io/badge/平台-Windows_7_~_11-blue?style=flat-square" alt="平台" />
-  <img src="https://img.shields.io/badge/许可-MIT-brightgreen?style=flat-square" alt="许可" />
-  <img src="https://badgen.net/github/release/EngineeringMechanicsB/AHK_WM?icon=github" alt="版本" />
-  <img src="https://badgen.net/github/stars/EngineeringMechanicsB/AHK_WM?icon=github" alt="Stars" />
+  <img src="https://img.shields.io/badge/AutoHotkey-v2.0-cba6f7?" alt="AutoHotkey v2" />
+  <img src="https://img.shields.io/badge/平台-Windows_7_~_11-b4befe?" alt="平台" />
+  <img src="https://img.shields.io/badge/许可-MIT-f5c2e7?" alt="许可" />
+  <img src="https://badgen.net/github/release/EngineeringMechanicsB/AHK_WM?icon=github&color=cba6f7" alt="版本" />
+  <img src="https://badgen.net/github/stars/EngineeringMechanicsB/AHK_WM?icon=github&color=b4befe" alt="Stars" />
 </p>
 
 <p>
-  <a href="README.md"><img src="https://img.shields.io/badge/README-English-blue?style=for-the-badge" alt="English" /></a>
-  <a href="README-zh.md"><img src="https://img.shields.io/badge/README-简体中文-red?style=for-the-badge" alt="简体中文" /></a>
+  <a href="README.md"><img src="https://img.shields.io/badge/README-English-cba6f7?" alt="English" /></a>
+  <a href="README-zh.md"><img src="https://img.shields.io/badge/README-简体中文-b4befe?" alt="简体中文" /></a>
 </p>
 
 **轻量、快速、单文件的 Windows 窗口管理器 — AutoHotkey v2 驱动**
@@ -135,7 +135,7 @@
 
 <p align="center">
   <a href="https://github.com/EngineeringMechanicsB/AHK_WM/releases/latest">
-    <img src="https://img.shields.io/badge/下载-最新版本-blue?style=for-the-badge" alt="下载最新版本" />
+    <img src="https://img.shields.io/badge/下载-最新版本-cba6f7?style=for-the-badge" alt="下载最新版本" />
   </a>
 </p>
 
@@ -455,6 +455,30 @@ TerminalExe=wt.exe         ; Windows Terminal
 - 🔇 **最小化** — 鼠标下方窗口
 - 🖥️ **最大化** — 鼠标下方窗口
 
+### 🔔 外部 OSD 调用（v2.8.5）
+
+其他 AHK 脚本可通过 `WM_COPYDATA` 向 AHK_WM 发送 OSD 消息，无需轮询、无需临时文件。
+
+**快速使用** — 复制此函数到任意 AHK v2 脚本：
+
+```ahk
+AHK_WM_OSD(text, duration := 1000) {
+    DetectHiddenWindows(true)
+    h := WinExist("wm.ahk ahk_class AutoHotkey")
+    if !h
+        return false
+    p := "OSD:" . text . ":" . duration
+    c := StrPut(p, "UTF-16")
+    b := Buffer(A_PtrSize * 3, 0)
+    NumPut("Ptr", 0, b, 0), NumPut("UInt", c, b, A_PtrSize), NumPut("Ptr", StrPtr(p), b, A_PtrSize * 2)
+    try SendMessage(0x4A, 0, b.Ptr, , "ahk_id " . h)
+    return true
+}
+; 用法: AHK_WM_OSD("编译通过！", 3000)
+```
+
+或使用独立发送器：`wm_osd_send.ahk "你的消息" 2000`
+
 ---
 
 ## ⚙️ 配置
@@ -488,6 +512,17 @@ TerminalExe=wt.exe         ; Windows Terminal
 ---
 
 ## 🛠️ 更新日志
+
+### v2.8.5 (2026-07-10)
+
+- 🐛 **修复 GDI 句柄泄漏** — `CreateGradient()` 中 1x1 种子位图每次泄漏，边框拖拽可达 100 次/秒；现正确释放
+- 🐛 **修复快速切换桌面竞态** — `DesktopIsSwitching` 标志护卫 `SwitchDesktop`，WTM/AllBorders/TogglePin/GatherAll/SaveLayout 均加守卫，`try/finally` 确保标志不卡死
+- ⚡ **Bar 系统轮询优化** — WiFi 和 Disk 信息添加 30 秒缓存，避免每秒 fork netsh/cmd 子进程和 `DriveGetSpaceFree` I/O
+- 🆕 **OSD 外部接口** — `WM_COPYDATA` 接收器，其他脚本可调用弹出 OSD；附带 `wm_osd_helper.ahk` 辅助库 + `wm_osd_send.ahk` 独立发送器
+- 🎨 **平铺边缘间隙修复** — `Gap=0` 时窗口紧贴屏幕边缘；DWM 补偿仅用于窗口间间距
+- 🧹 **重复代码提取** — `_GetHwndUnderMouse`、`_RemoveFromAllDesktops`、`_GetTileMode`、`_BorderPlaceFrame`、`_BuildSysWidget` 等共享函数
+- 🧹 **UpdateClock 数据表驱动** — `SysWidgets` 数组替代 7 个重复 if 块
+- 🧹 **_BuildElements 统一** — `WidgetMeta` Map + 多值 case fallthrough 替代 7 个重复 case
 
 ### v2.8.4 (2026-07-01)
 
@@ -562,6 +597,10 @@ TerminalExe=wt.exe         ; Windows Terminal
 [![Star History Chart](https://api.star-history.com/svg?repos=EngineeringMechanicsB/AHK_WM&type=Date)](https://star-history.com/#EngineeringMechanicsB/AHK_WM&Date)
 
 ---
+
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=waving&color=cba6f7&height=100&section=footer" width="100%" alt="footer wave" />
+</p>
 
 <p align="center">
   <sub>用 AutoHotkey v2 打造 · 两年有余</sub>

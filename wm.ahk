@@ -508,8 +508,9 @@ CreateGradient(W, H, V := 0, Colors*) {
         else
             X += xOFF
     }
-    hBM := DllCall("Gdi32.dll\CreateBitmap", "Int", 1, "Int", 1, "Int", 0x1, "Int", 32, "PtrP", 0, "Ptr")
-    hBM := DllCall("User32.dll\CopyImage", "Ptr", hBM, "Int", 0x0, "Int", W, "Int", H, "Int", 0x0008, "Ptr")
+    hSeed := DllCall("Gdi32.dll\CreateBitmap", "Int", 1, "Int", 1, "Int", 0x1, "Int", 32, "PtrP", 0, "Ptr")
+    hBM := DllCall("User32.dll\CopyImage", "Ptr", hSeed, "Int", 0x0, "Int", W, "Int", H, "Int", 0x0008, "Ptr")
+    DllCall("Gdi32.dll\DeleteObject", "Ptr", hSeed)
     mDC := DllCall("Gdi32.dll\CreateCompatibleDC", "Ptr", 0, "Ptr")
     DllCall("Gdi32.dll\SaveDC", "Ptr", mDC)
     DllCall("Gdi32.dll\SelectObject", "Ptr", mDC, "Ptr", hBM)
@@ -1085,7 +1086,11 @@ FocusWindowSafely(hwnd) {
 
 ; ---- Save desktop layout before Reload / 存布局 ----
 SaveLayoutStateForReload() {
-    global Desktops, DesktopFocus, CurrentDesktop, AlwaysVisible, ConfigDir
+    global Desktops, DesktopFocus, CurrentDesktop, AlwaysVisible, ConfigDir, DesktopIsSwitching
+    if DesktopIsSwitching {
+        SetTimer(() => SaveLayoutStateForReload(), -100)
+        return
+    }
     stateFile := ConfigDir . "\wm_layout.dat"
     try FileDelete(stateFile)
     catch
@@ -2399,6 +2404,31 @@ class OSD {
 ; ---- OSD shorthand / OSD快捷 ----
 ShowOSD(text) => OSD.Show(text)
 
+; ---- OSD 外部接口 / External OSD via WM_COPYDATA ----
+; 其他 AHK 脚本可通过 SendMessage 向 AHK_WM 发送 OSD 消息
+; 消息格式: "OSD:消息文本[:持续时间ms]"
+; 外部脚本通过 WM_COPYDATA 发送 OSD，查找主窗口 "wm.ahk ahk_class AutoHotkey"
+OnMessage(0x4A, _OSD_OnCopyData)  ; WM_COPYDATA
+
+_OSD_OnCopyData(wParam, lParam, msgNum, hwnd) {
+    ; COPYDATASTRUCT: dwData(ptr) + cbData(u32) + lpData(ptr)
+    cds := lParam
+    cbData := NumGet(cds, A_PtrSize, "UInt")
+    lpData := NumGet(cds, A_PtrSize * 2, "Ptr")
+    if !lpData || !cbData
+        return false
+    text := StrGet(lpData, cbData, "UTF-16")
+    ; 格式: "OSD:消息文本[:持续时间ms]"
+    if SubStr(text, 1, 4) != "OSD:"
+        return false
+    payload := SubStr(text, 5)
+    dur := 1000
+    if RegExMatch(payload, "^(.*):(\d+)$", &m)
+        payload := m[1], dur := Integer(m[2])
+    try OSD.Show(payload, dur)
+    return true
+}
+
 ; ==============================================================================
 ; Border System (BorderFrame / DragBorder / PinBorder) / 九边框系
 ; ==============================================================================
@@ -2675,9 +2705,19 @@ class PinBorder {
 ; Window Actions / 十窗口操
 ; ==============================================================================
 
+; ---- 获取鼠标下窗口（排除 bar）/ Get HWND under mouse (exclude bar) ----
+_GetHwndUnderMouse() {
+    MouseGetPos(,, &hwnd)
+    if hwnd && !IsBarWindow(hwnd)
+        return hwnd
+    return 0
+}
+
 ; ---- Close window under mouse / 关闭窗口 ----
 CloseWindowUnderMouse(*) {
-    MouseGetPos(,, &hwnd)
+    hwnd := _GetHwndUnderMouse()
+    if !hwnd
+        return
     try {
         WinClose(hwnd)
         PinBorder.Remove(hwnd)
@@ -2688,7 +2728,9 @@ CloseWindowUnderMouse(*) {
 
 ; ---- Minimize window under mouse / 最小化 ----
 HideUnderMouse(*) {
-    MouseGetPos(,, &hwnd)
+    hwnd := _GetHwndUnderMouse()
+    if !hwnd
+        return
     try {
         WinMinimize(hwnd)
         ShowOSD("WinMinimized")
@@ -2698,7 +2740,9 @@ HideUnderMouse(*) {
 
 ; ---- Toggle maximize under mouse / 最大化 ----
 ToggleMaximizeUnderMouse(*) {
-    MouseGetPos(,, &hwnd)
+    hwnd := _GetHwndUnderMouse()
+    if !hwnd
+        return
     try {
         if WinGetMinMax(hwnd) {
             WinRestore(hwnd)
@@ -2712,7 +2756,9 @@ ToggleMaximizeUnderMouse(*) {
 
 ; ---- Toggle always-on-top under mouse / 置顶切换 ----
 ToggleTopUnderMouse(*) {
-    MouseGetPos(,, &hwnd)
+    hwnd := _GetHwndUnderMouse()
+    if !hwnd
+        return
     try {
         WinSetAlwaysOnTop(-1, hwnd)
         state := WinGetExStyle(hwnd)
@@ -2888,51 +2934,77 @@ ShowWin(hwnd) {
     }
 }
 
+; ---- 从所有桌面移除窗口 / Remove window from all desktops ----
+_RemoveFromAllDesktops(hwnd) {
+    global Desktops, DesktopCount
+    Loop DesktopCount {
+        d := A_Index
+        if Desktops.Has(d) {
+            nl := []
+            for h in Desktops[d] {
+                if (h != hwnd)
+                    nl.Push(h)
+            }
+            Desktops[d] := nl
+        }
+    }
+}
+
+; ---- 桌面切换忙标志 / Desktop switching busy flag ----
+global DesktopIsSwitching := false
+
 ; ---- SwitchDesktop / 切换桌面 ----
 SwitchDesktop(target, *) {
-    global CurrentDesktop, Desktops, AlwaysVisible, DesktopFocus
-    if (target == CurrentDesktop) {
-        ShowOSD("Desktop " . target)
+    global CurrentDesktop, Desktops, AlwaysVisible, DesktopFocus, DesktopIsSwitching
+    if DesktopIsSwitching
         return
+    DesktopIsSwitching := true
+    try {
+        if (target == CurrentDesktop) {
+            ShowOSD("Desktop " . target)
+            return
+        }
+
+        wasWTMActive := WTM.Active
+        if wasWTMActive
+            WTM.DestroyAllBorders()
+        if AllBorders.Active
+            AllBorders.DestroyAll()
+        DestroyTransientGuis()
+
+        curFocus := 0
+        try curFocus := WinExist("A")
+        if curFocus
+            DesktopFocus[CurrentDesktop] := curFocus
+
+        Desktops[CurrentDesktop] := GetVisibleWindows()
+        for hwnd in Desktops[CurrentDesktop] {
+            if !AlwaysVisible.Has(hwnd)
+                HideWin(hwnd)
+        }
+        ; 从底到顶恢复 Z 序 / Restore bottom→top to preserve Z-order
+        loop Desktops[target].Length {
+            h := Desktops[target][Desktops[target].Length - A_Index + 1]
+            ShowWin(h)
+        }
+        for hwnd, _ in AlwaysVisible
+            ShowWin(hwnd)
+
+        CurrentDesktop := target
+        UpdateStatusBar()
+        A_IconTip := "AHK WM - Desktop " . CurrentDesktop
+        ShowOSD("Desktop " . CurrentDesktop)
+
+        if (DesktopFocus.Has(target) && DesktopFocus[target] && WinExist(DesktopFocus[target]))
+            FocusWindowSafely(DesktopFocus[target])
+
+        if wasWTMActive
+            WTM.OnDesktopSwitched()
+        if AllBorders.Active
+            AllBorders.Rebuild()
+    } finally {
+        DesktopIsSwitching := false
     }
-
-    wasWTMActive := WTM.Active
-    if wasWTMActive
-        WTM.DestroyAllBorders()
-    if AllBorders.Active
-        AllBorders.DestroyAll()
-    DestroyTransientGuis()
-
-    curFocus := 0
-    try curFocus := WinExist("A")
-    if curFocus
-        DesktopFocus[CurrentDesktop] := curFocus
-
-    Desktops[CurrentDesktop] := GetVisibleWindows()
-    for hwnd in Desktops[CurrentDesktop] {
-        if !AlwaysVisible.Has(hwnd)
-            HideWin(hwnd)
-    }
-    ; 从底到顶恢复 Z 序 / Restore bottom→top to preserve Z-order
-    loop Desktops[target].Length {
-        h := Desktops[target][Desktops[target].Length - A_Index + 1]
-        ShowWin(h)
-    }
-    for hwnd, _ in AlwaysVisible
-        ShowWin(hwnd)
-
-    CurrentDesktop := target
-    UpdateStatusBar()
-    A_IconTip := "AHK WM - Desktop " . CurrentDesktop
-    ShowOSD("Desktop " . CurrentDesktop)
-
-    if (DesktopFocus.Has(target) && DesktopFocus[target] && WinExist(DesktopFocus[target]))
-        FocusWindowSafely(DesktopFocus[target])
-
-    if wasWTMActive
-        WTM.OnDesktopSwitched()
-    if AllBorders.Active
-        AllBorders.Rebuild()
 }
 
 ; ---- MoveWindowToDesktop / 移至桌面 ----
@@ -2949,17 +3021,7 @@ MoveWindowToDesktop(target, *) {
         PinBorder.Remove(hwnd)
     }
 
-    Loop DesktopCount {
-        d := A_Index
-        if Desktops.Has(d) {
-            nl := []
-            for h in Desktops[d] {
-                if (h != hwnd)
-                    nl.Push(h)
-            }
-            Desktops[d] := nl
-        }
-    }
+    _RemoveFromAllDesktops(hwnd)
 
     Desktops[target].Push(hwnd)
 
@@ -3169,9 +3231,15 @@ WorkDayTasks(baseStart, baseEnd) {
 GetSysInfo(what) {
     ; CPU sampling state (function-level, not inside case) / CPU采样状态
     static cpuLastIdle := 0, cpuLastKernel := 0, cpuLastUser := 0
+    ; 缓存：避免每秒 fork 子进程 / Cache to avoid spawning child process every second
+    static wifiCache := "", wifiCacheTime := 0, diskCache := "", diskCacheTime := 0
     try {
         switch what {
         case "wifi":
+            now := A_TickCount
+            if (wifiCacheTime && now - wifiCacheTime < 30000)
+                return wifiCache
+            wifiCacheTime := now
             tmpFile := A_Temp "\_wm_wifi.tmp"
             RunWait(A_ComSpec ' /c netsh wlan show interfaces > "' tmpFile '"',, "Hide")
             out := FileRead(tmpFile)
@@ -3183,9 +3251,11 @@ GetSysInfo(what) {
                 if RegExMatch(out, "im)Signal\s*:\s*(\d+)", &si)
                     sig := Integer(si[1])
                 wifiIcon := sig >= 75 ? Chr(0xF1EB) : sig >= 40 ? Chr(0xF1EB) : Chr(0xF1EB)
-                return wifiIcon " " ssid "  " sig "%"
+                wifiCache := wifiIcon " " ssid "  " sig "%"
+                return wifiCache
             }
-            return Chr(0xF1EB) " off"
+            wifiCache := Chr(0xF1EB) " off"
+            return wifiCache
         case "bt":
             try {
                 s := RegRead("HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\BTHPORT\Parameters", "BluetoothEnable")
@@ -3206,13 +3276,19 @@ GetSysInfo(what) {
             code := vol = 0 ? 0xF026 : vol < 33 ? 0xF027 : 0xF028
             return Chr(code) " " vol
         case "disk":
+            now := A_TickCount
+            if (diskCacheTime && now - diskCacheTime < 30000)
+                return diskCache
+            diskCacheTime := now
             try {
                 free := DriveGetSpaceFree("C:\")
                 freeGB := Round(free / 1024)
                 code := freeGB < 10 ? 0xF071 : 0xF0C7
-                return Chr(code) " C " freeGB "G"
+                diskCache := Chr(code) " C " freeGB "G"
+                return diskCache
             }
-            return Chr(0xF071) " C ?"
+            diskCache := Chr(0xF071) " C ?"
+            return diskCache
         case "mem":
             info := GlobalMemoryStatusEx()
             used := info.MemoryLoad
@@ -3289,6 +3365,24 @@ class BarInstance {
     DesktopLayoutMode   := "text"
     DesktopLayoutRounded := "off"
     DesktopLayoutAlign   := "Center"  ; 文字对齐 / text alignment
+
+    ; 系统部件元数据表（UpdateClock + _BuildElements 共用）/ System widget metadata
+    static SysWidgets := [
+        {ctrl: "WifiCtrl",  key: "wifi",    gradKey: "wifi",      sysFn: "wifi",   label: "WiFi"},
+        {ctrl: "BtCtrl",    key: "bt",      gradKey: "bluetooth", sysFn: "bt",     label: "BT"},
+        {ctrl: "BattCtrl",  key: "battery", gradKey: "battery",   sysFn: "battery", label: "Batt"},
+        {ctrl: "VolCtrl",   key: "volume",  gradKey: "volume",    sysFn: "volume",  label: "Vol"},
+        {ctrl: "DiskCtrl",  key: "disk",    gradKey: "disk",      sysFn: "disk",    label: "Disk"},
+        {ctrl: "MemCtrl",   key: "mem",     gradKey: "mem",       sysFn: "mem",     label: "Mem"},
+        {ctrl: "CpuCtrl",   key: "cpu",     gradKey: "cpu",       sysFn: "cpu",     label: "CPU"},
+    ]
+
+    ; WidgetMeta: 元素名 → 元数据快速索引（供 _BuildElements 使用）
+    static WidgetMeta := Map()
+    static __InitWidgetMeta() {
+        for w in BarInstance.SysWidgets
+            BarInstance.WidgetMeta[w.sysFn] := w
+    }
 
     ; -- 构造 / __New --
     __New(mon, pos, offset, barNum := 1) {
@@ -3443,6 +3537,27 @@ class BarInstance {
         this.UpdateDesktops()
     }
 
+    ; -- 构建系统部件控件（由 WidgetMeta 驱动）/ Build a single system widget ctrl ----
+    _BuildSysWidget(g, el, cx, cy, cw, ch, colors, mode, rounded, align) {
+        ; 惰性初始化 WidgetMeta / Lazy-init WidgetMeta
+        if BarInstance.WidgetMeta.Count = 0 {
+            for w in BarInstance.SysWidgets
+                BarInstance.WidgetMeta[w.sysFn] := w
+        }
+        meta := BarInstance.WidgetMeta[el]
+        if !IsObject(meta)
+            return
+        initial := GetSysInfo(meta.sysFn) || meta.label
+        if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
+            this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, initial, align)
+        else {
+            ctrl := g.Add("Text", this._Opt(cx, cy, cw, ch, align), initial)
+            if (colors.Length = 1)
+                ctrl.SetFont("c" colors[1])
+            this.%meta.ctrl% := ctrl
+        }
+    }
+
     ; -- 构建元素 / _BuildElements --
     _BuildElements(L, T, horiz) {
         global Bar_Cfg, Bar_FontSize
@@ -3555,62 +3670,8 @@ class BarInstance {
                         mode := "text"
                     }
                     this._BuildProgress(s, segLen, T, horiz, colors)
-                case "wifi":
-                    if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
-                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("wifi") || "WiFi", align)
-                    else {
-                        this.WifiCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, align), GetSysInfo("wifi") || "WiFi")
-                        if (colors.Length = 1)
-                            this.WifiCtrl.SetFont("c" colors[1])
-                    }
-                case "bluetooth":
-                    if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
-                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("bt") || "BT", align)
-                    else {
-                        this.BtCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, align), GetSysInfo("bt") || "BT")
-                        if (colors.Length = 1)
-                            this.BtCtrl.SetFont("c" colors[1])
-                    }
-                case "battery":
-                    if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
-                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("battery") || "Batt", align)
-                    else {
-                        this.BattCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, align), GetSysInfo("battery") || "Batt")
-                        if (colors.Length = 1)
-                            this.BattCtrl.SetFont("c" colors[1])
-                    }
-                case "volume":
-                    if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
-                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("volume") || "Vol", align)
-                    else {
-                        this.VolCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, align), GetSysInfo("volume") || "Vol")
-                        if (colors.Length = 1)
-                            this.VolCtrl.SetFont("c" colors[1])
-                    }
-                case "disk":
-                    if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
-                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("disk") || "Disk", align)
-                    else {
-                        this.DiskCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, align), GetSysInfo("disk") || "Disk")
-                        if (colors.Length = 1)
-                            this.DiskCtrl.SetFont("c" colors[1])
-                    }
-                case "mem":
-                    if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
-                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("mem") || "Mem", align)
-                    else {
-                        this.MemCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, align), GetSysInfo("mem") || "Mem")
-                        if (colors.Length = 1)
-                            this.MemCtrl.SetFont("c" colors[1])
-                    }
-                case "cpu":
-                    if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
-                        this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, GetSysInfo("cpu") || "CPU", align)
-                    else {
-                        this.CpuCtrl := g.Add("Text", this._Opt(cx, cy, cw, ch, align), GetSysInfo("cpu") || "CPU")
-                        if (colors.Length = 1)
-                            this.CpuCtrl.SetFont("c" colors[1])
-                    }
+                case "wifi", "bluetooth", "battery", "volume", "disk", "mem", "cpu":
+                    this._BuildSysWidget(g, el, cx, cy, cw, ch, colors, mode, rounded, align)
                 default:
                     if RegExMatch(el, "^custom_(\d+)$", &mm) {
                         n := Integer(mm[1])
@@ -3946,76 +4007,18 @@ class BarInstance {
                 this.LastVals["date"] := val
             }
         }
-        ; 系统状态组件 / System status widgets
-        if IsObject(this.WifiCtrl) {
-            val := GetSysInfo("wifi")
-            if (val != (this.LastVals.Has("wifi") ? this.LastVals["wifi"] : "")) {
-                if this.GradText.Has("wifi")
-                    this._UpdateGradText("wifi", val)
-                else
-                    try this.WifiCtrl.Value := val
-                this.LastVals["wifi"] := val
-            }
-        }
-        if IsObject(this.BtCtrl) {
-            val := GetSysInfo("bt")
-            if (val != (this.LastVals.Has("bt") ? this.LastVals["bt"] : "")) {
-                if this.GradText.Has("bluetooth")
-                    this._UpdateGradText("bluetooth", val)
-                else
-                    try this.BtCtrl.Value := val
-                this.LastVals["bt"] := val
-            }
-        }
-        if IsObject(this.BattCtrl) {
-            val := GetSysInfo("battery")
-            if (val != (this.LastVals.Has("battery") ? this.LastVals["battery"] : "")) {
-                if this.GradText.Has("battery")
-                    this._UpdateGradText("battery", val)
-                else
-                    try this.BattCtrl.Value := val
-                this.LastVals["battery"] := val
-            }
-        }
-        if IsObject(this.VolCtrl) {
-            val := GetSysInfo("volume")
-            if (val != (this.LastVals.Has("volume") ? this.LastVals["volume"] : "")) {
-                if this.GradText.Has("volume")
-                    this._UpdateGradText("volume", val)
-                else
-                    try this.VolCtrl.Value := val
-                this.LastVals["volume"] := val
-            }
-        }
-        ; disk / mem
-        if IsObject(this.DiskCtrl) {
-            val := GetSysInfo("disk")
-            if (val != (this.LastVals.Has("disk") ? this.LastVals["disk"] : "")) {
-                if this.GradText.Has("disk")
-                    this._UpdateGradText("disk", val)
-                else
-                    try this.DiskCtrl.Value := val
-                this.LastVals["disk"] := val
-            }
-        }
-        if IsObject(this.MemCtrl) {
-            val := GetSysInfo("mem")
-            if (val != (this.LastVals.Has("mem") ? this.LastVals["mem"] : "")) {
-                if this.GradText.Has("mem")
-                    this._UpdateGradText("mem", val)
-                else
-                    try this.MemCtrl.Value := val
-                this.LastVals["mem"] := val
-            }
-        }
-        if IsObject(this.CpuCtrl) {
-            val := GetSysInfo("cpu")
-            if (val != (this.LastVals.Has("cpu") ? this.LastVals["cpu"] : "")) {
-                if this.GradText.Has("cpu")
-                    this._UpdateGradText("cpu", val)
-                else
-                    try this.CpuCtrl.Value := val
-                this.LastVals["cpu"] := val
+        ; 系统状态组件（由 SysWidgets 数据表驱动）/ System widgets (driven by SysWidgets table)
+        for w in BarInstance.SysWidgets {
+            ctrl := this.%w.ctrl%
+            if IsObject(ctrl) {
+                val := GetSysInfo(w.sysFn)
+                if (val != (this.LastVals.Has(w.key) ? this.LastVals[w.key] : "")) {
+                    if this.GradText.Has(w.gradKey)
+                        this._UpdateGradText(w.gradKey, val)
+                    else
+                        try ctrl.Value := val
+                    this.LastVals[w.key] := val
+                }
             }
         }
         ; 渐变进度条
@@ -4306,7 +4309,9 @@ ToggleBar(*) {
 
 ; ---- Toggle always-visible pin / 常显窗口 ----
 TogglePin(*) {
-    global AlwaysVisible
+    global AlwaysVisible, DesktopIsSwitching
+    if DesktopIsSwitching
+        return
     hwnd := 0
     try hwnd := WinExist("A")
     if (!hwnd || IsBarWindow(hwnd))
@@ -4325,7 +4330,9 @@ TogglePin(*) {
 
 ; ---- Gather all windows to the current desktop / 聚集全部 ----
 GatherAllToCurrent(*) {
-    global Desktops, CurrentDesktop, AlwaysVisible
+    global Desktops, CurrentDesktop, AlwaysVisible, DesktopIsSwitching
+    if DesktopIsSwitching
+        return
     ShowOSD("Gathering All Windows...")
 
     Loop DesktopCount {
@@ -4378,6 +4385,15 @@ ClearTileBound() {
     TileBoundSet := false
 }
 
+; ---- 根据宽高比确定平铺模式 / Determine tile mode by aspect ratio ----
+_GetTileMode(W, H) {
+    if (H > W)
+        return "Vertical"
+    if (H != 0 && W / H >= 32/9 - 0.15)
+        return "Ultrawide"
+    return "Normal"
+}
+
 ; ---- Smart-tile the monitor under the mouse / 当前显示 ----
 TileCurrentMonitor(*) {
     global CurrentTileGap, Tile_Gap
@@ -4400,21 +4416,16 @@ TileCurrentMonitor(*) {
         return
     }
 
-    ; ★ v2.6.4: auto-compensate DWM frame so Tile_Gap=0 = visual 0
+    ; ★ DWM 补偿→窗口间距 / 屏幕边缘仅用 Tile_Gap
     _autoFG := GetDWMGapCompensation(windows)
     _gapEff := Tile_Gap + _autoFG
-    if (_gapEff > 0) {
-        WL += _gapEff/2, WT += _gapEff/2, W -= _gapEff, H -= _gapEff
+    edgeMargin := Tile_Gap / 2
+    if (edgeMargin > 0) {
+        WL += edgeMargin, WT += edgeMargin, W -= edgeMargin * 2, H -= edgeMargin * 2
     }
     CurrentTileGap := _gapEff
 
-    aspect := (H != 0) ? W / H : 1
-    if (H > W)
-        mode := "Vertical"
-    else if (aspect >= 32/9 - 0.15)
-        mode := "Ultrawide"
-    else
-        mode := "Normal"
+    mode := _GetTileMode(W, H)
 
     if ApplyCustomLayout(windows, WL, WT, W, H, targetMon) {
         ShowOSD("Tile [Custom] [Mon " . targetMon . "]: " . n)
@@ -4967,6 +4978,17 @@ RestoreLayout(*) {
 ; 十七、WTM 平铺模式 / 17. WTM - Windows Tile Manager (hyprland-like)
 ; ==============================================================================
 
+; ---- 共享边框绘制辅助（WTM / AllBorders 共用）----
+; 获取窗口可视矩形 → 偏移 → 计算圆角 → 调用 Place
+_BorderPlaceFrame(borderMap, hwnd) {
+    if !GetWindowVisualRect(hwnd, &x, &y, &w, &h)
+        return
+    o := Border_Offset
+    x -= o, y -= o, w += 2*o, h += 2*o
+    rad := (Border_Rounded = "on") ? Border_Radius : 0
+    borderMap[hwnd].Place(x, y, w, h, Max(2, Border_Thickness), rad, Border_Opacity, Border_Mode, hwnd)
+}
+
 ; ---- Dynamic tiling mode / 动态平铺 ----
 class WTM {
     static Active     := false
@@ -5097,13 +5119,12 @@ class WTM {
         CurrentTileGap := g
 
         if !ApplyCustomLayout(wins, WL, WT, W, H, monIdx) {
-            aspect := (H != 0) ? W / H : 1
-            if (H > W)
-                TileVertical(wins, WL, WT, W, H)
-            else if (aspect >= 32/9 - 0.15)
-                TileUltrawide(wins, WL, WT, W, H)
-            else
-                TileNormal(wins, WL, WT, W, H)
+            mode := _GetTileMode(W, H)
+            switch mode {
+                case "Vertical":  TileVertical(wins, WL, WT, W, H)
+                case "Ultrawide": TileUltrawide(wins, WL, WT, W, H)
+                default:          TileNormal(wins, WL, WT, W, H)
+            }
         }
 
         CurrentTileGap := 0
@@ -5146,7 +5167,8 @@ class WTM {
     ; -- Periodic tick (retile deferred while Alt is held, so unfinished
     ;    Alt-chords / desktop switches never trigger a mid-sequence retile) --
     static Tick() {
-        if !this.Active
+        global DesktopIsSwitching
+        if !this.Active || DesktopIsSwitching
             return
         this._Accum += Border_RefreshMs
         if (this._Accum >= 150) {
@@ -5485,13 +5507,8 @@ class WTM {
             return
         }
         this.EnsureBorder(hwnd)
-        if !GetWindowVisualRect(hwnd, &x, &y, &w, &ht)
-            return
-        o := Border_Offset
-        x -= o, y -= o, w += 2*o, ht += 2*o
         this._SetBorderColor(hwnd, hwnd = focusH ? "focus" : "unfocus")
-        rad := (Border_Rounded = "on") ? Border_Radius : 0
-        this.BorderMap[hwnd].Place(x, y, w, ht, Max(2, Border_Thickness), rad, Border_Opacity, Border_Mode, hwnd)
+        _BorderPlaceFrame(this.BorderMap, hwnd)
     }
 
     ; -- 拖拽实时边框 / Live border update during drag --
@@ -5599,7 +5616,8 @@ class AllBorders {
 
     ; -- 定时刷新 / Periodic tick --
     static Tick() {
-        if !this.Active || WTM.Active
+        global DesktopIsSwitching
+        if !this.Active || WTM.Active || DesktopIsSwitching
             return
         this._Accum += Border_RefreshMs
         if (this._Accum >= 200 || this._Wins.Length = 0) {
@@ -5637,13 +5655,8 @@ class AllBorders {
             return
         }
         this.Ensure(hwnd)
-        if !GetWindowVisualRect(hwnd, &x, &y, &w, &h)
-            return
-        o := Border_Offset
-        x -= o, y -= o, w += 2*o, h += 2*o
         this.SetColor(hwnd, hwnd = focusH ? "focus" : "unfocus")
-        rad := (Border_Rounded = "on") ? Border_Radius : 0
-        this.Frames[hwnd].Place(x, y, w, h, Max(2, Border_Thickness), rad, Border_Opacity, Border_Mode, hwnd)
+        _BorderPlaceFrame(this.Frames, hwnd)
     }
 
     ; -- 拖拽实时边框 / Live border update during drag --
@@ -5786,21 +5799,16 @@ class WinSelect {
         W := WR - WL
         H := WB - WT
 
-        ; ★ v2.6.4: auto-compensate DWM frame for WinSelect tiling
+        ; ★ DWM 补偿→窗口间距 / 屏幕边缘仅用 Tile_Gap
         _autoFG := GetDWMGapCompensation(hwnds)
         _gapEff := Tile_Gap + _autoFG
-        if (_gapEff > 0) {
-            WL += _gapEff/2, WT += _gapEff/2, W -= _gapEff, H -= _gapEff
+        edgeMargin := Tile_Gap / 2
+        if (edgeMargin > 0) {
+            WL += edgeMargin, WT += edgeMargin, W -= edgeMargin * 2, H -= edgeMargin * 2
         }
         CurrentTileGap := _gapEff
 
-        aspect := (H != 0) ? W / H : 1
-        if (H > W)
-            mode := "Vertical"
-        else if (aspect >= 32/9 - 0.15)
-            mode := "Ultrawide"
-        else
-            mode := "Normal"
+        mode := _GetTileMode(W, H)
 
         if !ApplyCustomLayout(hwnds, WL, WT, W, H, mon) {
             switch mode {
@@ -5947,18 +5955,7 @@ class WinSelect {
 
     ; -- 调取锁定窗口到当前桌面 / Bring a locked window to this desktop --
     static _BringToCurrentDesktop(hwnd) {
-        global Desktops, DesktopCount
-        Loop DesktopCount {
-            d := A_Index
-            if Desktops.Has(d) {
-                nl := []
-                for h in Desktops[d] {
-                    if (h != hwnd)
-                        nl.Push(h)
-                }
-                Desktops[d] := nl
-            }
-        }
+        _RemoveFromAllDesktops(hwnd)
         try ShowWin(hwnd)
     }
 

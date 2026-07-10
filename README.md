@@ -1,19 +1,20 @@
 <div align="center">
 
-# 🔲 AHK WM <sub>v2.8.4</sub>
+# 🔲 AHK WM <sub>v2.8.5</sub>
 
 <p>
-  <img src="https://img.shields.io/badge/AutoHotkey-v2.0-brightgreen?style=flat-square" alt="AutoHotkey v2" />
-  <img src="https://img.shields.io/badge/platform-Windows_7_~_11-blue?style=flat-square" alt="Platform" />
-  <img src="https://img.shields.io/badge/license-MIT-brightgreen?style=flat-square" alt="License" />
-  <img src="https://badgen.net/github/release/EngineeringMechanicsB/AHK_WM?icon=github" alt="Release" />
-  <img src="https://badgen.net/github/stars/EngineeringMechanicsB/AHK_WM?icon=github" alt="Stars" />
+  <img src="https://img.shields.io/badge/AutoHotkey-v2.0-cba6f7?" alt="AutoHotkey v2" />
+  <img src="https://img.shields.io/badge/platform-Windows_7_~_11-b4befe?" alt="Platform" />
+  <img src="https://img.shields.io/badge/license-MIT-f5c2e7?" alt="License" />
+  <img src="https://badgen.net/github/release/EngineeringMechanicsB/AHK_WM?icon=github&color=cba6f7" alt="Release" />
+  <img src="https://badgen.net/github/stars/EngineeringMechanicsB/AHK_WM?icon=github&color=b4befe" alt="Stars" />
 </p>
 
 <p>
-  <a href="README.md"><img src="https://img.shields.io/badge/README-English-blue?style=for-the-badge" alt="English" /></a>
-  <a href="README-zh.md"><img src="https://img.shields.io/badge/README-简体中文-red?style=for-the-badge" alt="简体中文" /></a>
+  <a href="README.md"><img src="https://img.shields.io/badge/README-English-cba6f7?" alt="English" /></a>
+  <a href="README-zh.md"><img src="https://img.shields.io/badge/README-简体中文-b4befe?" alt="简体中文" /></a>
 </p>
+
 
 **A tiny, fast, single-file window manager for Windows — powered by AutoHotkey v2.**
 
@@ -135,7 +136,7 @@ Run the pre-compiled executable — no AHK installation needed for basic use.
 
 <p align="center">
   <a href="https://github.com/EngineeringMechanicsB/AHK_WM/releases/latest">
-    <img src="https://img.shields.io/badge/Download-Latest_Release-blue?style=for-the-badge" alt="Download Latest Release" />
+    <img src="https://img.shields.io/badge/Download-Latest_Release-cba6f7?style=for-the-badge" alt="Download Latest Release" />
   </a>
 </p>
 
@@ -455,6 +456,30 @@ Additional features:
 - 🔇 **Minimize** window under mouse
 - 🖥️ **Maximize** window under mouse
 
+### 🔔 External OSD (v2.8.5)
+
+Other AHK scripts can display OSD messages through AHK_WM — no polling, no temp files. Uses standard `WM_COPYDATA`.
+
+**Quick start** — copy this function into any AHK v2 script:
+
+```ahk
+AHK_WM_OSD(text, duration := 1000) {
+    DetectHiddenWindows(true)
+    h := WinExist("wm.ahk ahk_class AutoHotkey")
+    if !h
+        return false
+    p := "OSD:" . text . ":" . duration
+    c := StrPut(p, "UTF-16")
+    b := Buffer(A_PtrSize * 3, 0)
+    NumPut("Ptr", 0, b, 0), NumPut("UInt", c, b, A_PtrSize), NumPut("Ptr", StrPtr(p), b, A_PtrSize * 2)
+    try SendMessage(0x4A, 0, b.Ptr, , "ahk_id " . h)
+    return true
+}
+; Usage: AHK_WM_OSD("Build passed!", 3000)
+```
+
+Or use the standalone sender: `wm_osd_send.ahk "Your message" 2000`
+
 ---
 
 ## ⚙️ Configuration
@@ -488,6 +513,17 @@ Single INI file:
 ---
 
 ## 🛠️ Changelog
+
+### v2.8.5 (2026-07-10)
+
+- 🐛 **GDI handle leak fixed** — `CreateGradient()` 1×1 seed bitmap was leaked on every call (up to 100/s during border drag); now properly freed
+- 🐛 **Rapid desktop-switch race fixed** — `DesktopIsSwitching` flag guards `SwitchDesktop`, WTM/AllBorders ticks, `TogglePin`, `GatherAll`, and `SaveLayoutStateForReload`
+- ⚡ **Bar polling optimized** — WiFi and disk info cached for 30 s, avoiding per-second `netsh` subprocess spawn and `DriveGetSpaceFree` I/O
+- 🆕 **External OSD interface** — `WM_COPYDATA` receiver lets other scripts pop OSD messages; includes `wm_osd_helper.ahk` library + `wm_osd_send.ahk` standalone sender
+- 🧹 **Duplicate code extracted** — `_GetHwndUnderMouse`, `_RemoveFromAllDesktops`, `_GetTileMode`, `_BorderPlaceFrame`, `_BuildSysWidget` shared helpers
+- 🧹 **UpdateClock table-driven** — `SysWidgets` array replaces 7 repeated if-blocks in bar clock update
+- 🧹 **_BuildElements unified** — `WidgetMeta` Map + multi-value case fallthrough replaces 7 repeated cases
+- 🎨 **Tiling edge gap fixed** — `Gap=0` now truly flush to screen edges; DWM compensation preserved for window-to-window spacing only
 
 ### v2.8.4 (2026-07-01)
 
@@ -562,6 +598,10 @@ Single INI file:
 [![Star History Chart](https://api.star-history.com/svg?repos=EngineeringMechanicsB/AHK_WM&type=Date)](https://star-history.com/#EngineeringMechanicsB/AHK_WM&Date)
 
 ---
+
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=waving&color=cba6f7&height=100&section=footer" width="100%" alt="footer wave" />
+</p>
 
 <p align="center">
   <sub>Made with AutoHotkey v2 · Two years and counting</sub>
