@@ -599,9 +599,19 @@ Single INI file:
 
 ## ⭐ Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=EngineeringMechanicsB/AHK_WM&type=Date)](https://star-history.com/#EngineeringMechanicsB/AHK_WM&Date)
+<a href="https://www.star-history.com/?repos=EngineeringMechanicsB%2FAHK_WM&type=date&legend=top-left">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=EngineeringMechanicsB/AHK_WM&type=date&theme=dark&legend=top-left&sealed_token=_J_8zskMe52yv6UIFPZ9OD2-uy6J9Mzlgd81FzHj4jpVS1DqGQSBxo6kVNN5ALPMk4TmOMjqPEWCKCWalWKuv85qPnLFMjuQfKUU_TX3ikOWo8aGeuaTVQzgHJo9meGUkj8y7NHv-Bh6CJRourXAF1mVgnYdagI_Rk0FfLJRGXvpk6g7GTGTeNHmD916" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=EngineeringMechanicsB/AHK_WM&type=date&legend=top-left&sealed_token=_J_8zskMe52yv6UIFPZ9OD2-uy6J9Mzlgd81FzHj4jpVS1DqGQSBxo6kVNN5ALPMk4TmOMjqPEWCKCWalWKuv85qPnLFMjuQfKUU_TX3ikOWo8aGeuaTVQzgHJo9meGUkj8y7NHv-Bh6CJRourXAF1mVgnYdagI_Rk0FfLJRGXvpk6g7GTGTeNHmD916" />
+    <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=EngineeringMechanicsB/AHK_WM&type=date&legend=top-left&sealed_token=_J_8zskMe52yv6UIFPZ9OD2-uy6J9Mzlgd81FzHj4jpVS1DqGQSBxo6kVNN5ALPMk4TmOMjqPEWCKCWalWKuv85qPnLFMjuQfKUU_TX3ikOWo8aGeuaTVQzgHJo9meGUkj8y7NHv-Bh6CJRourXAF1mVgnYdagI_Rk0FfLJRGXvpk6g7GTGTeNHmD916" />
+  </picture>
+</a>
 
 ---
+
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=waving&color=cba6f7&height=100&section=footer" width="100%" alt="footer" />
+</p>
 
 <p align="center">
   <sub>Made with AutoHotkey v2 · Two years and counting</sub>

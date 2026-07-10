@@ -3002,6 +3002,15 @@ SwitchDesktop(target, *) {
             WTM.OnDesktopSwitched()
         if AllBorders.Active
             AllBorders.Rebuild()
+        ; 隐藏不可见窗口的置顶边框（目标桌面窗口已 ShowWin 可见，不会被隐藏）
+        for hwnd, frame in PinBorder.Map.Clone() {
+            if !AlwaysVisible.Has(hwnd) {
+                try {
+                    if (WinGetMinMax(hwnd) = -1 || !DllCall("IsWindowVisible", "Ptr", hwnd))
+                        DllCall("ShowWindow", "Ptr", frame.Gui.Hwnd, "Int", 0)
+                }
+            }
+        }
     } finally {
         DesktopIsSwitching := false
     }
@@ -4056,7 +4065,10 @@ class BarInstance {
     ; -- 显示/隐藏 / Show, Hide --
     Show()    => (this.Gui ? this.Gui.Show("NoActivate") : 0)
     ; -- 隐藏 / Hide --
-    Hide()    => (this.Gui ? this.Gui.Hide() : 0)
+    Hide() {
+        if IsObject(this.Gui)
+            try DllCall("ShowWindow", "Ptr", this.Gui.Hwnd, "Int", 0)
+    }
     ; -- 销毁 / Destroy --
     Destroy() {
         for _el, gi in this.GradText {
