@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 380">
+  <defs>
+    <!-- Gradient border for window -->
+    <linearGradient id="borderGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#A020F0"/>
+      <stop offset="50%" stop-color="#CBA6F7"/>
+      <stop offset="100%" stop-color="#89B4FA"/>
+    </linearGradient>
+    <!-- Window shadow -->
+    <filter id="winShadow" x="-8%" y="-8%" width="116%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.5"/>
+    </filter>
+    <!-- Subtle dot pattern for desktop -->
+    <pattern id="dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="12" cy="12" r="1" fill="#45475A" opacity="0.3"/>
+    </pattern>
+    <!-- Arrow cursor -->
+    <g id="cursorArrow">
+      <path d="M0 0 L0 16 L4 12 L8 18 L10 17 L6 11 L10 10 Z" fill="#CDD6F4" stroke="#1E1E2E" stroke-width="0.5"/>
+    </g>
+  </defs>
+
+  <!-- Desktop background -->
+  <rect width="640" height="380" fill="#0e050f"/>
+  <rect width="640" height="380" fill="url(#dots)"/>
+
+  <!-- Taskbar hint -->
+  <rect x="0" y="354" width="640" height="26" fill="#1E1E2E" opacity="0.7"/>
+
+  <!-- Window group — the whole thing animates -->
+  <g filter="url(#winShadow)">
+    <animateTransform attributeName="transform" type="translate"
+      values="0 0; 0 0; 180 40; 180 40; -140 -30; -140 -30; 0 0; 0 0"
+      keyTimes="0; 0.1; 0.35; 0.45; 0.7; 0.8; 0.95; 1"
+      dur="5s" repeatCount="indefinite" calcMode="spline"
+      keySplines="0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1"/>
+
+    <!-- Window body -->
+    <rect x="170" y="80" width="300" height="200" rx="8" fill="#1E1E2E"/>
+
+    <!-- Gradient border -->
+    <rect x="170" y="80" width="300" height="200" rx="8" fill="none" stroke="url(#borderGrad)" stroke-width="3"/>
+
+    <!-- Title bar -->
+    <path d="M170 88 Q170 80 178 80 L462 80 Q470 80 470 88 L470 116 L170 116 Z" fill="#313244"/>
+
+    <!-- Title bar gradient overlay -->
+    <path d="M170 88 Q170 80 178 80 L462 80 Q470 80 470 88 L470 116 L170 116 Z" fill="url(#borderGrad)" opacity="0.15"/>
+
+    <!-- Window title -->
+    <text x="320" y="102" text-anchor="middle" fill="#CDD6F4" font-family="Segoe UI, sans-serif" font-size="12" font-weight="600">AHK_WM Window</text>
+
+    <!-- Title bar buttons -->
+    <circle cx="446" cy="98" r="5" fill="#A6E3A1" opacity="0.8"/>
+    <circle cx="426" cy="98" r="5" fill="#FAB387" opacity="0.8"/>
+    <circle cx="406" cy="98" r="5" fill="#F38BA8" opacity="0.8"/>
+
+    <!-- Window content hints -->
+    <rect x="186" y="130" width="60" height="16" rx="4" fill="#45475A" opacity="0.4"/>
+    <rect x="186" y="154" width="200" height="10" rx="3" fill="#45475A" opacity="0.3"/>
+    <rect x="186" y="170" width="160" height="10" rx="3" fill="#45475A" opacity="0.3"/>
+    <rect x="186" y="186" width="240" height="10" rx="3" fill="#45475A" opacity="0.3"/>
+
+    <!-- Content image placeholder -->
+    <rect x="186" y="210" width="80" height="50" rx="5" fill="#313244" stroke="#45475A" stroke-width="1"/>
+    <rect x="186" y="210" width="80" height="50" rx="5" fill="url(#borderGrad)" opacity="0.08"/>
+  </g>
+
+  <!-- Drag indicator pulsing dot (on window) — animates with window -->
+  <g>
+    <animateTransform attributeName="transform" type="translate"
+      values="0 0; 0 0; 180 40; 180 40; -140 -30; -140 -30; 0 0; 0 0"
+      keyTimes="0; 0.1; 0.35; 0.45; 0.7; 0.8; 0.95; 1"
+      dur="5s" repeatCount="indefinite" calcMode="spline"
+      keySplines="0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1"/>
+    <circle cx="360" cy="180" r="12" fill="none" stroke="#CBA6F7" stroke-width="2" opacity="0">
+      <animate attributeName="opacity" values="0;0;0.8;0.8;0;0;0;0" keyTimes="0;0.08;0.12;0.42;0.47;0.67;0.97;1" dur="5s" repeatCount="indefinite"/>
+      <animate attributeName="r" values="8;8;20;20;8;8;8;8" keyTimes="0;0.08;0.15;0.42;0.48;0.67;0.97;1" dur="5s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+
+  <!-- Cursor arrow — follows window with slight offset -->
+  <use href="#cursorArrow" x="0" y="0">
+    <animateTransform attributeName="transform" type="translate"
+      values="350 170; 350 170; 530 210; 530 210; 210 140; 210 140; 350 170; 350 170"
+      keyTimes="0; 0.1; 0.35; 0.45; 0.7; 0.8; 0.95; 1"
+      dur="5s" repeatCount="indefinite" calcMode="spline"
+      keySplines="0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1"/>
+  </use>
+
+  <!-- "Alt + Drag" label -->
+  <g>
+    <animateTransform attributeName="transform" type="translate"
+      values="350 150; 350 150; 530 190; 530 190; 210 120; 210 120; 350 150; 350 150"
+      keyTimes="0; 0.1; 0.35; 0.45; 0.7; 0.8; 0.95; 1"
+      dur="5s" repeatCount="indefinite" calcMode="spline"
+      keySplines="0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1"/>
+    <rect x="0" y="0" width="90" height="22" rx="11" fill="#1E1E2E" stroke="#CBA6F7" stroke-width="1.2" opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0;0;0;0" keyTimes="0;0.08;0.12;0.42;0.47;0.67;0.97;1" dur="5s" repeatCount="indefinite"/>
+    </rect>
+    <text x="45" y="15" text-anchor="middle" fill="#CBA6F7" font-family="Segoe UI, sans-serif" font-size="11" font-weight="600" opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0;0;0;0" keyTimes="0;0.08;0.12;0.42;0.47;0.67;0.97;1" dur="5s" repeatCount="indefinite"/>
+      Alt + 拖拽
+    </text>
+  </g>
+
+  <!-- Bottom label -->
+  <g opacity="0.7">
+    <text x="320" y="348" text-anchor="middle" fill="#585B70" font-family="Segoe UI, sans-serif" font-size="11">
+      ✋ 按住 Alt，在窗口任意位置拖拽即可移动 — 无需标题栏
+    </text>
+  </g>
+</svg>

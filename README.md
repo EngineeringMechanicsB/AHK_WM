@@ -18,6 +18,10 @@
 </div>
 
 <p align="center">
+  <img src="docs/images/tagline.svg" alt="AHK WM tagline" width="85%">
+</p>
+
+<p align="center">
   <img src="docs/images/banner.png" alt="AHK WM Banner" width="90%">
 </p>
 
@@ -53,7 +57,9 @@
 
 > Two years of daily-use refinement. Built because every other Windows WM was too heavy and made my machine unusable for anyone else.
 
----
+<p align="center">
+  <img src="docs/images/sep-tile.svg" alt="" width="85%">
+</p>
 
 ## 📸 Screenshots
 
@@ -69,6 +75,10 @@
 | ![Help](docs/images/help-menu.png) | Built-in Help — Alt + / for full hotkey reference |
 
 ---
+
+<p align="center">
+  <img src="docs/images/divider.svg" alt="divider" width="85%">
+</p>
 
 ## 📦 Installation
 
@@ -105,6 +115,10 @@
 | 🔃 Reload script | `Alt + R` |
 | 🥧 Pie menu | `Space + Right Mouse` |
 | ⚡ Power menu | `Alt + X` |
+
+<p align="center">
+  <img src="docs/images/sep-drag.svg" alt="" width="85%">
+</p>
 
 ---
 
@@ -190,7 +204,9 @@ Now every time Claude Code finishes, you'll see `🤖 Claude Code run Completed�
 
 📂 `docs/bar-examples/` and `docs/osd-examples/` have 12 ready-to-run demos (Chinese / English, heavily commented).
 
----
+<p align="center">
+  <img src="docs/images/sep-config.svg" alt="" width="85%">
+</p>
 
 ## ⚙️ Configuration
 
@@ -233,6 +249,10 @@ All configuration lives in `%USERPROFILE%\.config\AHK_WM\wm_config.ini`. Edit it
 - 🎨 **Themes** — Submit with a screenshot.
 
 ---
+
+<p align="center">
+  <img src="docs/images/thanks.svg" alt="Thanks" width="75%">
+</p>
 
 ## 📄 License
 

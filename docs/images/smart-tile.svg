@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 420">
+  <defs>
+    <!-- Gradient borders for each window -->
+    <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#CBA6F7"/>
+      <stop offset="100%" stop-color="#89B4FA"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F38BA8"/>
+      <stop offset="100%" stop-color="#FAB387"/>
+    </linearGradient>
+    <linearGradient id="g3" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#A6E3A1"/>
+      <stop offset="100%" stop-color="#89B4FA"/>
+    </linearGradient>
+    <linearGradient id="g4" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FAB387"/>
+      <stop offset="100%" stop-color="#F5C2E7"/>
+    </linearGradient>
+    <filter id="s">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.3"/>
+    </filter>
+    <pattern id="dots" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+      <circle cx="10" cy="10" r="0.8" fill="#45475A" opacity="0.25"/>
+    </pattern>
+  </defs>
+
+  <!-- Desktop -->
+  <rect width="700" height="420" fill="#0e050f"/>
+  <rect width="700" height="420" fill="url(#dots)"/>
+
+  <!-- Monitor bezel -->
+  <rect x="40" y="24" width="620" height="370" rx="6" fill="none" stroke="#313244" stroke-width="2"/>
+
+  <!-- Screen area -->
+  <rect x="48" y="32" width="604" height="354" rx="2" fill="#11111B" opacity="0.5"/>
+
+  <!-- Window 1: Top-Left — from top-left scattered to TL grid -->
+  <g filter="url(#s)">
+    <animateTransform attributeName="transform" type="translate"
+      values="0 0; 0 0; -30 -15; -30 -15; 0 0; 0 0"
+      keyTimes="0; 0.15; 0.5; 0.7; 0.85; 1"
+      dur="6s" repeatCount="indefinite" calcMode="spline"
+      keySplines="0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1"/>
+    <rect x="68" y="52" width="275" height="160" rx="6" fill="#1E1E2E"/>
+    <rect x="68" y="52" width="275" height="160" rx="6" fill="none" stroke="url(#g1)" stroke-width="2.5"/>
+    <path d="M68 58 Q68 52 74 52 L337 52 Q343 52 343 58 L343 80 L68 80 Z" fill="#313244"/>
+    <text x="206" y="69" text-anchor="middle" fill="#CDD6F4" font-family="Segoe UI, sans-serif" font-size="11" font-weight="600">VS Code</text>
+    <rect x="82" y="92" width="140" height="8" rx="2" fill="#45475A" opacity="0.4"/>
+    <rect x="82" y="106" width="200" height="8" rx="2" fill="#45475A" opacity="0.3"/>
+    <rect x="82" y="120" width="100" height="8" rx="2" fill="#45475A" opacity="0.3"/>
+    <!-- Code lines -->
+    <rect x="82" y="140" width="40" height="6" rx="2" fill="#CBA6F7" opacity="0.6"/>
+    <rect x="128" y="140" width="180" height="6" rx="2" fill="#A6ADC8" opacity="0.25"/>
+    <rect x="82" y="152" width="70" height="6" rx="2" fill="#F38BA8" opacity="0.6"/>
+    <rect x="158" y="152" width="120" height="6" rx="2" fill="#A6ADC8" opacity="0.25"/>
+    <rect x="82" y="164" width="55" height="6" rx="2" fill="#A6E3A1" opacity="0.6"/>
+    <rect x="143" y="164" width="100" height="6" rx="2" fill="#A6ADC8" opacity="0.25"/>
+  </g>
+
+  <!-- Window 2: Top-Right — from top-right scattered to TR grid -->
+  <g filter="url(#s)">
+    <animateTransform attributeName="transform" type="translate"
+      values="0 0; 0 0; 35 -20; 35 -20; 0 0; 0 0"
+      keyTimes="0; 0.2; 0.55; 0.75; 0.87; 1"
+      dur="6s" repeatCount="indefinite" calcMode="spline"
+      keySplines="0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1"/>
+    <rect x="358" y="52" width="275" height="160" rx="6" fill="#1E1E2E"/>
+    <rect x="358" y="52" width="275" height="160" rx="6" fill="none" stroke="url(#g2)" stroke-width="2.5"/>
+    <path d="M358 58 Q358 52 364 52 L627 52 Q633 52 633 58 L633 80 L358 80 Z" fill="#313244"/>
+    <text x="496" y="69" text-anchor="middle" fill="#CDD6F4" font-family="Segoe UI, sans-serif" font-size="11" font-weight="600">Terminal</text>
+    <!-- Terminal prompt -->
+    <text x="372" y="96" fill="#A6E3A1" font-family="Cascadia Code, monospace" font-size="10">❯ npm run build</text>
+    <text x="372" y="112" fill="#FAB387" font-family="Cascadia Code, monospace" font-size="10" opacity="0.8">  compiling...</text>
+    <text x="372" y="128" fill="#F38BA8" font-family="Cascadia Code, monospace" font-size="10" opacity="0.6">  ✗ 2 errors found</text>
+    <text x="372" y="150" fill="#A6E3A1" font-family="Cascadia Code, monospace" font-size="10">❯ _</text>
+    <!-- Cursor -->
+    <rect x="388" y="140" width="1.5" height="12" fill="#A6E3A1" opacity="0">
+      <animate attributeName="opacity" values="1;1;0;0" dur="0.8s" repeatCount="indefinite"/>
+    </rect>
+    <rect x="372" y="168" width="40" height="4" rx="2" fill="#45475A" opacity="0.3"/>
+    <rect x="372" y="178" width="70" height="4" rx="2" fill="#45475A" opacity="0.3"/>
+  </g>
+
+  <!-- Window 3: Bottom-Left — from bottom-left scattered to BL grid -->
+  <g filter="url(#s)">
+    <animateTransform attributeName="transform" type="translate"
+      values="0 0; 0 0; -40 30; -40 30; 0 0; 0 0"
+      keyTimes="0; 0.18; 0.52; 0.72; 0.88; 1"
+      dur="6s" repeatCount="indefinite" calcMode="spline"
+      keySplines="0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1"/>
+    <rect x="68" y="226" width="275" height="140" rx="6" fill="#1E1E2E"/>
+    <rect x="68" y="226" width="275" height="140" rx="6" fill="none" stroke="url(#g3)" stroke-width="2.5"/>
+    <path d="M68 232 Q68 226 74 226 L337 226 Q343 226 343 232 L343 254 L68 254 Z" fill="#313244"/>
+    <text x="206" y="243" text-anchor="middle" fill="#CDD6F4" font-family="Segoe UI, sans-serif" font-size="11" font-weight="600">Browser</text>
+    <!-- Browser content -->
+    <rect x="82" y="264" width="245" height="18" rx="4" fill="#313244"/>
+    <text x="92" y="276" fill="#89B4FA" font-family="Segoe UI, sans-serif" font-size="9">🔒 localhost:3000</text>
+    <rect x="82" y="290" width="160" height="8" rx="2" fill="#45475A" opacity="0.4"/>
+    <rect x="82" y="304" width="200" height="8" rx="2" fill="#45475A" opacity="0.3"/>
+    <rect x="82" y="318" width="100" height="8" rx="2" fill="#45475A" opacity="0.3"/>
+    <rect x="82" y="334" width="60" height="22" rx="5" fill="#CBA6F7" opacity="0.3"/>
+  </g>
+
+  <!-- Window 4: Bottom-Right — from bottom-right scattered to BR grid -->
+  <g filter="url(#s)">
+    <animateTransform attributeName="transform" type="translate"
+      values="0 0; 0 0; 50 35; 50 35; 0 0; 0 0"
+      keyTimes="0; 0.22; 0.58; 0.78; 0.9; 1"
+      dur="6s" repeatCount="indefinite" calcMode="spline"
+      keySplines="0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1"/>
+    <rect x="358" y="226" width="275" height="140" rx="6" fill="#1E1E2E"/>
+    <rect x="358" y="226" width="275" height="140" rx="6" fill="none" stroke="url(#g4)" stroke-width="2.5"/>
+    <path d="M358 232 Q358 226 364 226 L627 226 Q633 226 633 232 L633 254 L358 254 Z" fill="#313244"/>
+    <text x="496" y="243" text-anchor="middle" fill="#CDD6F4" font-family="Segoe UI, sans-serif" font-size="11" font-weight="600">Files</text>
+    <!-- File list -->
+    <rect x="372" y="264" width="30" height="30" rx="4" fill="#45475A" opacity="0.3"/>
+    <rect x="408" y="266" width="80" height="6" rx="2" fill="#A6ADC8" opacity="0.5"/>
+    <rect x="408" y="278" width="50" height="6" rx="2" fill="#45475A" opacity="0.3"/>
+    <rect x="372" y="304" width="30" height="30" rx="4" fill="#45475A" opacity="0.3"/>
+    <rect x="408" y="306" width="100" height="6" rx="2" fill="#A6ADC8" opacity="0.5"/>
+    <rect x="408" y="318" width="70" height="6" rx="2" fill="#45475A" opacity="0.3"/>
+  </g>
+
+  <!-- Grid gap indicators (subtle) -->
+  <line x1="350" y1="48" x2="350" y2="382" stroke="#CBA6F7" stroke-width="0.5" stroke-dasharray="4 8" opacity="0">
+    <animate attributeName="opacity" values="0;0;0.4;0.4;0;0" keyTimes="0;0.4;0.5;0.85;0.95;1" dur="6s" repeatCount="indefinite"/>
+  </line>
+  <line x1="48" y1="218" x2="652" y2="218" stroke="#CBA6F7" stroke-width="0.5" stroke-dasharray="4 8" opacity="0">
+    <animate attributeName="opacity" values="0;0;0.4;0.4;0;0" keyTimes="0;0.4;0.5;0.85;0.95;1" dur="6s" repeatCount="indefinite"/>
+  </line>
+
+  <!-- Center "Alt + D" flash after tiling completes -->
+  <g opacity="0">
+    <animate attributeName="opacity" values="0;0;0;0;0.9;0.9;0;0" keyTimes="0;0.45;0.5;0.7;0.75;0.9;0.95;1" dur="6s" repeatCount="indefinite"/>
+    <circle cx="350" cy="210" r="36" fill="#1E1E2E" stroke="#CBA6F7" stroke-width="2"/>
+    <text x="350" y="215" text-anchor="middle" fill="#CBA6F7" font-family="Segoe UI, sans-serif" font-size="13" font-weight="700">Alt + D</text>
+  </g>
+
+  <!-- Bottom label -->
+  <text x="350" y="410" text-anchor="middle" fill="#585B70" font-family="Segoe UI, sans-serif" font-size="11" opacity="0.7">
+    🧩 一键智能平铺 — 按 Alt + D 将当前显示器所有窗口整齐排布
+  </text>
+</svg>

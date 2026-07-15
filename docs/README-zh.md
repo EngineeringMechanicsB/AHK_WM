@@ -19,6 +19,10 @@
 </div>
 
 <p align="center">
+  <img src="images/tagline-zh.svg" alt="AHK WM 标语" width="85%">
+</p>
+
+<p align="center">
   <img src="images/banner.png" alt="AHK WM Banner" width="90%">
 </p>
 
@@ -54,6 +58,10 @@
 
 > 两年日常使用打磨。因为市面上的 Windows WM 都太重了，而且别人根本没法用我的电脑。
 
+<p align="center">
+  <img src="images/sep-tile.svg" alt="" width="85%">
+</p>
+
 ---
 
 ## 📸 截图
@@ -70,6 +78,10 @@
 | ![Help](images/help-menu.png) | 内置帮助 — Alt + / 查看所有快捷键 |
 
 ---
+
+<p align="center">
+  <img src="images/divider-zh.svg" alt="分隔线" width="85%">
+</p>
 
 ## 📦 安装
 
@@ -106,6 +118,10 @@
 | 🔃 重载脚本 | `Alt + R` |
 | 🥧 饼菜单 | `空格 + 鼠标右键` |
 | ⚡ 电源菜单 | `Alt + X` |
+
+<p align="center">
+  <img src="images/sep-drag.svg" alt="" width="85%">
+</p>
 
 ---
 
@@ -191,6 +207,10 @@ WMBarPush(1, "来自外部脚本")
 
 📂 `bar-examples/` 和 `osd-examples/` 有 12 个开箱即用的示例（中英文、详细注释）。
 
+<p align="center">
+  <img src="images/sep-config.svg" alt="" width="85%">
+</p>
+
 ---
 
 ## ⚙️ 配置
@@ -232,6 +252,10 @@ WMBarPush(1, "来自外部脚本")
 - 🎨 **主题** — 附带截图提交。
 
 ---
+
+<p align="center">
+  <img src="images/thanks-zh.svg" alt="致谢" width="75%">
+</p>
 
 ## 📄 许可
 

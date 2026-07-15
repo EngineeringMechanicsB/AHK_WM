@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200">
+  <defs>
+    <linearGradient id="nameGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#CBA6F7"/>
+      <stop offset="50%" stop-color="#89B4FA"/>
+      <stop offset="100%" stop-color="#F5C2E7"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <pattern id="dots" x="0" y="0" width="28" height="28" patternUnits="userSpaceOnUse">
+      <circle cx="14" cy="14" r="0.7" fill="#45475A" opacity="0.15"/>
+    </pattern>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="200" fill="#0e050f" opacity="0.4"/>
+  <rect width="800" height="200" fill="url(#dots)"/>
+
+  <!-- Heart icon (left) — pulse -->
+  <g transform="translate(160,100)" filter="url(#glow)">
+    <animateTransform attributeName="transform" type="translate" values="160 100;160 100;160 96;160 100;160 100" keyTimes="0;0.3;0.4;0.5;1" dur="2s" repeatCount="indefinite" additive="replace"/>
+    <path d="M0 8 Q0 0 -8 -6 Q-16 -12 -16 -2 Q-16 6 0 14 Q16 6 16 -2 Q16 -12 8 -6 Q0 0 0 8 Z" fill="#F38BA8" opacity="0.8">
+      <animate attributeName="opacity" values="0.6;1;0.6" dur="2s" repeatCount="indefinite"/>
+    </path>
+  </g>
+
+  <!-- "Made with" text -->
+  <text x="400" y="75" text-anchor="middle" fill="#A6ADC8" font-family="Segoe UI, system-ui, sans-serif" font-size="16" letter-spacing="2">
+    Made with
+    <tspan fill="#F38BA8">♥</tspan>
+    by
+  </text>
+
+  <!-- Author name — gentle wobble -->
+  <g>
+    <animateTransform attributeName="transform" type="rotate"
+      values="0 400 110;2 400 110;-2 400 110;1.5 400 110;-1.5 400 110;0 400 110"
+      keyTimes="0;0.15;0.35;0.55;0.75;1"
+      dur="3s" repeatCount="indefinite"/>
+    <text x="400" y="112" text-anchor="middle" fill="url(#nameGrad)" font-family="Segoe UI, system-ui, sans-serif" font-size="26" font-weight="700" filter="url(#glow)">
+      EngineeringMechanicsB
+    </text>
+  </g>
+
+  <!-- Subtitle -->
+  <text x="400" y="145" text-anchor="middle" fill="#585B70" font-family="Segoe UI, system-ui, sans-serif" font-size="12">
+    Two years of daily-use refinement. Built for everyone.
+    <animate attributeName="opacity" values="0;1" dur="1s" begin="0.5s" fill="freeze"/>
+  </text>
+
+  <!-- Small floating sparkles -->
+  <circle cx="230" cy="80" r="1.5" fill="#F5C2E7" opacity="0">
+    <animate attributeName="opacity" values="0;0.8;0" dur="1.5s" begin="1s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="570" cy="85" r="1.5" fill="#89B4FA" opacity="0">
+    <animate attributeName="opacity" values="0;0.8;0" dur="1.5s" begin="0.3s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="260" cy="120" r="1" fill="#CBA6F7" opacity="0">
+    <animate attributeName="opacity" values="0;0.7;0" dur="2s" begin="0.7s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="540" cy="125" r="1" fill="#F5C2E7" opacity="0">
+    <animate attributeName="opacity" values="0;0.7;0" dur="2s" begin="1.8s" repeatCount="indefinite"/>
+  </circle>
+</svg>

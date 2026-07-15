@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 160">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#0e050f" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#1E1E2E" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#0e050f" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="active" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#CBA6F7"/><stop offset="100%" stop-color="#89B4FA"/>
+    </linearGradient>
+    <filter id="gl"><feGaussianBlur stdDeviation="1.5"/><feMerge><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <!-- 8 sector wedges, each 45°, offset by -22.5° so sector 0 points right -->
+    <!-- Sector 0: Right    (337.5°→22.5°) -->
+    <!-- Sector 1: DownRight (22.5°→67.5°) -->
+    <!-- ...etc -->
+    <g id="sector">
+      <path d="M0,0 L40,-15 A43,43 0 0,1 40,15 Z" fill="#CBA6F7" opacity="0.15" stroke="#CBA6F7" stroke-width="0.8"/>
+    </g>
+    <!-- Arrow shape for a direction marker -->
+    <g id="arrow8">
+      <polygon points="0,-3 8,0 0,3" fill="#CDD6F4"/>
+    </g>
+  </defs>
+  <rect width="1000" height="160" fill="url(#bg)"/>
+  <line x1="30" y1="80" x2="970" y2="80" stroke="#45475A" stroke-width="0.5" opacity="0.2"/>
+
+  <!-- Large background pie menu — 4x scale, bottom-left, partially offscreen -->
+  <g transform="translate(80,210) scale(4)" opacity="0.07">
+    <circle cx="0" cy="0" r="52" fill="none" stroke="#CBA6F7" stroke-width="1.5">
+      <animate attributeName="r" values="48;56;48" dur="2.5s" repeatCount="indefinite"/>
+    </circle>
+    <path d="M0,0 L46,-18 A50,50 0 0,1 46,18 Z" fill="#CBA6F7" opacity="0.3"/>
+    <g transform="rotate(45)"><path d="M0,0 L46,-18 A50,50 0 0,1 46,18 Z" fill="#89B4FA" opacity="0.25"/></g>
+    <g transform="rotate(90)"><path d="M0,0 L46,-18 A50,50 0 0,1 46,18 Z" fill="#A6E3A1" opacity="0.25"/></g>
+    <g transform="rotate(135)"><path d="M0,0 L46,-18 A50,50 0 0,1 46,18 Z" fill="#FAB387" opacity="0.25"/></g>
+    <g transform="rotate(180)"><path d="M0,0 L46,-18 A50,50 0 0,1 46,18 Z" fill="#F38BA8" opacity="0.25"/></g>
+    <g transform="rotate(225)"><path d="M0,0 L46,-18 A50,50 0 0,1 46,18 Z" fill="#F5C2E7" opacity="0.25"/></g>
+    <g transform="rotate(270)"><path d="M0,0 L46,-18 A50,50 0 0,1 46,18 Z" fill="#B4BEFE" opacity="0.25"/></g>
+    <g transform="rotate(315)"><path d="M0,0 L46,-18 A50,50 0 0,1 46,18 Z" fill="#CBA6F7" opacity="0.25"/></g>
+    <g>
+      <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="4s" repeatCount="indefinite"/>
+      <path d="M0,0 L46,-18 A50,50 0 0,1 46,18 Z" fill="url(#active)" opacity="0.5"/>
+    </g>
+    <circle cx="0" cy="0" r="14" fill="#1E1E2E" stroke="#CBA6F7" stroke-width="2"/>
+  </g>
+
+  <!-- Pie menu centered at (500, 80) -->
+  <g transform="translate(500,80)">
+    <!-- Outer ring pulse -->
+    <circle cx="0" cy="0" r="52" fill="none" stroke="#CBA6F7" stroke-width="0.8" opacity="0.25">
+      <animate attributeName="r" values="48;54;48" dur="2s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.15;0.35;0.15" dur="2s" repeatCount="indefinite"/>
+    </circle>
+
+    <!-- 8 sectors, each rotated 45° -->
+    <g opacity="0.5">
+      <animateTransform attributeName="transform" type="rotate" values="0;0;0;0" dur="4s" repeatCount="indefinite"/>
+      <!-- Right -->
+      <path d="M0,0 L46,-18 A50,50 0 0,1 46,18 Z" fill="#CBA6F7" opacity="0.12" stroke="#45475A" stroke-width="0.5">
+        <animate attributeName="opacity" values="0.08;0.25;0.08" dur="1.5s" repeatCount="indefinite"/>
+      </path>
+      <!-- DownRight -->
+      <g transform="rotate(45)"><path d="M0,0 L46,-18 A50,50 0 0,1 46,18 Z" fill="#89B4FA" opacity="0.1" stroke="#45475A" stroke-width="0.5"/></g>
+      <!-- Down -->
+      <g transform="rotate(90)"><path d="M0,0 L46,-18 A50,50 0 0,1 46,18 Z" fill="#A6E3A1" opacity="0.1" stroke="#45475A" stroke-width="0.5"/></g>
+      <!-- DownLeft -->
+      <g transform="rotate(135)"><path d="M0,0 L46,-18 A50,50 0 0,1 46,18 Z" fill="#FAB387" opacity="0.1" stroke="#45475A" stroke-width="0.5"/></g>
+      <!-- Left -->
+      <g transform="rotate(180)"><path d="M0,0 L46,-18 A50,50 0 0,1 46,18 Z" fill="#F38BA8" opacity="0.1" stroke="#45475A" stroke-width="0.5"/></g>
+      <!-- TopLeft -->
+      <g transform="rotate(225)"><path d="M0,0 L46,-18 A50,50 0 0,1 46,18 Z" fill="#F5C2E7" opacity="0.1" stroke="#45475A" stroke-width="0.5"/></g>
+      <!-- Top -->
+      <g transform="rotate(270)"><path d="M0,0 L46,-18 A50,50 0 0,1 46,18 Z" fill="#B4BEFE" opacity="0.1" stroke="#45475A" stroke-width="0.5"/></g>
+      <!-- TopRight -->
+      <g transform="rotate(315)"><path d="M0,0 L46,-18 A50,50 0 0,1 46,18 Z" fill="#CBA6F7" opacity="0.1" stroke="#45475A" stroke-width="0.5"/></g>
+    </g>
+
+    <!-- Highlight sweep across sectors -->
+    <g>
+      <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="3s" repeatCount="indefinite"/>
+      <path d="M0,0 L46,-18 A50,50 0 0,1 46,18 Z" fill="url(#active)" opacity="0.3" stroke="#CBA6F7" stroke-width="1.2" filter="url(#gl)"/>
+    </g>
+
+    <!-- Center circle -->
+    <circle cx="0" cy="0" r="14" fill="#1E1E2E" stroke="#CBA6F7" stroke-width="1.2" opacity="0.8"/>
+    <text x="0" y="4" text-anchor="middle" fill="#CDD6F4" font-family="Segoe UI, sans-serif" font-size="7" font-weight="600">MENU</text>
+
+    <!-- Sector divider lines -->
+    <g stroke="#45475A" stroke-width="0.4" opacity="0.3">
+      <line x1="0" y1="-50" x2="0" y2="-14"/>
+      <line x1="0" y1="14" x2="0" y2="50"/>
+      <line x1="-50" y1="0" x2="-14" y2="0"/>
+      <line x1="14" y1="0" x2="50" y2="0"/>
+      <line x1="-35" y1="-35" x2="-10" y2="-10"/>
+      <line x1="10" y1="10" x2="35" y2="35"/>
+      <line x1="35" y1="-35" x2="10" y2="-10"/>
+      <line x1="-10" y1="10" x2="-35" y2="35"/>
+    </g>
+  </g>
+
+  <!-- Labels around menu -->
+  <g font-family="Segoe UI, sans-serif" font-size="8" fill="#585B70" text-anchor="middle" opacity="0.5">
+    <text x="580" y="78">→</text>
+    <text x="575" y="108">↘</text>
+    <text x="500" y="120">↓</text>
+    <text x="425" y="108">↙</text>
+    <text x="420" y="78">←</text>
+    <text x="425" y="52">↖</text>
+    <text x="500" y="42">↑</text>
+    <text x="575" y="52">↗</text>
+  </g>
+
+  <text x="360" y="148" text-anchor="middle" fill="#585B70" font-family="Segoe UI, sans-serif" font-size="9" opacity="0.4">Space + Right Mouse</text>
+</svg>

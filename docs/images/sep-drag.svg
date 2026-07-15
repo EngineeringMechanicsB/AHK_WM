@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 140">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#0e050f" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#1E1E2E" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#0e050f" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="bdr" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#A020F0"/><stop offset="50%" stop-color="#CBA6F7"/><stop offset="100%" stop-color="#89B4FA"/>
+    </linearGradient>
+    <filter id="gl"><feGaussianBlur stdDeviation="1"/><feMerge><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <!-- Cursor arrow -->
+    <g id="arrow">
+      <path d="M0 0 L0 14 L4 10 L7 16 L9 15 L6 9 L9 8 Z" fill="#CDD6F4" stroke="#1E1E2E" stroke-width="0.5"/>
+    </g>
+  </defs>
+  <rect width="1000" height="140" fill="url(#bg)"/>
+  <line x1="60" y1="70" x2="940" y2="70" stroke="#45475A" stroke-width="0.5" opacity="0.25"/>
+
+  <!-- Window with organic wobble (not just horizontal) -->
+  <g filter="url(#gl)">
+    <animateTransform attributeName="transform" type="translate"
+      values="0 0; 90 -12; 180 8; 90 -18; -80 12; -180 -8; 0 0; 0 0"
+      keyTimes="0; 0.15; 0.3; 0.5; 0.65; 0.8; 0.92; 1"
+      dur="6s" repeatCount="indefinite" calcMode="spline"
+      keySplines="0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1"/>
+    <rect x="360" y="30" width="200" height="72" rx="7" fill="#1E1E2E" opacity="0.7"/>
+    <rect x="360" y="30" width="200" height="72" rx="7" fill="none" stroke="url(#bdr)" stroke-width="2" opacity="0.6"/>
+    <rect x="360" y="30" width="200" height="20" rx="7" fill="#313244" opacity="0.5"/>
+    <circle cx="378" cy="40" r="4" fill="#F38BA8" opacity="0.6"/>
+    <circle cx="392" cy="40" r="4" fill="#FAB387" opacity="0.6"/>
+    <circle cx="406" cy="40" r="4" fill="#A6E3A1" opacity="0.6"/>
+    <rect x="376" y="58" width="80" height="7" rx="2" fill="#45475A" opacity="0.5"/>
+    <rect x="376" y="70" width="140" height="7" rx="2" fill="#45475A" opacity="0.35"/>
+    <rect x="376" y="82" width="100" height="7" rx="2" fill="#45475A" opacity="0.35"/>
+  </g>
+
+  <!-- Cursor arrow following window -->
+  <use href="#arrow">
+    <animateTransform attributeName="transform" type="translate"
+      values="440 60; 530 48; 620 68; 530 42; 280 72; 180 52; 440 60; 440 60"
+      keyTimes="0; 0.15; 0.3; 0.5; 0.65; 0.8; 0.92; 1"
+      dur="6s" repeatCount="indefinite" calcMode="spline"
+      keySplines="0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1"/>
+  </use>
+
+  <!-- Pulsing dots -->
+  <circle cx="230" cy="70" r="2" fill="#CBA6F7" opacity="0.3"><animate attributeName="opacity" values="0.1;0.5;0.1" dur="2s" repeatCount="indefinite"/></circle>
+  <circle cx="770" cy="70" r="2" fill="#89B4FA" opacity="0.3"><animate attributeName="opacity" values="0.1;0.5;0.1" dur="2s" begin="0.7s" repeatCount="indefinite"/></circle>
+</svg>
