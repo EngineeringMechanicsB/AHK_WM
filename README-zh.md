@@ -18,6 +18,10 @@
 
 </div>
 
+<p align="center">
+  <img src="assets/banner.png" alt="AHK WM Banner" width="90%">
+</p>
+
 ---
 
 ## 📑 目录
