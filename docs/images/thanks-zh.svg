@@ -25,7 +25,6 @@
       <animate attributeName="opacity" values="0.6;1;0.6" dur="2s" repeatCount="indefinite"/>
     </path>
   </g>
-  </g>
 
   <!-- "Made with" text — CN -->
   <text x="400" y="75" text-anchor="middle" fill="#A6ADC8" font-family="Microsoft YaHei, Segoe UI, system-ui, sans-serif" font-size="16" letter-spacing="2">
