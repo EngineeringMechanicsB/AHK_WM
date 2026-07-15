@@ -11,14 +11,14 @@
 
 <p>
   <a href="README.md"><img src="https://img.shields.io/badge/README-English-cba6f7?style=flat-square" alt="English" /></a>
-  <a href="README-zh.md"><img src="https://img.shields.io/badge/README-简体中文-b4befe?style=flat-square" alt="简体中文" /></a>
+  <a href="docs/README-zh.md"><img src="https://img.shields.io/badge/README-简体中文-b4befe?style=flat-square" alt="简体中文" /></a>
 </p>
 **A tiny, fast, single-file window manager for Windows — powered by AutoHotkey v2.**
 
 </div>
 
 <p align="center">
-  <img src="assets/banner.png" alt="AHK WM Banner" width="90%">
+  <img src="docs/images/banner.png" alt="AHK WM Banner" width="90%">
 </p>
 
 ---
@@ -32,7 +32,7 @@
 - [🧰 Detailed Features](#-detailed-features)
 - [🔌 External Interfaces](#-external-interfaces)
 - [⚙️ Configuration](#️-configuration)
-- [🛠️ Changelog](CHANGELOG.md)
+- [🛠️ Changelog](docs/CHANGELOG.md)
 - [🔮 Roadmap](#-roadmap)
 - [❓ Troubleshooting](#-troubleshooting)
 - [🤝 Contributing](#-contributing)
@@ -180,7 +180,7 @@ Hook AHK_WM into Claude Code for completion notifications. Add to `.claude/setti
 {
   "hooks": {
     "Stop": [
-      { "command": "C:\\Users\\Administrator\\Desktop\\AHK_WM\\osd-examples\\osd-claude-done.ahk" }
+      { "command": "C:\\Users\\Administrator\\Desktop\\AHK_WM\\docs\\osd-examples\\osd-claude-done.ahk" }
     ]
   }
 }
@@ -188,7 +188,7 @@ Hook AHK_WM into Claude Code for completion notifications. Add to `.claude/setti
 
 Now every time Claude Code finishes, you'll see `🤖 Claude Code run Completed！`. The same pattern works with any tool that can run a `.ahk` file — task schedulers, CI pipelines, build scripts, whatever.
 
-📂 `bar-examples/` and `osd-examples/` have 12 ready-to-run demos (Chinese / English, heavily commented).
+📂 `docs/bar-examples/` and `docs/osd-examples/` have 12 ready-to-run demos (Chinese / English, heavily commented).
 
 ---
 

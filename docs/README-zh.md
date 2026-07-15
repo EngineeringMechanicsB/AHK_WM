@@ -10,8 +10,8 @@
 </p>
 
 <p>
-  <a href="README.md"><img src="https://img.shields.io/badge/README-English-cba6f7?style=flat-square" alt="English" /></a>
-  <a href="README-zh.md"><img src="https://img.shields.io/badge/README-简体中文-b4befe?style=flat-square" alt="简体中文" /></a>
+  <a href="../README.md"><img src="https://img.shields.io/badge/README-English-cba6f7?style=flat-square" alt="English" /></a>
+  <a href="docs/README-zh.md"><img src="https://img.shields.io/badge/README-简体中文-b4befe?style=flat-square" alt="简体中文" /></a>
 </p>
 
 **轻量、快速、单文件的 Windows 窗口管理器 — AutoHotkey v2 驱动**
@@ -19,7 +19,7 @@
 </div>
 
 <p align="center">
-  <img src="assets/banner.png" alt="AHK WM Banner" width="90%">
+  <img src="images/banner.png" alt="AHK WM Banner" width="90%">
 </p>
 
 ---
@@ -60,14 +60,14 @@
 
 | 预览 | 说明 |
 |---------|-------------|
-| ![Screenshots](docs/images/Screenshots.png) | 桌面概览 — 边框、平铺、多窗口布局 |
-| ![Smart Tile](docs/images/Smart-tile.gif) | 智能平铺 — 一键排布所有窗口 |
-| ![Pie Menu](docs/images/pie-menu.gif) | 饼菜单 — 空格 + 右键 |
-| ![WinSelect](docs/images/window-Select.gif) | WinSelect — 字母标注覆盖层 |
-| ![Bar Widgets](docs/images/bar-widgets-2.png) | 状态栏 — 渐变部件、圆角 |
-| ![Border Gradient](docs/images/border-gradient.png) | 渐变边框 — 聚焦/非聚焦颜色切换 |
-| ![Border Fullscreen](docs/images/border-fullscreen.png) | 边框实战 — 平铺窗口彩色边框 |
-| ![Help](docs/images/help-menu.png) | 内置帮助 — Alt + / 查看所有快捷键 |
+| ![Screenshots](images/Screenshots.png) | 桌面概览 — 边框、平铺、多窗口布局 |
+| ![Smart Tile](images/Smart-tile.gif) | 智能平铺 — 一键排布所有窗口 |
+| ![Pie Menu](images/pie-menu.gif) | 饼菜单 — 空格 + 右键 |
+| ![WinSelect](images/window-Select.gif) | WinSelect — 字母标注覆盖层 |
+| ![Bar Widgets](images/bar-widgets-2.png) | 状态栏 — 渐变部件、圆角 |
+| ![Border Gradient](images/border-gradient.png) | 渐变边框 — 聚焦/非聚焦颜色切换 |
+| ![Border Fullscreen](images/border-fullscreen.png) | 边框实战 — 平铺窗口彩色边框 |
+| ![Help](images/help-menu.png) | 内置帮助 — Alt + / 查看所有快捷键 |
 
 ---
 
@@ -181,7 +181,7 @@ WMBarPush(1, "来自外部脚本")
 {
   "hooks": {
     "Stop": [
-      { "command": "C:\\Users\\Administrator\\Desktop\\AHK_WM\\osd-examples\\osd-claude-done.ahk" }
+      { "command": "C:\\Users\\Administrator\\Desktop\\AHK_WM\\docs\\osd-examples\\osd-claude-done.ahk" }
     ]
   }
 }
@@ -196,7 +196,7 @@ WMBarPush(1, "来自外部脚本")
 ## ⚙️ 配置
 
 <p align="center">
-  <a href="docs/config-reference-zh.md">
+  <a href="config-reference-zh.md">
     <img src="https://img.shields.io/badge/配置参考-docs/config--reference--zh.md-cba6f7?style=flat-square" alt="配置参考" />
   </a>
 </p>
