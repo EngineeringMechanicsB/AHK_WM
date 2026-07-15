@@ -15,6 +15,8 @@
 </p>
 **A tiny, fast, single-file window manager for Windows — powered by AutoHotkey v2.**
 
+</div>
+
 ---
 
 ## 📑 Contents
