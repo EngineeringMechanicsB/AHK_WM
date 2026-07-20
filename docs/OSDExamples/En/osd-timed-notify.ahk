@@ -50,7 +50,7 @@ Persistent
 ; ================= CONFIGURE YOUR RULES HERE =================
 ; Each rule: {time, text, dur, opts?}  — opts is optional (see above)
 global RULES := [
-    {time: "0900",   text: "Morning! Time to start.",
+    {time: "0957",   text: "Morning! Time to start.",
         dur: 5, opts: "fs=28,bg=FF8C42,tx=FFFFFF,op=90,pos=25,rr=12"},
     {time: "1200",   text: "Lunch break!",
         dur: 5, opts: "fs=26,bg=4CAF50,tx=FFFFFF,op=88,pos=80,rr=16"},
