@@ -18,13 +18,16 @@ Persistent
 ;
 ; [How to configure]
 ;   Edit the RULES array below.  Each entry is an object:
-;     {time: "HHMM", text: "...", dur: seconds}
+;     {time: "HHMM", text: "...", dur: seconds, opts: "key=value,..."}
+;
+;   opts is optional — omit to use config defaults.  Available keys:
+;     fs=N, op=N, pos=N, bg=RRGGBB, tx=RRGGBB, wr=N, rd=on|off, rr=N, fn=Name
+;   See osd-custom-all.ahk for full documentation of every key.
 ;
 ;   Examples:
-;     {time: "0900",             text: "Morning standup!",     dur: 5}
-;     {time: "1322",             text: "Afternoon coffee!",    dur: 5}
-;     {time: "5_1700",           text: "Happy Friday!",        dur: 3}
-;     {time: "2026_12_25_0800",  text: "Merry Christmas!",     dur: 10}
+;     {time: "0900",  text: "Standup!",      dur: 5, opts: "fs=30,bg=FF6644,tx=FFF,pos=30"}
+;     {time: "1322",  text: "Tea time!",     dur: 5, opts: "fs=24,bg=4CAF50,tx=FFF,rr=20"}
+;     {time: "5_1700", text: "Happy Friday!", dur: 5, opts: "fs=28,bg=A020F0,op=85,pos=85"}
 ;
 ; [How it works]
 ;   A SetTimer fires every 30 seconds.  It checks whether the current time
@@ -45,11 +48,19 @@ Persistent
 ; ==============================================================================
 
 ; ================= CONFIGURE YOUR RULES HERE =================
+; Each rule: {time, text, dur, opts?}  — opts is optional (see above)
 global RULES := [
-    {time: "0900",              text: "Morning! Time to start the day.", dur: 5},
-    {time: "1200",              text: "Lunch break!",                    dur: 5},
-    {time: "1322",              text: "Afternoon tea time!",             dur: 5},
-    {time: "5_1700",            text: "Happy Friday! Weekend ahead!",    dur: 5}
+    {time: "0900",   text: "Morning! Time to start.",
+        dur: 5, opts: "fs=28,bg=FF8C42,tx=FFFFFF,op=90,pos=25,rr=12"},
+    {time: "1200",   text: "Lunch break!",
+        dur: 5, opts: "fs=26,bg=4CAF50,tx=FFFFFF,op=88,pos=80,rr=16"},
+    {time: "1322",   text: "Afternoon tea time!",
+        dur: 5, opts: "fs=24,bg=8B5CF6,tx=FFFFFF,op=85,pos=85,rr=14"},
+    {time: "5_1700", text: "Happy Friday! Weekend ahead!",
+        dur: 6, opts: "fs=30,bg=A020F0,tx=FFD700,op=92,pos=50,rr=20"},
+    ; One-shot example (uncomment to test):
+    ; {time: "2026_12_25_0800", text: "Merry Christmas!",
+    ;     dur: 10, opts: "fs=36,bg=CC3333,tx=FFFFFF,op=95,pos=40,rr=18"}
 ]
 ; =============================================================
 
@@ -116,7 +127,8 @@ CheckAndFire() {
 
         FIRED[fireKey] := true
         durMs := (rule.dur > 0) ? rule.dur * 1000 : 3000
-        AHK_WM_OSD(rule.text, durMs)
+        ruleOpts := rule.HasOwnProp("opts") ? rule.opts : ""
+        AHK_WM_OSD(rule.text, durMs, ruleOpts)
     }
 }
 

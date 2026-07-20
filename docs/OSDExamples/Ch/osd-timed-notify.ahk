@@ -17,13 +17,16 @@ Persistent
 ;
 ; 【如何配置】
 ;   修改下方的 RULES 数组。每条规则是一个对象：
-;     {time: "时间格式", text: "通知内容", dur: 持续秒数}
+;     {time: "时间格式", text: "通知内容", dur: 持续秒数, opts: "键=值,..."}
+;
+;   opts 可选——不填则使用配置文件默认值。可用键：
+;     fs=N, op=N, pos=N, bg=RRGGBB, tx=RRGGBB, wr=N, rd=on|off, rr=N, fn=名称
+;   完整文档见 osd-custom-all.ahk
 ;
 ;   示例：
-;     {time: "0900",             text: "晨会时间！",         dur: 5}
-;     {time: "1322",             text: "下午茶时间！",       dur: 5}
-;     {time: "5_1700",           text: "周末快乐！",         dur: 3}
-;     {time: "2026_12_25_0800",  text: "🎄 圣诞快乐！",     dur: 10}
+;     {time: "0900",  text: "晨会！",      dur: 5, opts: "fs=30,bg=FF6644,tx=FFF,pos=30"}
+;     {time: "1322",  text: "下午茶！",    dur: 5, opts: "fs=24,bg=4CAF50,tx=FFF,rr=20"}
+;     {time: "5_1700", text: "周末快乐！",  dur: 5, opts: "fs=28,bg=A020F0,op=85,pos=85"}
 ;
 ; 【工作原理】
 ;   SetTimer 每 30 秒触发一次检查。比较当前时间（HH:MM）与规则匹配。
@@ -41,11 +44,19 @@ Persistent
 ; ==============================================================================
 
 ; ==================== 在这里配置你的通知规则 ====================
+; 每条规则：{time, text, dur, opts?} — opts 可选（见上方说明）
 global RULES := [
-    {time: "0900",              text: "☕ 早上好！开始新的一天。",  dur: 5},
-    {time: "1200",              text: "🍜 午饭时间！",             dur: 5},
-    {time: "1322",              text: "🍵 下午茶时间！",           dur: 5},
-    {time: "5_1700",            text: "🎉 周末快乐！",             dur: 5}
+    {time: "0900",   text: "☕ 早上好！开始新的一天。",
+        dur: 5, opts: "fs=28,bg=FF8C42,tx=FFFFFF,op=90,pos=25,rr=12"},
+    {time: "1200",   text: "🍜 午饭时间！",
+        dur: 5, opts: "fs=26,bg=4CAF50,tx=FFFFFF,op=88,pos=80,rr=16"},
+    {time: "1322",   text: "🍵 下午茶时间！",
+        dur: 5, opts: "fs=24,bg=8B5CF6,tx=FFFFFF,op=85,pos=85,rr=14"},
+    {time: "5_1700", text: "🎉 周末快乐！",
+        dur: 6, opts: "fs=30,bg=A020F0,tx=FFD700,op=92,pos=50,rr=20"},
+    ; 单次示例（取消注释测试）：
+    ; {time: "2026_12_25_0800", text: "🎄 圣诞快乐！",
+    ;     dur: 10, opts: "fs=36,bg=CC3333,tx=FFFFFF,op=95,pos=40,rr=18"}
 ]
 ; ================================================================
 
@@ -112,7 +123,8 @@ CheckAndFire() {
 
         FIRED[fireKey] := true
         durMs := (rule.dur > 0) ? rule.dur * 1000 : 3000
-        AHK_WM_OSD(rule.text, durMs)
+        ruleOpts := rule.HasOwnProp("opts") ? rule.opts : ""
+        AHK_WM_OSD(rule.text, durMs, ruleOpts)
     }
 }
 
