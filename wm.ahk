@@ -530,7 +530,7 @@ CreateGradient(W, H, V := 0, Colors*) {
 }
 
 ; ---- TextOnGradient / 渐变文字 ----
-TextOnGradient(W, H, Colors, Text, FontSize, Style := "text", fontFace := FontName, BgBM := 0, BgOffX := 0, RoundedBg := "", Align := "Center") {
+TextOnGradient(W, H, Colors, Text, FontSize, Style := "text", fontFace := FontName, BgBM := 0, BgOffX := 0, RoundedBg := "", Align := "Center", wrapLines := 0) {
     global FontName
     if (W < 2 || H < 2 || Colors.Length < 2 || Text = "")
         return 0
@@ -538,7 +538,10 @@ TextOnGradient(W, H, Colors, Text, FontSize, Style := "text", fontFace := FontNa
         return 0
     ; 对齐标志 / Alignment flags
     alignFlags := (Align = "Left") ? 0x0 : (Align = "Right") ? 0x2 : 0x1
-    drawFlags := alignFlags | 0x20 | 0x4   ; DT_SINGLELINE | DT_VCENTER
+    ; wrapLines>0 时用 DT_WORDBREAK 替代 DT_SINGLELINE 实现多行换行
+    drawFlags := (wrapLines > 0) ? (alignFlags | 0x10 | 0x4) : (alignFlags | 0x20 | 0x4)
+    ; DT_WORDBREAK(0x10) | DT_VCENTER(0x4)  — 多行居中
+    ; DT_SINGLELINE(0x20) | DT_VCENTER(0x4) — 单行居中（默认）
     ; bg / bg_rounded 模式 / gradient bg + white text
     if (Style = "bg" || Style = "bg_rounded") {
         hBM := CreateGradient(W, H, 0, Colors*)
@@ -2603,9 +2606,23 @@ InitializeButtons() {
 
 ; ---- On-screen display / 屏幕提示 ----
 class OSD {
-    static GuiObj := 0, Timer := 0
+    static GuiObj := 0, Timer := 0           ; 内部 OSD（wm.ahk 自身调用，单实例互替）
+    static ExtGuis := Map()                  ; 外部 OSD（脚本调用，多实例共存，互不干扰）
 
-    ; -- Show an OSD message / 显示提示 --
+    ; -- 解析键值选项 "fs=24,op=90,bg=FF4444" → Map --
+    static _ParseOpts(optsStr) {
+        m := Map()
+        if (optsStr = "")
+            return m
+        for part in StrSplit(optsStr, ",") {
+            part := Trim(part)
+            if RegExMatch(part, "^([a-z]{2,3})=(.*)$", &kv)
+                m[kv[1]] := Trim(kv[2])
+        }
+        return m
+    }
+
+    ; -- 内部 OSD（wm.ahk 自身调用，始终使用配置文件设置，单实例）--
     static Show(text, duration := 1000) {
         if IsObject(this.GuiObj) {
             try this.GuiObj.Destroy()
@@ -2652,16 +2669,99 @@ class OSD {
         this.Timer  := () => (IsObject(OSD.GuiObj) ? (OSD.GuiObj.Destroy(), OSD.GuiObj := 0) : 0)
         SetTimer(this.Timer, -duration)
     }
+
+    ; -- 外部 OSD（脚本通过 WM_COPYDATA 调用，支持 per-call 覆盖，多实例共存）--
+    static ShowExternal(text, duration := 1000, optsStr := "") {
+        global OSD_FontSize, OSD_Transparent, OSD_Height, Color_Bg, Color_Active
+        global OSD_Rounded, OSD_Radius
+        o := OSD._ParseOpts(optsStr)
+
+        ; ---- 逐项解析：有则用覆盖值，缺则回退配置文件全局值 ----
+        fs       := o.Has("fs")  ? Max(6, Integer(o["fs"]))             : OSD_FontSize
+        opPct    := o.Has("op")  ? Integer(o["op"])                      : 0
+        opVal    := (opPct > 0)  ? Pct2Alpha(opPct)                      : OSD_Transparent
+        yPct     := o.Has("pos") ? Integer(o["pos"])                     : 0
+        yPos     := (yPct > 0)   ? Pct2PxH(yPct)                         : OSD_Height
+        bgCol    := o.Has("bg")  ? C1(o["bg"])                           : Color_Bg
+        txCol    := o.Has("tx")  ? C1(o["tx"])                           : Color_Active
+        maxWVal  := o.Has("wr")  ? Max(100, Integer(o["wr"]))           : 0
+        roundOn  := o.Has("rd")  ? o["rd"]                               : OSD_Rounded
+        roundRad := o.Has("rr")  ? Max(0, Integer(o["rr"]))              : OSD_Radius
+        ff       := o.Has("fn")  ? o["fn"]                               : FontName
+
+        MouseGetPos(&mx,)
+        monIdx := GetMonitorIndexAtPoint(mx, yPos)
+        MonitorGet(monIdx, &mL, &mT, &mR, &mB)
+        monW := mR - mL
+        cx := (mL + mR) // 2
+
+        fScale := fs / 20.0
+        padX := Round(30 * fScale)
+        padY := Round(12 * fScale)
+        maxW := (maxWVal > 0) ? maxWVal : Round(monW * 0.85)
+
+        g := Gui("+AlwaysOnTop -Caption +ToolWindow +Disabled +Owner -DPIScale")
+        g.BackColor := bgCol
+        g.SetFont("s" . fs . " w600 c" . txCol, ff)
+        g.Add("Text", "x" padX " y" padY " Center", text)
+
+        g.Show(Format("NoActivate AutoSize Hide"))
+        g.GetPos(, , &gw, &gh)
+        if (gw > maxW) {
+            g.Destroy()
+            g := Gui("+AlwaysOnTop -Caption +ToolWindow +Disabled +Owner -DPIScale")
+            g.BackColor := bgCol
+            g.SetFont("s" . fs . " w600 c" . txCol, ff)
+            g.Add("Text", "x" padX " y" padY " w" (maxW - padX*2) " Center", text)
+            g.Show(Format("NoActivate AutoSize Hide"))
+            g.GetPos(, , &gw, &gh)
+        }
+        g.Show(Format("NoActivate AutoSize x{} y{}", cx - gw//2, yPos))
+
+        WinSetTransparent(opVal, g.Hwnd)
+        RoundWindowEx(g, roundOn, roundRad)
+
+        ; ---- tag 机制：同 tag 的旧 OSD 先销毁（实现替换式更新）----
+        tagVal := o.Has("tag") ? o["tag"] : ""
+        if (tagVal != "") {
+            for eid, eg in OSD.ExtGuis {
+                try {
+                    if (eg.HasProp("_tag") && eg._tag = tagVal) {
+                        eg.Destroy()
+                        OSD.ExtGuis.Delete(eid)
+                    }
+                }
+            }
+        }
+
+        ; ---- 注册到外部实例表，独立 self-destruct ----
+        extId := Format("ext_{:04d}", A_TickCount & 0xFFFF)
+        g._tag := tagVal  ; 在 Gui 对象上标记 tag
+        OSD.ExtGuis[extId] := g
+        fn := ObjBindMethod(OSD, "_DestroyExt", extId)
+        SetTimer(fn, -duration)
+        return extId
+    }
+
+    ; -- 销毁指定外部 OSD 实例（仅销毁自身，不影响内部 OSD）--
+    static _DestroyExt(extId) {
+        if !OSD.ExtGuis.Has(extId)
+            return
+        try OSD.ExtGuis[extId].Destroy()
+        OSD.ExtGuis.Delete(extId)
+    }
 }
 
-; ---- OSD shorthand / OSD快捷 ----
+; ---- OSD shorthand / OSD快捷（内部调用，始终用配置）----
 ShowOSD(text) => OSD.Show(text)
 
 ; ---- 外部消息接口 / External interface via WM_COPYDATA ----
 ; 其他 AHK 脚本可通过 SendMessage 向 AHK_WM 发送消息（查找主窗口
 ; "wm.ahk ahk_class AutoHotkey"），支持两种协议：
-;   "OSD:消息文本[:持续时间ms]"  → 弹出 OSD 提示
-;   "BAR:槽位号:文本"            → 更新 bar 的 external_N 部件，持续显示直至下次推送
+;   "OSD:消息文本[:持续时间ms][:键值选项]"  → 弹出 OSD 提示（外部，支持 per-call 自定义）
+;   "BAR:槽位号:文本"                      → 更新 bar 的 external_N 部件
+; 键值选项格式: fs=24,op=90,pos=50,bg=FF4444,tx=FFFFFF,wr=400,rd=on,rr=15,fn=Consolas
+; 所有键均可选，未指定则回退配置文件全局值。外部 OSD 与内部 OSD 实例隔离、互不干扰。
 ; 参见随附示例 bar-custom-constant.ahk / bar-custom-variable.ahk / bar-custom-system.ahk
 OnMessage(0x4A, _WM_OnCopyData)  ; WM_COPYDATA
 
@@ -2673,15 +2773,23 @@ _WM_OnCopyData(wParam, lParam, msgNum, hwnd) {
     lpData := NumGet(cds, A_PtrSize * 2, "Ptr")
     if !lpData || !cbData
         return false
-    ; cbData 是字节数：转字符数读取并剔除结尾 NUL（旧版误把字节数当字符数）
-    ; cbData is a byte count: convert to chars and strip trailing NULs
+    ; cbData 是字节数：转字符数读取并剔除结尾 NUL
     text := RTrim(StrGet(lpData, cbData // 2, "UTF-16"), Chr(0))
     if (SubStr(text, 1, 4) = "OSD:") {
         payload := SubStr(text, 5)
-        dur := 1000
-        if RegExMatch(payload, "^(.*):(\d+)$", &m)
+        dur := 1000, optsStr := ""
+        ; 先尝试匹配键值选项后缀 / Try key=value suffix first
+        if RegExMatch(payload, "^(.*?):([a-z]{2,3}=.*)$", &mKv) {
+            pre := mKv[1], optsStr := mKv[2]
+            ; pre 可能还带持续时间 :digits
+            if RegExMatch(pre, "^(.*):(\d+)$", &mDur)
+                payload := mDur[1], dur := Integer(mDur[2])
+            else
+                payload := pre
+        } else if RegExMatch(payload, "^(.*):(\d+)$", &m) {
             payload := m[1], dur := Integer(m[2])
-        try OSD.Show(payload, dur)
+        }
+        try OSD.ShowExternal(payload, dur, optsStr)
         return true
     }
     if RegExMatch(text, "s)^BAR:(\d+):(.*)$", &m) {
@@ -3406,7 +3514,7 @@ BoolCfg(str) => BarShown(str)
 ParseBarLayout(str) {
     result := Map()
     
-    if InStr(str, ":") && !InStr(str, "bg") && !InStr(str, "tx") {
+    if InStr(str, ":") && !InStr(str, "bg") && !InStr(str, "tx") && !InStr(str, "fs=") && !InStr(str, "wrap=") {
         for clause in SplitEscaped(str, ";") {
             clause := Trim(clause)
             if (clause = "")
@@ -3431,7 +3539,7 @@ ParseBarLayout(str) {
             }
             if !result.Has(1)
                 result[1] := Map()
-            result[1][name] := {lo: axis.lo, hi: axis.hi, colors: colors, mode: "text", rounded: "off", align: axis.align}
+            result[1][name] := {lo: axis.lo, hi: axis.hi, colors: colors, mode: "text", rounded: "off", align: axis.align, fontSize: 0, wrapLines: 0}
         }
         return result
     }
@@ -3461,8 +3569,8 @@ ParseBarLayout(str) {
             continue
         }
         idx++
-        ; 解析剩余字段：颜色(6位hex)、模式(bg/tx)、圆角(on/off)
-        colors := [], mode := "text", rounded := "off"
+        ; 解析剩余字段：颜色(6位hex)、模式(bg/tx)、圆角(on/off)、字体(fs=N)、换行(wrap=N)
+        colors := [], mode := "text", rounded := "off", fontSize := 0, wrapLines := 0
         loop fields.Length - idx + 1 {
             f := Trim(fields[idx + A_Index - 1])
             if (f = "")
@@ -3473,10 +3581,14 @@ ParseBarLayout(str) {
                 mode := (f = "bg") ? "bg" : "text"
             else if (f = "on" || f = "off")
                 rounded := f
+            else if RegExMatch(f, "^fs=(\d+)$", &fss)
+                fontSize := Max(6, Integer(fss[1]))
+            else if RegExMatch(f, "^wrap=(\d+)$", &wrs)
+                wrapLines := Max(0, Integer(wrs[1]))
         }
         if !result.Has(barNum)
             result[barNum] := Map()
-        result[barNum][elName] := {lo: axis.lo, hi: axis.hi, colors: colors, mode: mode, rounded: rounded, align: axis.align}
+        result[barNum][elName] := {lo: axis.lo, hi: axis.hi, colors: colors, mode: mode, rounded: rounded, align: axis.align, fontSize: fontSize, wrapLines: wrapLines}
     }
     return result
 }
@@ -3764,26 +3876,26 @@ class BarInstance {
                 return myLayout[k]
         }
         defaults := Map(
-            "desktops",  {lo:0.00, hi:0.30, colors:[], mode:"text", rounded:"off", align:"Center"},
-            "custom_1",  {lo:0.30, hi:0.48, colors:[], mode:"text", rounded:"off", align:"Center"},
-            "custom_2",  {lo:0.48, hi:0.62, colors:[], mode:"text", rounded:"off", align:"Center"},
-            "progress",  {lo:0.40, hi:0.62, colors:[], mode:"text", rounded:"off", align:"Center"},
-            "date",      {lo:0.64, hi:0.82, colors:[], mode:"text", rounded:"off", align:"Center"},
-            "time",      {lo:0.82, hi:1.00, colors:[], mode:"text", rounded:"off", align:"Center"},
-            "wifi",      {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off", align:"Center"},
-            "battery",   {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off", align:"Center"},
-            "volume",    {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off", align:"Center"},
-            "disk",      {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off", align:"Center"},
-            "mem",       {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off", align:"Center"},
-            "cpu",       {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off", align:"Center"}
+            "desktops",  {lo:0.00, hi:0.30, colors:[], mode:"text", rounded:"off", align:"Center", fontSize:0, wrapLines:0},
+            "custom_1",  {lo:0.30, hi:0.48, colors:[], mode:"text", rounded:"off", align:"Center", fontSize:0, wrapLines:0},
+            "custom_2",  {lo:0.48, hi:0.62, colors:[], mode:"text", rounded:"off", align:"Center", fontSize:0, wrapLines:0},
+            "progress",  {lo:0.40, hi:0.62, colors:[], mode:"text", rounded:"off", align:"Center", fontSize:0, wrapLines:0},
+            "date",      {lo:0.64, hi:0.82, colors:[], mode:"text", rounded:"off", align:"Center", fontSize:0, wrapLines:0},
+            "time",      {lo:0.82, hi:1.00, colors:[], mode:"text", rounded:"off", align:"Center", fontSize:0, wrapLines:0},
+            "wifi",      {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off", align:"Center", fontSize:0, wrapLines:0},
+            "battery",   {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off", align:"Center", fontSize:0, wrapLines:0},
+            "volume",    {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off", align:"Center", fontSize:0, wrapLines:0},
+            "disk",      {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off", align:"Center", fontSize:0, wrapLines:0},
+            "mem",       {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off", align:"Center", fontSize:0, wrapLines:0},
+            "cpu",       {lo:0.00, hi:0.10, colors:[], mode:"text", rounded:"off", align:"Center", fontSize:0, wrapLines:0}
         )
-        return defaults.Has(name) ? defaults[name] : {lo:0.0, hi:1.0, colors:[], mode:"text", rounded:"off", align:"Center"}
+        return defaults.Has(name) ? defaults[name] : {lo:0.0, hi:1.0, colors:[], mode:"text", rounded:"off", align:"Center", fontSize:0, wrapLines:0}
     }
 
-    ; -- 行高 / _LineHeight (GDI 实测字体避免偏移) --
-    _LineHeight() {
-        global Bar_FontSize, FontName
-        fh := -Round(Bar_FontSize * A_ScreenDPI / 72)
+    ; -- 行高 / _LineHeightForFont (GDI 实测字体避免偏移，可指定字号) --
+    _LineHeightForFont(fontSize) {
+        global FontName
+        fh := -Round(fontSize * A_ScreenDPI / 72)
         hFont := DllCall("Gdi32\CreateFontW", "Int",fh,"Int",0,"Int",0,"Int",0,"Int",700
             ,"Int",0,"Int",0,"Int",0,"Int",0,"Int",0,"Int",5,"Int",0,"Int",0,"Str",FontName,"Ptr")
         dc := DllCall("Gdi32\CreateCompatibleDC", "Ptr",0, "Ptr")
@@ -3794,6 +3906,10 @@ class BarInstance {
         DllCall("Gdi32\DeleteDC", "Ptr",dc)
         DllCall("Gdi32\DeleteObject", "Ptr",hFont)
         return NumGet(tm, 0, "Int") + 4  ; tmHeight + padding
+    }
+    _LineHeight() {
+        global Bar_FontSize
+        return this._LineHeightForFont(Bar_FontSize)
     }
 
     ; -- 文字像素宽度 / Measure text width in pixels --
@@ -3843,6 +3959,24 @@ class BarInstance {
         lineH := this._LineHeight()
         thick := Bar_Height
         minThick := Max(lineH + 4, Round(Bar_FontSize * 2 + 5))
+        ; ---- 扫描 wrap 元素 + 已有推送数据的多行文本：bar 高度必须容纳 ----
+        layout := this._MyLayout()
+        for elName, seg in layout {
+            elWL := (seg.HasOwnProp("wrapLines") && seg.wrapLines > 0) ? seg.wrapLines : 0
+            ; 同时检查 Bar_ExternalData 中是否已有含换行符的文本
+            if (elWL == 0 && RegExMatch(elName, "^external_(\d+)$", &meExt)) {
+                n := Integer(meExt[1])
+                if Bar_ExternalData.Has(n) && InStr(Bar_ExternalData[n], "`n")
+                    elWL := Max(2, StrSplit(Bar_ExternalData[n], "`n").Length)
+            }
+            if (elWL > 1) {
+                elFontSize := (seg.HasOwnProp("fontSize") && seg.fontSize > 0) ? seg.fontSize : Bar_FontSize
+                elLineH := this._LineHeightForFont(elFontSize)
+                wrapH := elLineH * elWL + 4
+                if (wrapH > minThick)
+                    minThick := wrapH
+            }
+        }
         if (thick < minThick)
             thick := minThick
         this.Thick := thick
@@ -3881,17 +4015,28 @@ class BarInstance {
 
     ; -- 文本/渐变控件统一创建（各元素分支共用的唯一实现）--
     ; -- Canonical text-or-gradient ctrl factory shared by every element branch --
-    ; 多色或 bg 模式走渐变位图路径（更新经 GradText），否则普通 Text 控件
-    _AddTextOrGrad(g, el, cx, cy, cw, ch, colors, mode, rounded, txt, align) {
-        if (colors.Length > 1 || (colors.Length > 0 && mode = "bg")) {
-            this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, txt, align)
+    ; 多色/ bg 模式/ 多行换行 → 走渐变位图路径（GDI DT_WORDBREAK 换行），否则普通 Text 控件
+    _AddTextOrGrad(g, el, cx, cy, cw, ch, colors, mode, rounded, txt, align, fontSize := 0, wrapLines := 0) {
+        ; wrapLines>0 强制走 GDI 路径（非渐变 Text 控件无法多行换行）
+        if (colors.Length > 1 || (colors.Length > 0 && mode = "bg") || wrapLines > 0) {
+            useColors := colors
+            ; 单色+多行：复制颜色使其通过 TextOnGradient 的 Colors.Length>=2 检查
+            if (wrapLines > 0 && colors.Length == 1)
+                useColors := [colors[1], colors[1]]
+            else if (wrapLines > 0 && colors.Length == 0) {
+                ; 无颜色：用主题色做"伪渐变"保证多行渲染
+                global Color_Active
+                useColors := [Color_Active, Color_Active]
+            }
+            this._AddGradTextCtrl(g, el, cx, cy, cw, ch, useColors, mode, rounded, txt, align, fontSize, wrapLines)
             return this.GradText.Has(el) ? this.GradText[el].ctrl : ""
         }
         ctrl := g.Add("Text", this._Opt(cx, cy, cw, ch, align), txt)
+        useFS := (fontSize > 0) ? fontSize : Bar_FontSize
         if (colors.Length = 1)
             ctrl.SetFont("c" colors[1], FontName)
         else
-            ctrl.SetFont("s" Bar_FontSize " w600", FontName)
+            ctrl.SetFont("s" useFS " w600", FontName)
         return ctrl
     }
 
@@ -4012,7 +4157,16 @@ class BarInstance {
                         ; External widget: initial value from Bar_ExternalData (survives bar rebuild)
                         n := Integer(me[1])
                         txt := Bar_ExternalData.Has(n) ? Bar_ExternalData[n] : ""
-                        ctrl := this._AddTextOrGrad(g, el, cx, cy, cw, ch, colors, mode, rounded, txt, align)
+                        ; 提取 per-slot 字体大小和换行配置
+                        elFS := (seg.HasOwnProp("fontSize") && seg.fontSize > 0) ? seg.fontSize : 0
+                        elWL := (seg.HasOwnProp("wrapLines") && seg.wrapLines > 0) ? seg.wrapLines : 0
+                        ; 自动检测：文本含换行符但未显式配置 wrap → 自动启用多行
+                        if (elWL == 0 && InStr(txt, "`n"))
+                            elWL := Max(2, StrSplit(txt, "`n").Length)
+                        ; 外部槽位始终强制走 GDI 路径（普通 Text 控件无法后续切换多行）
+                        if (elWL == 0)
+                            elWL := 1
+                        ctrl := this._AddTextOrGrad(g, el, cx, cy, cw, ch, colors, mode, rounded, txt, align, elFS, elWL)
                         ; 渐变路径经 GradText 更新，存 "" 占位 / gradient path updates via GradText
                         this.ExtCtrls[n] := this.GradText.Has(el) ? "" : ctrl
                     }
@@ -4040,12 +4194,13 @@ class BarInstance {
     }
 
     ; -- 渐变文字控件 / _AddGradTextCtrl --
-    _AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode := "text", rounded := "off", txt := "", align := "Center") {
+    _AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode := "text", rounded := "off", txt := "", align := "Center", fontSize := 0, wrapLines := 0) {
         global Bar_FontSize, Color_Bg
         w := Round(cw), h := Round(ch)
         if (w < 2 || h < 2)
             return
         bgOff := Round(cx)
+        useFS := (fontSize > 0) ? fontSize : Bar_FontSize
 
         ; ===== bg 模式：彩色背景 + Text 叠加（文字透明显示 bar 底色）=====
         if (mode = "bg") {
@@ -4057,17 +4212,19 @@ class BarInstance {
             tColor := C1(Color_Bg)
             ctrl := g.Add("Text", Format("x{} y{} w{} h{} {} BackgroundTrans c{}"
                 , Round(cx), Round(cy), w, h, align, tColor), txt)
-            ctrl.SetFont("s" Bar_FontSize " w600", FontName)
+            ctrl.SetFont("s" useFS " w600", FontName)
             this.GradText[el] := {colors: colors, w: w, h: h, cx: Round(cx), cy: Round(cy)
-                , ctrl: ctrl, oldBM: hBM, mode: mode, rounded: rounded, isSimple: true, align: align}
+                , ctrl: ctrl, oldBM: hBM, mode: mode, rounded: rounded, isSimple: true, align: align
+                , fontSize: fontSize, wrapLines: wrapLines}
 
         ; ===== text 模式：原有渐变文字 bitmap 渲染 =====
         } else {
-            hBM := TextOnGradient(w, h, colors, txt, Bar_FontSize, "text", FontName, this.BgGradBM, bgOff, C1(Color_Bg), align)
+            hBM := TextOnGradient(w, h, colors, txt, useFS, "text", FontName, this.BgGradBM, bgOff, C1(Color_Bg), align, wrapLines)
             ctrl := g.Add("Picture", Format("x{} y{} w{} h{}", Round(cx), Round(cy), w, h)
                 , hBM ? "HBITMAP:" hBM : "")
             this.GradText[el] := {colors: colors, w: w, h: h, cx: Round(cx), cy: Round(cy)
-                , ctrl: ctrl, oldBM: hBM, mode: mode, rounded: rounded, isSimple: false, align: align}
+                , ctrl: ctrl, oldBM: hBM, mode: mode, rounded: rounded, isSimple: false, align: align
+                , fontSize: fontSize, wrapLines: wrapLines}
         }
         switch el {
             case "desktops":  this.DesktopsCtrl := ctrl
@@ -4099,7 +4256,15 @@ class BarInstance {
         if (gi.mode = "bg") {
             style := gi.rounded = "on" ? "bg_rounded" : "bg"
         }
-        hBM := TextOnGradient(gi.w, gi.h, gi.colors, newText, Bar_FontSize, style, FontName, this.BgGradBM, gi.cx, C1(Color_Bg), gi.align)
+        ; 使用 per-slot 的 fontSize 和 wrapLines（无覆盖时回退全局）
+        eFS := (gi.HasOwnProp("fontSize") && gi.fontSize > 0) ? gi.fontSize : Bar_FontSize
+        eWL := (gi.HasOwnProp("wrapLines") && gi.wrapLines > 0) ? gi.wrapLines : 0
+        ; 自动检测：文本含换行符但未配置 wrap → 自动启用多行渲染
+        if (eWL <= 1 && InStr(newText, "`n")) {
+            eWL := Max(2, StrSplit(newText, "`n").Length)
+            gi.wrapLines := eWL  ; 更新存储值，下次不重复检测
+        }
+        hBM := TextOnGradient(gi.w, gi.h, gi.colors, newText, eFS, style, FontName, this.BgGradBM, gi.cx, C1(Color_Bg), gi.align, eWL)
         if (!hBM)
             return
         try gi.ctrl.Value := "HBITMAP:" hBM

@@ -1,12 +1,12 @@
 <div align="center">
 
-# 🔲 AHK WM <sub>v2.9.0</sub>
+# 🔲 AHK WM <sub>v2.10.0</sub>
 
 <p>
   <img src="https://img.shields.io/badge/AutoHotkey-v2.0-cba6f7?style=flat-square" alt="AutoHotkey v2" />
   <img src="https://img.shields.io/badge/platform-Windows_7_~_11-b4befe?style=flat-square" alt="Platform" />
   <img src="https://img.shields.io/badge/license-MIT-f5c2e7?style=flat-square" alt="License" />
-  <img src="https://img.shields.io/badge/release-v2.9.0-cba6f7?style=flat-square" alt="Release" />
+  <img src="https://img.shields.io/badge/release-v2.10.0-cba6f7?style=flat-square" alt="Release" />
 </p>
 
 <p>
@@ -143,64 +143,70 @@
 
 ## 🔌 External Interfaces
 
-AHK_WM listens for `WM_COPYDATA` messages. External scripts can push text to the **status bar** or pop up **center-screen notifications**.
+AHK_WM listens for `WM_COPYDATA` messages. External scripts can push text to the **status bar** or pop up **center-screen notifications** — with full per-call visual customization.
 
 ### OSD (on-screen display)
 
 ```ahk
-; AHK_WM must be running
-AHK_WM_OSD(text, duration := 1000) {
-    DetectHiddenWindows(true)
-    h := WinExist("wm.ahk ahk_class AutoHotkey")
-    if !h
-        return false
-    payload := "OSD:" . text . ":" . duration
-    c := StrPut(payload, "UTF-16")
-    b := Buffer(A_PtrSize * 3, 0)
-    NumPut("Ptr", 0, b, 0), NumPut("UInt", c, b, A_PtrSize), NumPut("Ptr", StrPtr(payload), b, A_PtrSize * 2)
-    SendMessage(0x4A, 0, b.Ptr, , "ahk_id " . h)
-    return true
-}
+; Basic — uses config defaults
 AHK_WM_OSD("Build passed!", 3000)
+
+; With per-call overrides (all keys optional)
+AHK_WM_OSD("Disk full!", 5000, "fs=36,bg=CC3333,tx=FFFFFF,op=95,pos=30")
 ```
+
+**Available override keys** (see `docs/config-reference.md` for full table):
+
+| Key | Meaning | Default |
+|-----|---------|---------|
+| `fs` | Font size | Config `OSDFontSize` (20) |
+| `op` | Opacity % | Config `OSDOpacity` (78) |
+| `pos` | Vertical position % | Config `OSDPositionPct` (80) |
+| `bg` / `tx` | Background / text color | Theme colors |
+| `wr` | Max width (auto-wrap) | 85% monitor width |
+| `rd` / `rr` | Rounded corners on/off + radius | Config values |
+| `fn` | Font face | Config `FontName` |
+| `tag` | Logical label (same-tag OSDs replace each other) | *(none)* |
+
+External OSDs run in a separate instance pool — they never interfere with
+`wm.ahk`'s own internal OSD popups.
 
 ### Bar custom widgets (`external_N`)
 
-Add `external_N` to `[Bar] Layout`, then push text from any script:
+Add `external_N` to `[Bar] Layout`, optionally with `fs=` (font size) and
+`wrap=` (max lines).  The bar auto-grows when wrapped elements need more height.
 
-```ahk
-WMBarPush(slot, text) {
-    DetectHiddenWindows(true), SetTitleMatchMode(2)
-    target := WinExist("wm.ahk ahk_class AutoHotkey")
-    if !target
-        return false
-    msg := "BAR:" . slot . ":" . text
-    size := (StrLen(msg) + 1) * 2, buf := Buffer(size, 0)
-    StrPut(msg, buf, "UTF-16")
-    cds := Buffer(A_PtrSize * 3, 0)
-    NumPut("Ptr", 0, cds, 0), NumPut("UInt", size, cds, A_PtrSize), NumPut("Ptr", buf.Ptr, cds, A_PtrSize * 2)
-    res := 0
-    DllCall("User32\SendMessageTimeoutW", "Ptr", target, "UInt", 0x4A, "Ptr", A_ScriptHwnd, "Ptr", cds.Ptr, "UInt", 0x2, "UInt", 2000, "UInt*", &res, "Ptr")
-    return true
-}
-WMBarPush(1, "Hello from external script")
 ```
+Layout=external_1,1/5,7AA2F7,tx,fs=12;external_2,(2-4)/5,CDD6F4,tx,fs=14,wrap=2;…
+```
+
+Then push text from any script:
+```ahk
+WMBarPush(1, "Now Playing: Hey Jude — The Beatles")
+WMBarPush(2, "Take a sad song`nand make it better")  ; `n = newline, renders as 2 lines
+```
+
+### Bundled examples
+
+Ready-to-run examples with full documentation are in `docs/OSDExamples/` and
+`docs/BarExamples/`, each with English (`En/`) and Chinese (`Ch/`) variants.
 
 ### Claude Code integration
 
-Hook AHK_WM into Claude Code for completion notifications. Add to `.claude/settings.json`:
+Hook AHK_WM into Claude Code for completion notifications:
 
 ```json
 {
   "hooks": {
     "Stop": [
-      { "command": "C:\\Users\\Administrator\\Desktop\\AHK_WM\\docs\\osd-examples\\osd-claude-done.ahk" }
+      { "command": "C:\\Users\\Administrator\\Desktop\\AHK_WM\\docs\\OSDExamples\\En\\osd-simple.ahk" }
     ]
   }
 }
 ```
 
-Now every time Claude Code finishes, you'll see `🤖 Claude Code run Completed！`. The same pattern works with any tool that can run a `.ahk` file — task schedulers, CI pipelines, build scripts, whatever.
+The same pattern works with any tool that can run a `.ahk` file — task schedulers,
+CI pipelines, build scripts, whatever.
 
 📂 `docs/bar-examples/` and `docs/osd-examples/` have 12 ready-to-run demos (Chinese / English, heavily commented).
 

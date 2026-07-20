@@ -93,7 +93,7 @@
 ### Layout 格式
 
 ```
-Layout=[N,]元素,跨度[,颜色1,颜色2,…][,bg|tx][,on|off]; …
+Layout=[N,]元素,跨度[,颜色1,颜色2,…][,bg|tx][,on|off][,fs=N][,wrap=N]; …
 ```
 
 - `N` —— 栏编号（对应 `Instances` 中的顺序），默认 `1`。
@@ -103,12 +103,14 @@ Layout=[N,]元素,跨度[,颜色1,颜色2,…][,bg|tx][,on|off]; …
 - `bg` —— 渐变作为部件**背景**（文字以栏底色"挖空"显示）；`tx`（默认）—— 渐变
   作用于**文字**。
 - `on|off` —— `bg` 模式下的圆角开关。
+- `fs=N` —— 逐元素的字体大小（磅），默认使用全局 `Bar_FontSize`。
+- `wrap=N` —— 逐元素的最大显示行数（默认 `0` = 单行）。`wrap ≥ 2` 时栏自动增高
+  以容纳多行。文本中的换行符（`` `n ``）渲染为独立行；长文本自动在单词边界换行。
 - 兼容旧语法 `元素:跨度,颜色,…`。
 
 `external_N` 部件显示**外部脚本**经 `WM_COPYDATA` 推送的文本（负载格式
 `BAR:N:文本`）。推送一次即持续显示，直到下次推送或栏重载——无轮询、无临时文件。
-参见随附示例 `bar-custom-constant.ahk`、`bar-custom-variable.ahk`、
-`bar-custom-system.ahk`。
+参见随附示例 `docs/BarExamples/` 和 `docs/OSDExamples/`。
 
 ## [Border] 边框
 
@@ -182,6 +184,34 @@ Layout=[N,]元素,跨度[,颜色1,颜色2,…][,bg|tx][,on|off]; …
 | `OSDOpacity` | % | `78` | 0–100 | OSD 不透明度。 |
 | `OSDFontSize` | 整数 | `20` | ≥6 | OSD 字号。 |
 | `HelpRounded`、`HelpRadius`、`PowerRounded`、`PowerRadius`、`OSDRounded`、`OSDRadius` | — | *(全局值)* | — | 可选的按 GUI 覆盖全局圆角设置。 |
+
+### OSD 逐次调用自定义（WM_COPYDATA）
+
+外部脚本可在每次调用时通过附加 `键=值` 键值对覆盖 OSD 的全部视觉设置：
+
+```
+OSD:文本[:持续时间毫秒][:fs=24,op=90,pos=50,bg=FF4444,tx=FFFFFF]
+```
+
+| 键 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `fs` | 整数 磅 | `OSDFontSize` (20) | 字体大小。 |
+| `op` | %  | `OSDOpacity` (78) | 不透明度。 |
+| `pos` | %  | `OSDPositionPct` (80) | 垂直位置（0=顶部，100=底部）。 |
+| `bg` | 6 位 hex | 主题 `Color_Bg` | 背景色。 |
+| `tx` | 6 位 hex | 主题 `Color_Active` | 文字色。 |
+| `wr` | 整数 px | `屏幕宽 × 0.85` | 最大宽度，超出自动换行。 |
+| `rd` | on/off | `OSDRounded` | 圆角开关。 |
+| `rr` | 整数 px | `OSDRadius` | 圆角半径。 |
+| `fn` | 名称 | `FontName` | 字体名称。 |
+| `tag` | 字符串 | *(无)* | 逻辑标签。同 tag 的新 OSD 会替换旧的（不堆积）。无 tag 则每条 OSD 独立共存。 |
+
+所有键均可选——未指定的键回退使用 `[GUI]` 配置节的全局值。
+不传 opts 的旧脚本完全不受影响。
+
+**实例隔离：** 外部 OSD（通过 `WM_COPYDATA` 调用）与内部 OSD
+（`wm.ahk` 自身调用）使用独立的实例池。内部 OSD 单实例互替；
+外部 OSD 默认独立共存，除非通过 `tag` 分组。两边互不干扰。
 
 ## [WorkTime] 工时
 
@@ -302,12 +332,13 @@ Layout=[N,]元素,跨度[,颜色1,颜色2,…][,bg|tx][,on|off]; …
 
 | 负载 | 效果 |
 |---|---|
-| `OSD:文本[:时长ms]` | 弹出 OSD 提示。 |
+| `OSD:文本[:时长ms]` | 弹出 OSD 提示（使用配置默认值）。 |
+| `OSD:文本[:时长ms]:fs=N,op=N,…` | 弹出 OSD 并逐次覆盖外观（参见上方 [GUI] → OSD 逐次调用自定义）。 |
 | `BAR:N:文本` | 设置状态栏 `external_N` 部件内容。持续显示直到下次推送或栏重载。 |
 
-随附示例（`bar-custom-constant.ahk`、`bar-custom-variable.ahk`、
-`bar-custom-system.ahk`）内含可直接复制的 `WMBarPush(slot, text)` 辅助函数——
-一次函数调用，无轮询、无临时文件。
+随附示例脚本位于 `docs/OSDExamples/`（OSD 弹窗）和 `docs/BarExamples/`
+（状态栏部件），每种均提供英文（`En/`）和中文（`Ch/`）版本。
+每个脚本内含可直接复制的辅助函数及完整参数文档。
 
 ## 自检
 

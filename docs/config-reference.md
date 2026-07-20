@@ -96,7 +96,7 @@ All keys are colors and all accept gradients. Used only when `ActiveTheme=custom
 ### Layout format
 
 ```
-Layout=[N,]element,span[,color1,color2,…][,bg|tx][,on|off]; …
+Layout=[N,]element,span[,color1,color2,…][,bg|tx][,on|off][,fs=N][,wrap=N]; …
 ```
 
 - `N` — bar number (matches the order in `Instances`), default `1`.
@@ -106,12 +106,16 @@ Layout=[N,]element,span[,color1,color2,…][,bg|tx][,on|off]; …
 - `bg` — gradient becomes the widget **background** (text is punched out in the
   bar color); `tx` (default) — gradient is applied to the **text**.
 - `on|off` — rounded corners for `bg` mode.
+- `fs=N` — per-element font size in points (default: global `Bar_FontSize`).
+- `wrap=N` — maximum display lines for this element (default: `0` = single line).
+  When `wrap ≥ 2` the bar auto-grows to fit.  Text with embedded newlines (`` `n ``)
+  renders as separate lines; long lines auto-wrap at word boundaries.
 - Legacy `element:span,color,…` syntax is still accepted.
 
 `external_N` widgets display text pushed by **external scripts** via
 `WM_COPYDATA` with the payload `BAR:N:text`. A single push persists until the
 next push or a bar reload — no polling, no temp files. See the bundled
-`bar-custom-constant.ahk`, `bar-custom-variable.ahk`, `bar-custom-system.ahk`.
+examples in `docs/BarExamples/` and `docs/OSDExamples/`.
 
 ## [Border]
 
@@ -186,6 +190,36 @@ Border **colors** live in `[Theme]`: `BorderDrag` (focused), `BorderUnfocus`
 | `OSDOpacity` | % | `78` | 0–100 | OSD opacity. |
 | `OSDFontSize` | int | `20` | ≥6 | OSD font size. |
 | `HelpRounded`, `HelpRadius`, `PowerRounded`, `PowerRadius`, `OSDRounded`, `OSDRadius` | — | *(global)* | — | Optional per-GUI overrides of the two global rounding keys. |
+
+### OSD per-call customization (WM_COPYDATA)
+
+External scripts can override all OSD visual settings per call by appending
+`key=value` pairs to the payload:
+
+```
+OSD:text[:duration_ms][:fs=24,op=90,pos=50,bg=FF4444,tx=FFFFFF]
+```
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `fs` | int pt | `OSDFontSize` (20) | Font size. |
+| `op` | %  | `OSDOpacity` (78) | Opacity. |
+| `pos` | %  | `OSDPositionPct` (80) | Vertical position (0=top, 100=bottom). |
+| `bg` | 6-hex | theme `Color_Bg` | Background color. |
+| `tx` | 6-hex | theme `Color_Active` | Text color. |
+| `wr` | int px | `monW × 0.85` | Max width; text auto-wraps when exceeded. |
+| `rd` | on/off | `OSDRounded` | Rounded corners. |
+| `rr` | int px | `OSDRadius` | Corner radius. |
+| `fn` | name | `FontName` | Font face. |
+| `tag` | string | *(none)* | Logical label. A new OSD with the same `tag` replaces the previous one (same-tag OSDs don't stack). Without a tag, each OSD is an independent instance. |
+
+All keys are optional — unspecified keys fall back to the `[GUI]` config values.
+Existing scripts that don't pass opts continue to work unchanged.
+
+**Instance isolation:** External OSDs (via `WM_COPYDATA`) and internal OSDs
+(called by `wm.ahk` itself) run in separate instance pools.  Internal OSDs
+replace each other (single instance); external OSDs are independent unless
+grouped by `tag`.  Neither side interferes with the other.
 
 ## [WorkTime]
 
@@ -308,12 +342,14 @@ Send a `WM_COPYDATA` message to the hidden main window
 
 | Payload | Effect |
 |---|---|
-| `OSD:text[:duration_ms]` | Show an OSD popup. |
+| `OSD:text[:duration_ms]` | Show an OSD popup using config defaults. |
+| `OSD:text[:duration_ms]:fs=N,op=N,…` | Show an OSD with per-call visual overrides (see [GUI] → OSD per-call customization above). |
 | `BAR:N:text` | Set the content of bar widget `external_N`. Persists until the next push or bar reload. |
 
-The bundled examples (`bar-custom-constant.ahk`, `bar-custom-variable.ahk`,
-`bar-custom-system.ahk`) contain a ready-to-copy `WMBarPush(slot, text)` helper —
-one function call, no polling, no temp files.
+Bundled example scripts live in `docs/OSDExamples/` (OSD popups) and
+`docs/BarExamples/` (bar widgets), each with English (`En/`) and
+Chinese (`Ch/`) variants.  Every script includes a ready-to-copy helper
+function with full parameter documentation.
 
 ## Self-test
 

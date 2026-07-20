@@ -1,12 +1,12 @@
 <div align="center">
 
-# 🔲 AHK WM <sub>v2.9.0</sub>
+# 🔲 AHK WM <sub>v2.10.0</sub>
 
 <p>
   <img src="https://img.shields.io/badge/AutoHotkey-v2.0-cba6f7?style=flat-square" alt="AutoHotkey v2" />
   <img src="https://img.shields.io/badge/平台-Windows_7_~_11-b4befe?style=flat-square" alt="平台" />
   <img src="https://img.shields.io/badge/许可-MIT-f5c2e7?style=flat-square" alt="许可" />
-  <img src="https://img.shields.io/badge/版本-v2.9.0-cba6f7?style=flat-square" alt="版本" />
+  <img src="https://img.shields.io/badge/版本-v2.10.0-cba6f7?style=flat-square" alt="版本" />
 </p>
 
 <p>
@@ -146,64 +146,66 @@
 
 ## 🔌 外部接口
 
-AHK_WM 监听 `WM_COPYDATA` 消息，外部脚本可以向**状态栏**推送文本或在**屏幕中央**弹出通知。
+AHK_WM 监听 `WM_COPYDATA` 消息，外部脚本可以向**状态栏**推送文本或在**屏幕中央**弹出通知——并支持逐次调用的完整视觉自定义。
 
 ### OSD（屏幕提示）
 
 ```ahk
-; AHK_WM 需在运行中
-AHK_WM_OSD(text, duration := 1000) {
-    DetectHiddenWindows(true)
-    h := WinExist("wm.ahk ahk_class AutoHotkey")
-    if !h
-        return false
-    payload := "OSD:" . text . ":" . duration
-    c := StrPut(payload, "UTF-16")
-    b := Buffer(A_PtrSize * 3, 0)
-    NumPut("Ptr", 0, b, 0), NumPut("UInt", c, b, A_PtrSize), NumPut("Ptr", StrPtr(payload), b, A_PtrSize * 2)
-    SendMessage(0x4A, 0, b.Ptr, , "ahk_id " . h)
-    return true
-}
+; 基础用法 — 使用配置文件默认值
 AHK_WM_OSD("编译完成！", 3000)
+
+; 逐次覆盖外观（所有键可选，未指定则回退配置文件值）
+AHK_WM_OSD("磁盘满了！", 5000, "fs=36,bg=CC3333,tx=FFFFFF,op=95,pos=30")
 ```
+
+**可用覆盖键**（完整表格见 `docs/config-reference-zh.md`）：
+
+| 键 | 含义 | 默认值 |
+|---|---|---|
+| `fs` | 字体大小 | 配置 `OSDFontSize` (20) |
+| `op` | 不透明度 % | 配置 `OSDOpacity` (78) |
+| `pos` | 垂直位置 % | 配置 `OSDPositionPct` (80) |
+| `bg` / `tx` | 背景色 / 文字色 | 主题颜色 |
+| `wr` | 最大宽度（自动换行）| 屏幕宽 × 0.85 |
+| `rd` / `rr` | 圆角开关 + 半径 | 配置值 |
+| `fn` | 字体名称 | 配置 `FontName` |
+| `tag` | 逻辑标签（同标签新 OSD 替换旧 OSD）| *(无)* |
+
+外部 OSD 运行在独立实例池，与 `wm.ahk` 自身的内部 OSD 互不干扰。
 
 ### Bar 自定义部件（`external_N`）
 
-在 `[Bar] Layout` 中添加 `external_N`，然后从其他脚本推送文本：
+在 `[Bar] Layout` 中添加 `external_N`，可选 `fs=`（字体大小）和
+`wrap=`（最大行数）。需要多行时 bar 自动增高。
 
-```ahk
-WMBarPush(slot, text) {
-    DetectHiddenWindows(true), SetTitleMatchMode(2)
-    target := WinExist("wm.ahk ahk_class AutoHotkey")
-    if !target
-        return false
-    msg := "BAR:" . slot . ":" . text
-    size := (StrLen(msg) + 1) * 2, buf := Buffer(size, 0)
-    StrPut(msg, buf, "UTF-16")
-    cds := Buffer(A_PtrSize * 3, 0)
-    NumPut("Ptr", 0, cds, 0), NumPut("UInt", size, cds, A_PtrSize), NumPut("Ptr", buf.Ptr, cds, A_PtrSize * 2)
-    res := 0
-    DllCall("User32\SendMessageTimeoutW", "Ptr", target, "UInt", 0x4A, "Ptr", A_ScriptHwnd, "Ptr", cds.Ptr, "UInt", 0x2, "UInt", 2000, "UInt*", &res, "Ptr")
-    return true
-}
-WMBarPush(1, "来自外部脚本")
+```
+Layout=external_1,1/5,7AA2F7,tx,fs=12;external_2,(2-4)/5,CDD6F4,tx,fs=14,wrap=2;…
 ```
 
-### Claude Code 集成
+然后从其他脚本推送文本：
+```ahk
+WMBarPush(1, "正在播放：Hey Jude — The Beatles")
+WMBarPush(2, "Take a sad song`nand make it better")  ; `n = 换行符，渲染为两行
+```
 
-在 `.claude/settings.json` 中配置 hook，Claude Code 完成后自动弹出通知：
+### 随附示例
+
+开箱即用的示例脚本位于 `docs/OSDExamples/` 和 `docs/BarExamples/`，
+每种均提供英文（`En/`）和中文（`Ch/`）双语版本，注释详尽含完整参数文档。
+
+### Claude Code 集成
 
 ```json
 {
   "hooks": {
     "Stop": [
-      { "command": "C:\\Users\\Administrator\\Desktop\\AHK_WM\\docs\\osd-examples\\osd-claude-done.ahk" }
+      { "command": "C:\\Users\\Administrator\\Desktop\\AHK_WM\\docs\\OSDExamples\\Ch\\osd-simple.ahk" }
     ]
   }
 }
 ```
 
-每次 Claude Code 跑完就会看到 `🤖 Claude Code run Completed！`。同样的套路适用于任何能执行 `.ahk` 的工具——任务计划、CI 流水线、构建脚本都行。
+同样的套路适用于任何能执行 `.ahk` 的工具——任务计划、CI 流水线、构建脚本都行。
 
 📂 `bar-examples/` 和 `osd-examples/` 有 12 个开箱即用的示例（中英文、详细注释）。
 
