@@ -46,7 +46,7 @@ Persistent
 ; ==================== 在这里配置你的通知规则 ====================
 ; 每条规则：{time, text, dur, opts?} — opts 可选（见上方说明）
 global RULES := [
-    {time: "0900",   text: "☕ 早上好！开始新的一天。",
+    {time: "0957",   text: "☕ 早上好！开始新的一天。",
         dur: 5, opts: "fs=28,bg=FF8C42,tx=FFFFFF,op=90,pos=25,rr=12"},
     {time: "1200",   text: "🍜 午饭时间！",
         dur: 5, opts: "fs=26,bg=4CAF50,tx=FFFFFF,op=88,pos=80,rr=16"},
