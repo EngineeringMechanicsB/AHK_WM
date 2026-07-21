@@ -86,6 +86,8 @@ global Bar_Cfg := Map()
 ; 外部脚本推送的 bar 自定义部件内容（槽位号 → 文本，持续显示直至下次更新）
 ; External bar widget data pushed via WM_COPYDATA (slot -> text, persists until next push)
 global Bar_ExternalData := Map()
+; 外部动态槽位配置（自包含协议推送，无需 Layout 声明）
+global Bar_ExternalSlots := Map()
 
 ; ---- Pie-menu parameters / 功能环 ----
 global Pie_Size, Pie_Radius, Pie_CenterZone
@@ -1563,7 +1565,7 @@ MigrateConfigKeys() {
     }
     try {
         FileDelete(ConfigFile)
-        FileAppend(content, ConfigFile, "UTF-16")
+        FileAppend(content, ConfigFile, "UTF-8")
     }
     if migrated
         WMLog("Config migrated: " . migrated . " legacy key(s) renamed to new scheme", "INFO", "Config")
@@ -1601,7 +1603,7 @@ _ConfigWrite(section, key, val) {
     }
     try {
         FileDelete(ConfigFile)
-        FileAppend(content, ConfigFile, "UTF-16")
+        FileAppend(content, ConfigFile, "UTF-8")
     }
 }
 
@@ -1615,7 +1617,9 @@ _ConfigWrite(section, key, val) {
 SanitizeConfigEncoding() {
     global ConfigFile
     raw := ""
-    try raw := FileRead(ConfigFile)
+    try raw := FileRead(ConfigFile, "UTF-8")
+    catch
+        try raw := FileRead(ConfigFile)
     ; 未出现乱码标记 → 无需修复
     if !InStr(raw, Chr(0xFFFD)) && !InStr(raw, "��")
         return
@@ -1650,7 +1654,7 @@ SanitizeConfigEncoding() {
     }
     try {
         FileDelete(ConfigFile)
-        FileAppend(newContent, ConfigFile, "UTF-16")
+        FileAppend(newContent, ConfigFile, "UTF-8")
         WMLog("Config repaired and saved as UTF-8")
     }
 }
@@ -2028,7 +2032,7 @@ WTMMoveRight=Alt+Shift+L
     if !FileExist(ConfigFile) {
         tmpIni := StrReplace(DefaultIni, "%OUTPUTDIR%", A_MyDocuments)
         try {
-            FileAppend(tmpIni, ConfigFile, "UTF-16")
+            FileAppend(tmpIni, ConfigFile, "UTF-8")
         } catch Error as e {
             MsgBox("Failed to create config file: " . e.Message)
             ExitApp
@@ -2680,8 +2684,6 @@ class OSD {
         fs       := o.Has("fs")  ? Max(6, Integer(o["fs"]))             : OSD_FontSize
         opPct    := o.Has("op")  ? Integer(o["op"])                      : 0
         opVal    := (opPct > 0)  ? Pct2Alpha(opPct)                      : OSD_Transparent
-        yPct     := o.Has("pos") ? Integer(o["pos"])                     : 0
-        yPos     := (yPct > 0)   ? Pct2PxH(yPct)                         : OSD_Height
         bgCol    := o.Has("bg")  ? C1(o["bg"])                           : Color_Bg
         txCol    := o.Has("tx")  ? C1(o["tx"])                           : Color_Active
         maxWVal  := o.Has("wr")  ? Max(100, Integer(o["wr"]))           : 0
@@ -2690,10 +2692,26 @@ class OSD {
         ff       := o.Has("fn")  ? o["fn"]                               : FontName
 
         MouseGetPos(&mx,)
-        monIdx := GetMonitorIndexAtPoint(mx, yPos)
+        monIdx := GetMonitorIndexAtPoint(mx, OSD_Height)
         MonitorGet(monIdx, &mL, &mT, &mR, &mB)
-        monW := mR - mL
+        monW := mR - mL, monH := mB - mT
         cx := (mL + mR) // 2
+
+        ; ---- x/y 定位（像素或百分比），pos=N 旧版兼容 ----
+        if o.Has("x") {
+            xs := o["x"]
+            xPos := RegExMatch(xs, "^(\d+)%$", &xp) ? mL + Round(monW * Integer(xp[1]) / 100) : mL + Integer(xs)
+        } else {
+            xPos := cx
+        }
+        if o.Has("y") {
+            ys := o["y"]
+            yPos := RegExMatch(ys, "^(\d+)%$", &yp) ? mT + Round(monH * Integer(yp[1]) / 100) : mT + Integer(ys)
+        } else if o.Has("pos") {
+            yPos := (Integer(o["pos"]) > 0) ? Pct2PxH(Integer(o["pos"])) : OSD_Height
+        } else {
+            yPos := OSD_Height
+        }
 
         fScale := fs / 20.0
         padX := Round(30 * fScale)
@@ -2716,7 +2734,7 @@ class OSD {
             g.Show(Format("NoActivate AutoSize Hide"))
             g.GetPos(, , &gw, &gh)
         }
-        g.Show(Format("NoActivate AutoSize x{} y{}", cx - gw//2, yPos))
+        g.Show(Format("NoActivate AutoSize x{} y{}", xPos - gw//2, yPos))
 
         WinSetTransparent(opVal, g.Hwnd)
         RoundWindowEx(g, roundOn, roundRad)
@@ -2758,11 +2776,14 @@ ShowOSD(text) => OSD.Show(text)
 ; ---- 外部消息接口 / External interface via WM_COPYDATA ----
 ; 其他 AHK 脚本可通过 SendMessage 向 AHK_WM 发送消息（查找主窗口
 ; "wm.ahk ahk_class AutoHotkey"），支持两种协议：
-;   "OSD:消息文本[:持续时间ms][:键值选项]"  → 弹出 OSD 提示（外部，支持 per-call 自定义）
-;   "BAR:槽位号:文本"                      → 更新 bar 的 external_N 部件
-; 键值选项格式: fs=24,op=90,pos=50,bg=FF4444,tx=FFFFFF,wr=400,rd=on,rr=15,fn=Consolas
-; 所有键均可选，未指定则回退配置文件全局值。外部 OSD 与内部 OSD 实例隔离、互不干扰。
-; 参见随附示例 bar-custom-constant.ahk / bar-custom-variable.ahk / bar-custom-system.ahk
+;   "OSD:消息文本[:持续时间ms][:键值选项]"  → 弹出 OSD 提示（外部，per-call 自定义）
+;   "BAR:槽位号:文本"                      → 旧版 bar（需 Layout 声明 external_N）
+;   "BAR:槽位号:lo/hi:文本[:键值选项]"      → 新版 bar（自包含，无需 Layout）
+;
+; OSD 键值: fs=N,op=N,x=N[%],y=N[%],pos=N,bg=RRGGBB,tx=RRGGBB,wr=N,rd=on|off,rr=N,fn=Name,tag=ID
+;   x=N[%] / y=N[%] — 像素或%坐标; pos=N — 旧版垂直%
+; BAR 键值: bg=RRGGBB,tx=RRGGBB,rd=on|off,rr=N,fs=N,wrap=N
+; 所有键均可选，未指定回退默认值。外部 OSD 与内部 OSD 实例隔离、互不干扰。
 OnMessage(0x4A, _WM_OnCopyData)  ; WM_COPYDATA
 
 _WM_OnCopyData(wParam, lParam, msgNum, hwnd) {
@@ -2792,9 +2813,43 @@ _WM_OnCopyData(wParam, lParam, msgNum, hwnd) {
         try OSD.ShowExternal(payload, dur, optsStr)
         return true
     }
-    if RegExMatch(text, "s)^BAR:(\d+):(.*)$", &m) {
-        Bar_ExternalData[Integer(m[1])] := m[2]
-        try UpdateExternalWidgets(Integer(m[1]))
+    if RegExMatch(text, "s)^BAR:(\d+):(.*)$", &mBar) {
+        slot := Integer(mBar[1]), rest := mBar[2]
+        ; ---- 自包含格式：BAR:slot:lo/hi:text[:opts] ----
+        if RegExMatch(rest, "^([\d.]+)/([\d.]+):(.*)$", &mSc) {
+            lo := Number(mSc[1]), hi := Number(mSc[2])
+            afterSpan := mSc[3]
+            txt := afterSpan, optsStr := ""
+            if RegExMatch(afterSpan, "^(.*?):([a-z]{2,3}=.*)$", &mOpts)
+                txt := mOpts[1], optsStr := mOpts[2]
+            ; 更新槽位配置
+            cfg := Bar_ExternalSlots.Has(slot) ? Bar_ExternalSlots[slot] : Map()
+            changed := (!cfg.Has("lo") || cfg["lo"] != lo || cfg["hi"] != hi)
+            cfg["lo"] := lo, cfg["hi"] := hi
+            if (optsStr != "") {
+                for part in StrSplit(optsStr, ",") {
+                    part := Trim(part)
+                    if RegExMatch(part, "^([a-z]{2,3})=(.*)$", &kv2) {
+                        key := kv2[1], val := Trim(kv2[2])
+                        if (!cfg.Has(key) || cfg[key] != val)
+                            changed := true
+                        cfg[key] := val
+                    }
+                }
+            }
+            Bar_ExternalSlots[slot] := cfg
+            Bar_ExternalData[slot] := txt
+            if changed {
+                CreateStatusBar()
+                UpdateExternalWidgets()
+            } else {
+                try UpdateExternalWidgets(slot)
+            }
+            return true
+        }
+        ; ---- 旧格式：BAR:slot:text ----
+        Bar_ExternalData[slot] := rest
+        try UpdateExternalWidgets(slot)
         return true
     }
     return false
@@ -3798,6 +3853,25 @@ WorkPercent() {
     return (ElapsedSec / TotalSec) * 100
 }
 
+; ---- Bar wrap 高度扫描辅助（Layout + 动态槽位共用）----
+_BarScanWrapFn(elName, seg, minThick, bi) {
+    global Bar_ExternalData, Bar_FontSize
+    elWL := (seg.HasOwnProp("wrapLines") && seg.wrapLines > 0) ? seg.wrapLines : 0
+    if (elWL == 0 && RegExMatch(elName, "^external_(\d+)$", &meExt)) {
+        n := Integer(meExt[1])
+        if Bar_ExternalData.Has(n) && InStr(Bar_ExternalData[n], "`n")
+            elWL := Max(2, StrSplit(Bar_ExternalData[n], "`n").Length)
+    }
+    if (elWL > 1) {
+        elFS := (seg.HasOwnProp("fontSize") && seg.fontSize > 0) ? seg.fontSize : Bar_FontSize
+        elLH := bi._LineHeightForFont(elFS)
+        wrapH := elLH * elWL + 4
+        if (wrapH > minThick)
+            minThick := wrapH
+    }
+    return minThick
+}
+
 ; ---- One bar strip on one monitor edge / 状态栏实例 ----
 class BarInstance {
     Mon := 1, Pos := "top", Offset := 0, Thick := 30
@@ -3874,6 +3948,26 @@ class BarInstance {
         for k in keys {
             if myLayout.Has(k)
                 return myLayout[k]
+        }
+        ; 动态外部槽位（自包含协议，无需 Layout 声明）
+        if RegExMatch(name, "^external_(\d+)$", &me) {
+            global Bar_ExternalSlots
+            n := Integer(me[1])
+            if Bar_ExternalSlots.Has(n) {
+                ec := Bar_ExternalSlots[n]
+                colors := [], mode := "text"
+                if ec.Has("bg")
+                    colors.Push(ec["bg"]), mode := "bg"
+                else if ec.Has("tx")
+                    colors.Push(ec["tx"])
+                return {lo: ec.Has("lo") ? ec["lo"] : 0.0
+                    , hi: ec.Has("hi") ? ec["hi"] : 1.0
+                    , colors: colors, mode: mode
+                    , rounded: ec.Has("rd") ? ec["rd"] : "off"
+                    , align: "Center"
+                    , fontSize: ec.Has("fs") ? Integer(ec["fs"]) : 0
+                    , wrapLines: ec.Has("wrap") ? Integer(ec["wrap"]) : 0}
+            }
         }
         defaults := Map(
             "desktops",  {lo:0.00, hi:0.30, colors:[], mode:"text", rounded:"off", align:"Center", fontSize:0, wrapLines:0},
@@ -3961,21 +4055,14 @@ class BarInstance {
         minThick := Max(lineH + 4, Round(Bar_FontSize * 2 + 5))
         ; ---- 扫描 wrap 元素 + 已有推送数据的多行文本：bar 高度必须容纳 ----
         layout := this._MyLayout()
-        for elName, seg in layout {
-            elWL := (seg.HasOwnProp("wrapLines") && seg.wrapLines > 0) ? seg.wrapLines : 0
-            ; 同时检查 Bar_ExternalData 中是否已有含换行符的文本
-            if (elWL == 0 && RegExMatch(elName, "^external_(\d+)$", &meExt)) {
-                n := Integer(meExt[1])
-                if Bar_ExternalData.Has(n) && InStr(Bar_ExternalData[n], "`n")
-                    elWL := Max(2, StrSplit(Bar_ExternalData[n], "`n").Length)
-            }
-            if (elWL > 1) {
-                elFontSize := (seg.HasOwnProp("fontSize") && seg.fontSize > 0) ? seg.fontSize : Bar_FontSize
-                elLineH := this._LineHeightForFont(elFontSize)
-                wrapH := elLineH * elWL + 4
-                if (wrapH > minThick)
-                    minThick := wrapH
-            }
+        for elName, seg in layout
+            minThick := _BarScanWrapFn(elName, seg, minThick, this)
+        ; 动态外部槽位
+        global Bar_ExternalSlots
+        for n, ec in Bar_ExternalSlots {
+            seg := {wrapLines: ec.Has("wrap") ? Integer(ec["wrap"]) : 0
+                , fontSize: ec.Has("fs") ? Integer(ec["fs"]) : 0}
+            minThick := _BarScanWrapFn("external_" n, seg, minThick, this)
         }
         if (thick < minThick)
             thick := minThick
@@ -4081,6 +4168,13 @@ class BarInstance {
         ; 外部推送部件 external_N / External push widgets
         for key, _ in layout {
             if RegExMatch(key, "^external_\d+$")
+                elements.Push(key)
+        }
+        ; 动态外部槽位（自包含协议，无需 Layout 声明）
+        global Bar_ExternalSlots
+        for n, _ in Bar_ExternalSlots {
+            key := "external_" n
+            if !layout.Has(key)
                 elements.Push(key)
         }
 
