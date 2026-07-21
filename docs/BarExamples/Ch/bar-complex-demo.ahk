@@ -53,8 +53,8 @@ SetTimer(PushVerse, 3000)
 
 OnExit(Cleanup)
 Cleanup(*) {
-    _WMSend("BAR:1::")
-    _WMSend("BAR:2::")
+    _WMSend("BAR:1:")
+    _WMSend("BAR:2:")
 }
 Esc::ExitApp
 

@@ -31,7 +31,7 @@ SetTimer(PushTick, 3000)
 
 ; 退出时清空 bar 内容
 OnExit(Cleanup)
-Cleanup(*) => _WMSend("BAR:1::")
+Cleanup(*) => _WMSend("BAR:1:")
 Esc::ExitApp
 
 ; ------------------------------------------------------------------------------
