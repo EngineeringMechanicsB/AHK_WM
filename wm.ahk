@@ -1565,7 +1565,7 @@ MigrateConfigKeys() {
     }
     try {
         FileDelete(ConfigFile)
-        FileAppend(content, ConfigFile, "UTF-8")
+        FileAppend(content, ConfigFile, "UTF-16")
     }
     if migrated
         WMLog("Config migrated: " . migrated . " legacy key(s) renamed to new scheme", "INFO", "Config")
@@ -1603,7 +1603,7 @@ _ConfigWrite(section, key, val) {
     }
     try {
         FileDelete(ConfigFile)
-        FileAppend(content, ConfigFile, "UTF-8")
+        FileAppend(content, ConfigFile, "UTF-16")
     }
 }
 
@@ -1617,9 +1617,7 @@ _ConfigWrite(section, key, val) {
 SanitizeConfigEncoding() {
     global ConfigFile
     raw := ""
-    try raw := FileRead(ConfigFile, "UTF-8")
-    catch
-        try raw := FileRead(ConfigFile)
+    try raw := FileRead(ConfigFile)
     ; 未出现乱码标记 → 无需修复
     if !InStr(raw, Chr(0xFFFD)) && !InStr(raw, "��")
         return
@@ -1654,7 +1652,7 @@ SanitizeConfigEncoding() {
     }
     try {
         FileDelete(ConfigFile)
-        FileAppend(newContent, ConfigFile, "UTF-8")
+        FileAppend(newContent, ConfigFile, "UTF-16")
         WMLog("Config repaired and saved as UTF-8")
     }
 }
@@ -2032,7 +2030,7 @@ WTMMoveRight=Alt+Shift+L
     if !FileExist(ConfigFile) {
         tmpIni := StrReplace(DefaultIni, "%OUTPUTDIR%", A_MyDocuments)
         try {
-            FileAppend(tmpIni, ConfigFile, "UTF-8")
+            FileAppend(tmpIni, ConfigFile, "UTF-16")
         } catch Error as e {
             MsgBox("Failed to create config file: " . e.Message)
             ExitApp
