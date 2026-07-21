@@ -33,7 +33,7 @@ Persistent
 ; ==============================================================================
 
 ; ==================== 配置区 ====================
-global FILE_PATH      := "C:\Users\Administrator\Desktop\mytext.txt"
+global FILE_PATH      := A_ScriptDir "\osd-pager-demo.txt"  ; 同目录下的示例文本
 global CHARS_PER_PAGE := 10
 global OSD_DURATION   := 0    ; 0 = 持续显示到翻页（tag 替换）
 ; ================================================
@@ -102,8 +102,16 @@ Left::PrevPage()
 Right::NextPage()
 PgUp::PrevPage()
 PgDn::NextPage()
-Home:: { global gCurPage; gCurPage := 1; ShowPage(1) }
-End::  { global gCurPage, gTotalPage; gCurPage := gTotalPage; ShowPage(gTotalPage) }
+Home:: {
+    global gCurPage
+    gCurPage := 1
+    ShowPage(1)
+}
+End:: {
+    global gCurPage, gTotalPage
+    gCurPage := gTotalPage
+    ShowPage(gTotalPage)
+}
 Esc::ExitApp
 
 ; ---- 启动 ----

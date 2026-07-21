@@ -2592,7 +2592,7 @@ class OSD {
             return m
         for part in StrSplit(optsStr, ",") {
             part := Trim(part)
-            if RegExMatch(part, "^([a-z]{1,3})=(.*)$", &kv)
+            if RegExMatch(part, "^([a-z]{1,4})=(.*)$", &kv)
                 m[kv[1]] := Trim(kv[2])
         }
         return m
@@ -2772,7 +2772,7 @@ _WM_OnCopyData(wParam, lParam, msgNum, hwnd) {
         payload := SubStr(text, 5)
         dur := 1000, optsStr := ""
         ; 先尝试匹配键值选项后缀 / Try key=value suffix first
-        if RegExMatch(payload, "^(.*?):([a-z]{2,3}=.*)$", &mKv) {
+        if RegExMatch(payload, "^(.*?):([a-z]{1,4}=.*)$", &mKv) {
             pre := mKv[1], optsStr := mKv[2]
             ; pre 可能还带持续时间 :digits
             if RegExMatch(pre, "^(.*):(\d+)$", &mDur)
@@ -2792,7 +2792,7 @@ _WM_OnCopyData(wParam, lParam, msgNum, hwnd) {
             lo := Number(mSc[1]), hi := Number(mSc[2])
             afterSpan := mSc[3]
             txt := afterSpan, optsStr := ""
-            if RegExMatch(afterSpan, "^(.*?):([a-z]{2,3}=.*)$", &mOpts)
+            if RegExMatch(afterSpan, "^(.*?):([a-z]{1,4}=.*)$", &mOpts)
                 txt := mOpts[1], optsStr := mOpts[2]
             ; 更新槽位配置
             cfg := Bar_ExternalSlots.Has(slot) ? Bar_ExternalSlots[slot] : Map()
@@ -2801,7 +2801,7 @@ _WM_OnCopyData(wParam, lParam, msgNum, hwnd) {
             if (optsStr != "") {
                 for part in StrSplit(optsStr, ",") {
                     part := Trim(part)
-                    if RegExMatch(part, "^([a-z]{2,3})=(.*)$", &kv2) {
+                    if RegExMatch(part, "^([a-z]{1,4})=(.*)$", &kv2) {
                         key := kv2[1], val := Trim(kv2[2])
                         if (!cfg.Has(key) || cfg[key] != val)
                             changed := true

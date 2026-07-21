@@ -34,7 +34,7 @@ Persistent
 ; ==============================================================================
 
 ; ==================== CONFIGURATION ====================
-global FILE_PATH      := "C:\Users\Administrator\Desktop\mytext.txt"
+global FILE_PATH      := A_ScriptDir "\osd-pager-demo.txt"  ; demo file in same folder
 global CHARS_PER_PAGE := 10
 global OSD_DURATION   := 0    ; 0 = stay until next page (uses tag replacement)
 ; =======================================================
@@ -103,8 +103,16 @@ Left::PrevPage()
 Right::NextPage()
 PgUp::PrevPage()
 PgDn::NextPage()
-Home:: { global gCurPage; gCurPage := 1; ShowPage(1) }
-End::  { global gCurPage, gTotalPage; gCurPage := gTotalPage; ShowPage(gTotalPage) }
+Home:: {
+    global gCurPage
+    gCurPage := 1
+    ShowPage(1)
+}
+End:: {
+    global gCurPage, gTotalPage
+    gCurPage := gTotalPage
+    ShowPage(gTotalPage)
+}
 Esc::ExitApp
 
 ; ---- Startup ----
