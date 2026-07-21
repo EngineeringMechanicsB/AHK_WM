@@ -5,8 +5,8 @@ Persistent
 ; Bar 示例 2 — 多行文本（自包含协议）
 ; ==============================================================================
 ;
-; 【操作】Esc — 退出
 ; 【内容】红楼梦·太虚幻境对联（公有领域）
+; 【操作】Esc — 退出（自动清空 bar）
 ; ==============================================================================
 
 global Lines := [
@@ -25,6 +25,9 @@ PushLine() {
 
 PushLine()
 SetTimer(PushLine, 5000)
+
+OnExit(Cleanup)
+Cleanup(*) => _WMSend("BAR:1:")
 Esc::ExitApp
 
 WMBarPushEx(slot, loHi, text, opts := "") {

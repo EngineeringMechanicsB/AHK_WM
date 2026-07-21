@@ -2789,13 +2789,13 @@ _WM_OnCopyData(wParam, lParam, msgNum, hwnd) {
         slot := Integer(mBar[1])
         rest := mBar[2]
         ; ---- 自包含格式：BAR:slot:lo/hi:text[:opts] ----
-        if RegExMatch(rest, "^([\d.]+)/([\d.]+):(.*)$", &mSc) {
+        if RegExMatch(rest, "s)^([\d.]+)/([\d.]+):(.*)$", &mSc) {
             lo := mSc[1] + 0
             hi := mSc[2] + 0
             afterSpan := mSc[3]
             txt := afterSpan
             optsStr := ""
-            if RegExMatch(afterSpan, "^(.*?):([a-z]{1,4}=.*)$", &mOpts) {
+            if RegExMatch(afterSpan, "s)^(.*?):([a-z]{1,4}=.*)$", &mOpts) {
                 txt := mOpts[1]
                 optsStr := mOpts[2]
             }

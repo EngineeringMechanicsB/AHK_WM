@@ -5,8 +5,8 @@ Persistent
 ; Bar Example 2 — Multi-Line Text (Self-Contained)
 ; ==============================================================================
 ;
-; [Content] Dante Alighieri, Inferno — Canto I (public domain·1320)
-; [Controls] Esc — exit
+; [Content] Dante Alighieri, Inferno Canto I (public domain·1320)
+; [Controls] Esc — exit (auto-clears bar)
 ; ==============================================================================
 
 global Lines := [
@@ -25,6 +25,9 @@ PushLine() {
 
 PushLine()
 SetTimer(PushLine, 5000)
+
+OnExit(Cleanup)
+Cleanup(*) => _WMSend("BAR:1:")
 Esc::ExitApp
 
 WMBarPushEx(slot, loHi, text, opts := "") {
