@@ -46,16 +46,16 @@ Persistent
 ; ==================== 在这里配置你的通知规则 ====================
 ; 每条规则：{time, text, dur, opts?} — opts 可选（见上方说明）
 global RULES := [
-    {time: "0957",   text: "☕ 早上好！开始新的一天。",
+    {time: "0957",   text: "☕ Good morning! Time to start the day.",
         dur: 5, opts: "fs=28,bg=FF8C42,tx=FFFFFF,op=90,pos=25,rr=12"},
-    {time: "1200",   text: "🍜 午饭时间！",
+    {time: "1200",   text: "🍜 Lunch break! Take a rest.",
         dur: 5, opts: "fs=26,bg=4CAF50,tx=FFFFFF,op=88,pos=80,rr=16"},
-    {time: "1322",   text: "🍵 下午茶时间！",
+    {time: "1322",   text: "🍵 Tea time! Stretch and refresh.",
         dur: 5, opts: "fs=24,bg=8B5CF6,tx=FFFFFF,op=85,pos=85,rr=14"},
-    {time: "5_1700", text: "🎉 周末快乐！",
+    {time: "5_1700", text: "🎉 Happy Friday! Weekend ahead!",
         dur: 6, opts: "fs=30,bg=A020F0,tx=FFD700,op=92,pos=50,rr=20"},
-    ; 单次示例（取消注释测试）：
-    ; {time: "2026_12_25_0800", text: "🎄 圣诞快乐！",
+    ; One-shot example (uncomment to test):
+    ; {time: "2026_12_25_0800", text: "🎄 Merry Christmas!",
     ;     dur: 10, opts: "fs=36,bg=CC3333,tx=FFFFFF,op=95,pos=40,rr=18"}
 ]
 ; ================================================================

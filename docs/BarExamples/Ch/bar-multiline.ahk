@@ -6,38 +6,33 @@ Persistent
 ; ==============================================================================
 ;
 ; 【功能说明】
-;   每 5 秒推送一首两行诗词，使用新版自包含协议。无需 Layout 配置——
-;   位置、颜色、字体、换行全部在推送时直接传递。
+;   每 5 秒推送一条双语谚语到 bar。使用自包含协议——位置/颜色/字体/换行
+;   全部在推送时传递。wrap=2 实现两行显示，bar 自动增高。
 ;
-;   fs=N     — 字体大小 pt
-;   wrap=N   — 最大行数（>1 多行，bar 自动增高）
-;   `n       — 文本中的换行符渲染为独立行
-;
-; 【操作】
-;   Esc — 退出
+; 【操作】Esc — 退出
 ; ==============================================================================
 
-global Poems := [
-    "床前明月光`n疑是地上霜",
-    "举头望明月`n低头思故乡",
-    "白日依山尽`n黄河入海流",
-    "欲穷千里目`n更上一层楼"
+global Lines := [
+    "Actions speak louder`nthan words",
+    "Practice makes`nperfect",
+    "Knowledge is power`nShare it freely",
+    "Time and tide`nwait for none"
 ]
 global gIdx := 1
 
-PushPoem() {
-    global gIdx, Poems
-    ; 自包含推送：跨度+颜色+字体+换行，一次搞定
-    WMBarPushEx(1, "0.3/0.9", Poems[gIdx], "tx=CDD6F4,fs=14,wrap=2")
-    gIdx := Mod(gIdx, Poems.Length) + 1
+PushLine() {
+    global gIdx, Lines
+    WMBarPushEx(1, "0.3/0.9", Lines[gIdx], "tx=CDD6F4,fs=14,wrap=2")
+    gIdx := Mod(gIdx, Lines.Length) + 1
 }
 
-PushPoem()
-SetTimer(PushPoem, 5000)
+PushLine()
+SetTimer(PushLine, 5000)
+
+OnExit(Cleanup)
+Cleanup(*) => _WMSend("BAR:1::")
 Esc::ExitApp
 
-; ------------------------------------------------------------------------------
-; 辅助函数 —— 详细文档参见 bar-simple.ahk
 ; ------------------------------------------------------------------------------
 WMBarPushEx(slot, loHi, text, opts := "") {
     msg := "BAR:" . slot . ":" . loHi . ":" . text
@@ -51,12 +46,12 @@ _WMSend(msg) {
     if !h
         return false
     size := (StrLen(msg) + 1) * 2
-    buf  := Buffer(size, 0)
+    buf := Buffer(size, 0)
     StrPut(msg, buf, "UTF-16")
     cds := Buffer(A_PtrSize * 3, 0)
-    NumPut("Ptr",  0,       cds, 0)
-    NumPut("UInt", size,    cds, A_PtrSize)
-    NumPut("Ptr",  buf.Ptr, cds, A_PtrSize * 2)
+    NumPut("Ptr", 0, cds, 0)
+    NumPut("UInt", size, cds, A_PtrSize)
+    NumPut("Ptr", buf.Ptr, cds, A_PtrSize * 2)
     res := 0
     return DllCall("User32\SendMessageTimeoutW", "Ptr", h, "UInt", 0x4A
         , "Ptr", A_ScriptHwnd, "Ptr", cds.Ptr
