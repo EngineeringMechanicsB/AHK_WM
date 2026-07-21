@@ -25,9 +25,6 @@ PushLine() {
 
 PushLine()
 SetTimer(PushLine, 5000)
-
-OnExit(Cleanup)
-Cleanup(*) => _WMSend("BAR:1::")
 Esc::ExitApp
 
 WMBarPushEx(slot, loHi, text, opts := "") {

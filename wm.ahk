@@ -2786,37 +2786,35 @@ _WM_OnCopyData(wParam, lParam, msgNum, hwnd) {
         return true
     }
     if RegExMatch(text, "s)^BAR:(\d+):(.*)$", &mBar) {
-        slot := Integer(mBar[1]), rest := mBar[2]
+        slot := Integer(mBar[1])
+        rest := mBar[2]
         ; ---- 自包含格式：BAR:slot:lo/hi:text[:opts] ----
         if RegExMatch(rest, "^([\d.]+)/([\d.]+):(.*)$", &mSc) {
-            lo := mSc[1] + 0, hi := mSc[2] + 0
+            lo := mSc[1] + 0
+            hi := mSc[2] + 0
             afterSpan := mSc[3]
-            txt := afterSpan, optsStr := ""
-            if RegExMatch(afterSpan, "^(.*?):([a-z]{1,4}=.*)$", &mOpts)
-                txt := mOpts[1], optsStr := mOpts[2]
+            txt := afterSpan
+            optsStr := ""
+            if RegExMatch(afterSpan, "^(.*?):([a-z]{1,4}=.*)$", &mOpts) {
+                txt := mOpts[1]
+                optsStr := mOpts[2]
+            }
             ; 更新槽位配置
             cfg := Bar_ExternalSlots.Has(slot) ? Bar_ExternalSlots[slot] : Map()
-            changed := (!cfg.Has("lo") || cfg["lo"] != lo || cfg["hi"] != hi)
-            cfg["lo"] := lo, cfg["hi"] := hi
+            cfg["lo"] := lo
+            cfg["hi"] := hi
             if (optsStr != "") {
                 for part in StrSplit(optsStr, ",") {
                     part := Trim(part)
                     if RegExMatch(part, "^([a-z]{1,4})=(.*)$", &kv2) {
-                        key := kv2[1], val := Trim(kv2[2])
-                        if (!cfg.Has(key) || cfg[key] != val)
-                            changed := true
-                        cfg[key] := val
+                        cfg[kv2[1]] := Trim(kv2[2])
                     }
                 }
             }
             Bar_ExternalSlots[slot] := cfg
             Bar_ExternalData[slot] := txt
-            if changed {
-                CreateStatusBar()
-                UpdateExternalWidgets()
-            } else {
-                try UpdateExternalWidgets(slot)
-            }
+            CreateStatusBar()
+            UpdateExternalWidgets()
             return true
         }
         ; ---- 旧格式 / 清理：BAR:slot:text ----
