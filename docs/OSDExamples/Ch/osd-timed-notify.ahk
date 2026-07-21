@@ -31,7 +31,7 @@ Persistent
 ;   │ y=N[%] │ 垂直坐标(px或%)      │ y=20%  y=100             │
 ;   │ bg=…   │ 背景色(6位hex)       │ bg=CC3333                │
 ;   │ tx=…   │ 文字色(6位hex)       │ tx=FFFFFF                │
-;   │ wr=N   │ 最大宽度(px,超宽换行) │ wr=400                   │
+;   │ wr=N   │ 最大宽度(px,超宽换行)│ wr=400                   │
 ;   │ rd=…   │ 圆角开关(on|off)     │ rd=on                    │
 ;   │ rr=N   │ 圆角半径(px)         │ rr=20                    │
 ;   │ fn=…   │ 字体名称             │ fn=Consolas              │
