@@ -2,21 +2,18 @@
 #SingleInstance Force
 Persistent
 ; ==============================================================================
-; Bar Example 2 — Multi-Line Text + Custom Font Size (Self-Contained)
+; Bar Example 2 — Multi-Line Text (Self-Contained)
 ; ==============================================================================
 ;
-; [What this does]
-;   Pushes a two-line phrase to the bar every 5 seconds using the
-;   self-contained protocol.  The bar auto-grows to fit two lines.
-;
+; [Content] Dante Alighieri, Inferno — Canto I (public domain·1320)
 ; [Controls] Esc — exit
 ; ==============================================================================
 
 global Lines := [
-    "Actions speak louder`nthan words",
-    "Practice makes`nperfect",
-    "Knowledge is power`nShare it freely",
-    "Time and tide`nwait for none"
+    "Midway upon the journey`nof our life",
+    "I found myself within`na forest dark",
+    "For the straightforward`npathway had been lost",
+    "Abandon all hope`nye who enter here"
 ]
 global gIdx := 1
 
@@ -33,7 +30,6 @@ OnExit(Cleanup)
 Cleanup(*) => _WMSend("BAR:1::")
 Esc::ExitApp
 
-; ------------------------------------------------------------------------------
 WMBarPushEx(slot, loHi, text, opts := "") {
     msg := "BAR:" . slot . ":" . loHi . ":" . text
     if (opts != "")

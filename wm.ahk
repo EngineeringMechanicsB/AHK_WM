@@ -2819,7 +2819,14 @@ _WM_OnCopyData(wParam, lParam, msgNum, hwnd) {
             }
             return true
         }
-        ; ---- 旧格式：BAR:slot:text ----
+        ; ---- 旧格式 / 清理：BAR:slot:text ----
+        ; 空文本 + 自包含槽位 → 删除槽位配置，重建 bar 恢复原高度
+        if (rest = "" && Bar_ExternalSlots.Has(slot)) {
+            Bar_ExternalSlots.Delete(slot)
+            Bar_ExternalData.Delete(slot)
+            CreateStatusBar()
+            return true
+        }
         Bar_ExternalData[slot] := rest
         try UpdateExternalWidgets(slot)
         return true
@@ -4232,6 +4239,11 @@ class BarInstance {
                         ; 外部槽位始终强制走 GDI 路径（普通 Text 控件无法后续切换多行）
                         if (elWL == 0)
                             elWL := 1
+                        ; 根据字体和行数调整高度，防止 GDI bitmap 太小裁切内容
+                        if (elFS > 0 || elWL > 1) {
+                            useFS := (elFS > 0) ? elFS : Bar_FontSize
+                            ch := Max(ch, this._LineHeightForFont(useFS) * Max(1, elWL) + 4)
+                        }
                         ctrl := this._AddTextOrGrad(g, el, cx, cy, cw, ch, colors, mode, rounded, txt, align, elFS, elWL)
                         ; 渐变路径经 GradText 更新，存 "" 占位 / gradient path updates via GradText
                         this.ExtCtrls[n] := this.GradText.Has(el) ? "" : ctrl

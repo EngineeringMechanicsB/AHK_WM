@@ -2,60 +2,55 @@
 #SingleInstance Force
 Persistent
 ; ==============================================================================
-; Bar Example 3 — Dual-Slot Lyrics Simulator (Self-Contained)
+; Bar Example 3 — Dual-Slot Poetry Display (Self-Contained)
 ; ==============================================================================
 ;
-; [What this does]
-;   Simulates lyrics display using two bar slots:
-;     slot 1 — Title (small font)
-;     slot 2 — Current line (large font, two-line wrap)
-;   Self-contained protocol — NO Layout config needed.
-;   Advances every 3s.  OSD every 5 lines.  Clears bar on exit.
-;
-; [Song] "Twinkle Twinkle Little Star" — Jane Taylor 1806 (public domain)
+; [Content] Dante Alighieri, Inferno — Canto I (public domain·1320)
+;   slot 1 — Title (small font)
+;   slot 2 — Verse (large font, two-line)
+;   3s per line.  OSD every 7 lines.  Clears bar + restores height on exit.
 ;
 ; [Controls] Esc — exit
 ; ==============================================================================
 
-global Lyrics := [
-    "Twinkle, twinkle, little star",
-    "How I wonder what you are",
-    "Up above the world so high",
-    "Like a diamond in the sky",
-    "Twinkle, twinkle, little star",
-    "How I wonder what you are",
-    "When the blazing sun is gone",
-    "When he nothing shines upon",
-    "Then you show your little light",
-    "Twinkle, twinkle, all the night",
-    "Twinkle, twinkle, little star",
-    "How I wonder what you are",
-    "Then the traveler in the dark",
-    "Thanks you for your tiny spark",
-    "He could not see which way to go",
-    "If you did not twinkle so"
+global Verses := [
+    "Midway upon the journey of our life",
+    "I found myself within a forest dark",
+    "For the straightforward pathway had been lost",
+    "Ah me! how hard a thing it is to say",
+    "What was this forest savage and harsh",
+    "Which in the very thought renews the fear",
+    "So bitter is it, death is little more",
+    "But of the good to treat which there I found",
+    "I'll speak of the other things I saw there",
+    "I cannot well repeat how I entered",
+    "So full of slumber at that point was I",
+    "When I the true way had abandoned",
+    "But after I had reached a mountain's foot",
+    "Where that valley ended which had pierced",
+    "My heart with fear, I looked up and saw",
+    "Its shoulders clothed with the planet's rays"
 ]
 global gIdx := 1
 global gCounter := 0
 
-PushLyrics() {
-    global gIdx, gCounter, Lyrics
+PushVerse() {
+    global gIdx, gCounter, Verses
     gCounter++
 
-    WMBarPushEx(1, "0.05/0.35", "Twinkle Twinkle Little Star", "tx=7AA2F7,fs=12")
-    WMBarPushEx(2, "0.35/0.95", Lyrics[gIdx], "tx=CDD6F4,fs=16,wrap=2")
+    WMBarPushEx(1, "0.05/0.35", "Dante's Inferno — Canto I", "tx=7AA2F7,fs=12")
+    WMBarPushEx(2, "0.35/0.95", Verses[gIdx], "tx=CDD6F4,fs=16,wrap=2")
 
-    if (Mod(gCounter, 5) = 0) {
-        AHK_WM_OSD(Format("{} / {} lines played", gIdx, Lyrics.Length)
+    if (Mod(gCounter, 7) = 0) {
+        AHK_WM_OSD(Format("{} / {} lines", gIdx, Verses.Length)
             , 2000, "fs=16,bg=1E1E2E,tx=9ECE6A,op=85,pos=80")
     }
-    gIdx := Mod(gIdx, Lyrics.Length) + 1
+    gIdx := Mod(gIdx, Verses.Length) + 1
 }
 
-PushLyrics()
-SetTimer(PushLyrics, 3000)
+PushVerse()
+SetTimer(PushVerse, 3000)
 
-; Clear both slots on exit
 OnExit(Cleanup)
 Cleanup(*) {
     _WMSend("BAR:1::")
@@ -63,7 +58,6 @@ Cleanup(*) {
 }
 Esc::ExitApp
 
-; ------------------------------------------------------------------------------
 WMBarPushEx(slot, loHi, text, opts := "") {
     msg := "BAR:" . slot . ":" . loHi . ":" . text
     if (opts != "")

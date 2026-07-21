@@ -2,60 +2,55 @@
 #SingleInstance Force
 Persistent
 ; ==============================================================================
-; Bar 示例 3 — 双槽位歌词模拟（自包含协议）
+; Bar 示例 3 — 双槽位诗词模拟（自包含协议）
 ; ==============================================================================
 ;
-; 【功能说明】
-;   使用两个 bar 槽位模拟歌词显示：
-;     slot 1 — 歌名（小字单行）
-;     slot 2 — 歌词（大字两行）
-;   自包含协议——无需 Layout 配置。
-;   每 3 秒切一句，每 5 句弹 OSD 进度。退出时自动清空 bar。
-;
-; 【歌曲】"Twinkle Twinkle Little Star"（公有领域·Jane Taylor 1806）
+; 【内容】红楼梦·黛玉葬花吟（公有领域·曹雪芹 18世纪）
+;   slot 1 — 标题（小字单行）
+;   slot 2 — 当前句（大字两行）
+;   每 3 秒切一句，每 6 句弹 OSD。退出时清空 bar + 恢复高度。
 ;
 ; 【操作】Esc — 退出
 ; ==============================================================================
 
-global Lyrics := [
-    "Twinkle, twinkle, little star",
-    "How I wonder what you are",
-    "Up above the world so high",
-    "Like a diamond in the sky",
-    "Twinkle, twinkle, little star",
-    "How I wonder what you are",
-    "When the blazing sun is gone",
-    "When he nothing shines upon",
-    "Then you show your little light",
-    "Twinkle, twinkle, all the night",
-    "Twinkle, twinkle, little star",
-    "How I wonder what you are",
-    "Then the traveler in the dark",
-    "Thanks you for your tiny spark",
-    "He could not see which way to go",
-    "If you did not twinkle so"
+global Verses := [
+    "花谢花飞花满天",
+    "红消香断有谁怜",
+    "游丝软系飘春榭",
+    "落絮轻沾扑绣帘",
+    "闺中女儿惜春暮",
+    "愁绪满怀无释处",
+    "手把花锄出绣帘",
+    "忍踏落花来复去",
+    "柳丝榆荚自芳菲",
+    "不管桃飘与李飞",
+    "桃李明年能再发",
+    "明年闺中知有谁",
+    "三月香巢已垒成",
+    "梁间燕子太无情",
+    "明年花发虽可啄",
+    "却不道人去梁空巢也倾"
 ]
 global gIdx := 1
 global gCounter := 0
 
-PushLyrics() {
-    global gIdx, gCounter, Lyrics
+PushVerse() {
+    global gIdx, gCounter, Verses
     gCounter++
 
-    WMBarPushEx(1, "0.05/0.35", "Twinkle Twinkle Little Star", "tx=7AA2F7,fs=12")
-    WMBarPushEx(2, "0.35/0.95", Lyrics[gIdx], "tx=CDD6F4,fs=16,wrap=2")
+    WMBarPushEx(1, "0.05/0.35", "葬花吟·红楼梦", "tx=7AA2F7,fs=12")
+    WMBarPushEx(2, "0.35/0.95", Verses[gIdx], "tx=CDD6F4,fs=16,wrap=2")
 
-    if (Mod(gCounter, 5) = 0) {
-        AHK_WM_OSD(Format("{}/{} 句已播放", gIdx, Lyrics.Length)
+    if (Mod(gCounter, 6) = 0) {
+        AHK_WM_OSD(Format("{}/{} 句", gIdx, Verses.Length)
             , 2000, "fs=16,bg=1E1E2E,tx=9ECE6A,op=85,pos=80")
     }
-    gIdx := Mod(gIdx, Lyrics.Length) + 1
+    gIdx := Mod(gIdx, Verses.Length) + 1
 }
 
-PushLyrics()
-SetTimer(PushLyrics, 3000)
+PushVerse()
+SetTimer(PushVerse, 3000)
 
-; 退出清空两个槽位
 OnExit(Cleanup)
 Cleanup(*) {
     _WMSend("BAR:1::")
@@ -63,7 +58,6 @@ Cleanup(*) {
 }
 Esc::ExitApp
 
-; ------------------------------------------------------------------------------
 WMBarPushEx(slot, loHi, text, opts := "") {
     msg := "BAR:" . slot . ":" . loHi . ":" . text
     if (opts != "")
