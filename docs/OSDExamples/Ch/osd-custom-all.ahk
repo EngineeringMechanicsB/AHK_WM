@@ -12,6 +12,8 @@
 ;   fs  — 字体大小（磅）        默认：配置文件 OSDFontSize，20
 ;   op  — 不透明度（百分比）    默认：配置文件 OSDOpacity，78
 ;   pos — 垂直位置（百分比）    默认：配置文件 OSDPositionPct，80
+;   x   — 水平位置 px 或 %      默认：居中                  如 x=300 x=50%
+;   y   — 垂直位置 px 或 %      默认：pos 或配置值           如 y=200 y=30%
 ;   bg  — 背景色（6 位 hex）   默认：主题 Color_Bg
 ;   tx  — 文字色（6 位 hex）   默认：主题 Color_Active
 ;   wr  — 最大宽度（像素）      默认：屏幕宽度 × 0.85，超出自动换行
@@ -58,6 +60,14 @@ Sleep(3500)
 AHK_WM_OSD("Consolas 字体 | 半透明", 3000, "fs=18,bg=0E050F,tx=9ECE6A,op=60,fn=Consolas,pos=70")
 Sleep(3500)
 
+; --- 8. 像素+百分比混合定位 (x=300, y=60%) ---
+AHK_WM_OSD("x=300, y=60% — 像素+百分比混用", 2500, "fs=20,bg=2E5E8E,tx=FFF,x=300,y=60%")
+Sleep(3000)
+
+; --- 9. 纯百分比定位 (x=40%, y=30%) ---
+AHK_WM_OSD("x=40%, y=30% — 纯百分比定位", 2500, "fs=22,bg=5E2E8E,tx=FFF,x=40%,y=30%")
+Sleep(3000)
+
 ExitApp
 
 ; ------------------------------------------------------------------------------
@@ -72,7 +82,9 @@ ExitApp
 ; 可用 opts 键（全部可选）：
 ;   fs=N     — 字体大小（磅），默认配置 OSDFontSize
 ;   op=N     — 不透明度 0-100，默认配置 OSDOpacity
-;   pos=N    — 垂直位置 0=顶部 100=底部，默认配置 OSDPositionPct
+;   pos=N    — 垂直位置百分比，默认配置 OSDPositionPct
+;   x=N[%]   — 水平位置 px 或百分比（默认居中）
+;   y=N[%]   — 垂直位置 px 或百分比（默认 pos 或配置值）
 ;   bg=RRGGBB — 背景色 hex，默认主题 Color_Bg
 ;   tx=RRGGBB — 文字色 hex，默认主题 Color_Active
 ;   wr=N     — 最大宽度像素，超出自动换行，默认 monW×0.85

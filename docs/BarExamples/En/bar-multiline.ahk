@@ -2,33 +2,18 @@
 #SingleInstance Force
 Persistent
 ; ==============================================================================
-; Bar Example 2 — Multi-Line Text + Custom Font Size
+; Bar Example 2 — Multi-Line Text + Custom Font Size (Self-Contained)
 ; ==============================================================================
 ;
 ; [What this does]
-;   Pushes two-line poems to the bar's external_1 slot every 5 seconds.
-;   Demonstrates fs=N (font size override) and wrap=N (multi-line display)
-;   configured in the bar Layout.
+;   Pushes two-line poems every 5 seconds using the NEW self-contained
+;   protocol.  NO Layout config needed — position, color, font, wrap
+;   all passed in the push.
 ;
-; [Prerequisites]
-;   1. wm.ahk must be running
-;   2. Add external_1 with fs= and wrap= to [Bar] Layout, e.g.:
-;        Layout=external_1,(2-4)/5,CDD6F4,tx,fs=14,wrap=2;time,+20/20;
-;      The span "(2-4)/5" gives it 40% of bar width — enough for poems.
-;   3. Reload config (Alt+R) after editing
-;
-; [Layout attributes explained]
-;   fs=N     — Font size in points for this slot (default: global Bar_FontSize)
-;   wrap=N   — Maximum display lines (0 = single line, default)
-;
-;   When wrap > 1:
-;     - The bar automatically grows taller to fit multi-line content.
-;     - Text with `n (newlines) renders as separate lines.
-;     - Long text without newlines auto-wraps at word boundaries.
-;
-;   Example Layout entries:
-;     external_1,1/3,FFAA00,tx,fs=12        ← larger font, single line
-;     external_1,1/3,FFAA00,tx,fs=14,wrap=2 ← even larger, two lines
+; [Keys]
+;   fs=N     — Font size pt
+;   wrap=N   — Max lines (>1 = multi-line, bar auto-grows)
+;   `n       — Newline in text renders as separate lines
 ;
 ; [Controls]
 ;   Esc — exit
@@ -44,7 +29,8 @@ global gIdx := 1
 
 PushPoem() {
     global gIdx, Poems
-    WMBarPush(1, Poems[gIdx])
+    ; Self-contained push with span + color + font + wrap
+    WMBarPushEx(1, "0.3/0.9", Poems[gIdx], "tx=CDD6F4,fs=14,wrap=2")
     gIdx := Mod(gIdx, Poems.Length) + 1
 }
 
@@ -53,15 +39,19 @@ SetTimer(PushPoem, 5000)
 Esc::ExitApp
 
 ; ------------------------------------------------------------------------------
-; WMBarPush(slot, text)
-;   See bar-simple.ahk for full documentation.
+; Helper functions — see bar-simple.ahk for full docs.
 ; ------------------------------------------------------------------------------
-WMBarPush(slot, text) {
+WMBarPushEx(slot, loHi, text, opts := "") {
+    msg := "BAR:" . slot . ":" . loHi . ":" . text
+    if (opts != "")
+        msg .= ":" . opts
+    return _WMSend(msg)
+}
+_WMSend(msg) {
     DetectHiddenWindows(true)
     h := WinExist("wm.ahk ahk_class AutoHotkey")
     if !h
         return false
-    msg  := "BAR:" . slot . ":" . text
     size := (StrLen(msg) + 1) * 2
     buf  := Buffer(size, 0)
     StrPut(msg, buf, "UTF-16")

@@ -2,34 +2,29 @@
 #SingleInstance Force
 Persistent
 ; ==============================================================================
-; Bar Example 1 — Simple Single-Line Push
+; Bar Example 1 — Self-Contained Push (No Layout Config Needed)
 ; ==============================================================================
 ;
 ; [What this does]
-;   Pushes a clock to the bar's external_1 slot every 3 seconds.
-;   No font-size or wrap overrides — uses the global Bar_FontSize from config.
+;   Pushes a clock to the bar every 3 seconds using the NEW self-contained
+;   protocol.  NO [Bar] Layout declaration needed — position, color, and
+;   font size are all passed in the push message.
 ;
-; [Prerequisites]
-;   1. wm.ahk must be running
-;   2. Add external_1 to [Bar] Layout in wm_config.ini, e.g.:
-;        Layout=desktops,1/3;external_1,1/3,7AA2F7,tx;time,+20/20;
-;   3. Reload config (Alt+R in wm.ahk) after editing the INI file
+; [Protocols]
+;   NEW (v2.11+):  BAR:<slot>:<lo/hi>:<text>:<key=val,...>
+;     Self-contained.  Creates the bar element on the fly.  No Layout needed.
+;     Keys: bg=RRGGBB, tx=RRGGBB, rd=on|off, rr=N, fs=N, wrap=N
+;   OLD:  BAR:<slot>:<text>
+;     Requires external_N declared in [Bar] Layout.
 ;
-; [How it works]
-;   Constructs "BAR:<slot>:<text>" and sends it via WM_COPYDATA.
-;   The text persists on the bar until the next push or bar reload.
-;   No polling — updates are push-driven.
-;
-;   Protocol:  BAR:<slot_number>:<text>
-;     - slot_number: matches external_N in Layout (1-99)
-;     - text:        any UTF-8 string, persists until next push
+;   lo/hi = span fraction ("0.5/0.8") or pixel ("(200-550)/1920")
 ;
 ; [Controls]
 ;   Esc — exit
 ; ==============================================================================
 
 PushTick() {
-    WMBarPush(1, Format("{}", FormatTime(, "HH:mm:ss")))
+    WMBarPushEx(1, "0.5/0.8", FormatTime(, "HH:mm:ss"), "bg=7AA2F7,fs=14")
 }
 
 PushTick()
@@ -37,29 +32,38 @@ SetTimer(PushTick, 3000)
 Esc::ExitApp
 
 ; ------------------------------------------------------------------------------
-; WMBarPush(slot, text)
-;
-;   Push text to a bar external slot.  Copy this function into your scripts.
-;
-;   Parameters:
-;     slot — Slot number (1-99), matches external_N in [Bar] Layout.
-;     text — The text to display on the bar.  Persists until next push
-;            or bar reload.  Supports newlines (`n) if slot has wrap=N.
-;
-;   Returns: true = sent, false = wm.ahk not found.
-;
-;   Implementation:
-;     1. Finds the hidden wm.ahk window.
-;     2. Builds payload "BAR:slot:text".
-;     3. Encodes as UTF-16 and sends WM_COPYDATA (0x4A).
-;        Uses SendMessageTimeoutW to avoid blocking if wm.ahk is hung.
+; WMBarPush(slot, text) — Old protocol (requires Layout external_N)
 ; ------------------------------------------------------------------------------
 WMBarPush(slot, text) {
+    return _WMSend("BAR:" . slot . ":" . text)
+}
+
+; ------------------------------------------------------------------------------
+; WMBarPushEx(slot, loHi, text, opts := "") — NEW self-contained protocol
+;   slot  — Slot number (1-99)
+;   loHi  — Span: "0.5/0.8" (fraction) or "(200-550)/1920" (pixels)
+;   text  — Display text. Use `n for newlines if wrap=N.
+;   opts  — "key=val,key=val"  (all optional):
+;             bg=RRGGBB  — Background fill
+;             tx=RRGGBB  — Text color
+;             rd=on|off  — Rounded corners
+;             rr=N       — Corner radius px
+;             fs=N       — Font size pt
+;             wrap=N     — Max lines (>1 = multi-line, bar auto-grows)
+; ------------------------------------------------------------------------------
+WMBarPushEx(slot, loHi, text, opts := "") {
+    msg := "BAR:" . slot . ":" . loHi . ":" . text
+    if (opts != "")
+        msg .= ":" . opts
+    return _WMSend(msg)
+}
+
+; ---- Low-level WM_COPYDATA sender ----
+_WMSend(msg) {
     DetectHiddenWindows(true)
     h := WinExist("wm.ahk ahk_class AutoHotkey")
     if !h
         return false
-    msg  := "BAR:" . slot . ":" . text
     size := (StrLen(msg) + 1) * 2
     buf  := Buffer(size, 0)
     StrPut(msg, buf, "UTF-16")

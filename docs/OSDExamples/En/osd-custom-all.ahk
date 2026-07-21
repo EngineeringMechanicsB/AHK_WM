@@ -12,6 +12,8 @@
 ;   fs  — Font size in points       (default: OSDFontSize from config, 20)
 ;   op  — Opacity percentage        (default: OSDOpacity from config, 78)
 ;   pos — Vertical position %       (default: OSDPositionPct from config, 80)
+;   x   — Horizontal pos px or %    (default: center)        e.g. x=300 x=50%
+;   y   — Vertical pos px or %      (default: pos or config) e.g. y=200 y=30%
 ;   bg  — Background color (6-hex)  (default: theme Color_Bg)
 ;   tx  — Text color (6-hex)        (default: theme Color_Active)
 ;   wr  — Max width in pixels       (default: 85% of monitor width)
@@ -58,6 +60,14 @@ Sleep(3500)
 AHK_WM_OSD("Consolas font | Semi-transparent", 3000, "fs=18,bg=0E050F,tx=9ECE6A,op=60,fn=Consolas,pos=70")
 Sleep(3500)
 
+; --- 8. Pixel-positioned (x=300 from left, y=60% from top) ---
+AHK_WM_OSD("x=300, y=60% — pixel + percent", 2500, "fs=20,bg=2E5E8E,tx=FFF,x=300,y=60%")
+Sleep(3000)
+
+; --- 9. Both axes as percentages ---
+AHK_WM_OSD("x=40%, y=30% — both percent", 2500, "fs=22,bg=5E2E8E,tx=FFF,x=40%,y=30%")
+Sleep(3000)
+
 ExitApp
 
 ; ------------------------------------------------------------------------------
@@ -74,7 +84,9 @@ ExitApp
 ;   Available opts keys (all optional):
 ;     fs=N   — Font size in pt (default: config OSDFontSize)
 ;     op=N   — Opacity 0-100 (default: config OSDOpacity)
-;     pos=N  — Vertical position 0=top, 100=bottom (default: config OSDPositionPct)
+;     pos=N  — Vertical position % (default: config OSDPositionPct)
+;     x=N[%] — Horizontal position, px or % (default: center)
+;     y=N[%] — Vertical position, px or % (default: pos or config)
 ;     bg=RRGGBB — Background color hex (default: theme Color_Bg)
 ;     tx=RRGGBB — Text color hex (default: theme Color_Active)
 ;     wr=N   — Max width in px, auto-wraps if exceeded (default: monW*0.85)

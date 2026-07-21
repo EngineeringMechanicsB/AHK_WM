@@ -2,33 +2,28 @@
 #SingleInstance Force
 Persistent
 ; ==============================================================================
-; Bar 示例 1 — 简单单行推送
+; Bar 示例 1 — 自包含推送（无需 Layout 配置）
 ; ==============================================================================
 ;
 ; 【功能说明】
-;   每 3 秒向 bar 的 external_1 槽位推送当前时间。无字体大小或换行覆盖——
-;   完全使用配置文件的全局 Bar_FontSize。
+;   每 3 秒向 bar 推送当前时间，使用新版自包含协议。无需 [Bar] Layout
+;   声明——位置、颜色、字体全部在推送消息中直接传递。
 ;
-; 【使用前提】
-;   1. wm.ahk 必须正在运行
-;   2. 在 wm_config.ini 的 [Bar] Layout 中添加 external_1，例如：
-;        Layout=desktops,1/3;external_1,1/3,7AA2F7,tx;time,+20/20;
-;   3. 修改 INI 后按 Alt+R 重载配置
+; 【协议格式】
+;   新版（v2.11+）：BAR:<槽位>:<lo/hi>:<文本>:<键=值,...>
+;     完全自包含，动态创建 bar 元素。无需 Layout。
+;     可用键：bg=RRGGBB, tx=RRGGBB, rd=on|off, rr=N, fs=N, wrap=N
+;   旧版：BAR:<槽位>:<文本>
+;     需在 [Bar] Layout 中声明 external_N
 ;
-; 【工作原理】
-;   构造 "BAR:<槽位号>:<文本>"，通过 WM_COPYDATA 发送。文本持续显示在
-;   bar 上，直到下一次推送或 bar 重建。推送驱动——不轮询，有变化才更新。
-;
-;   协议格式：BAR:<槽位号>:<文本>
-;     - 槽位号：对应 Layout 中的 external_N（1-99）
-;     - 文本：  任意 UTF-8 字符串，持久显示直到下次推送
+;   lo/hi = 宽度比例 "0.5/0.8" 或像素 "(200-550)/1920"
 ;
 ; 【操作】
 ;   Esc — 退出
 ; ==============================================================================
 
 PushTick() {
-    WMBarPush(1, Format("{}", FormatTime(, "HH:mm:ss")))
+    WMBarPushEx(1, "0.5/0.8", FormatTime(, "HH:mm:ss"), "bg=7AA2F7,fs=14")
 }
 
 PushTick()
@@ -36,27 +31,38 @@ SetTimer(PushTick, 3000)
 Esc::ExitApp
 
 ; ------------------------------------------------------------------------------
-; WMBarPush(slot, text) —— 向 bar 外部槽位推送文本的通用辅助函数
-; ------------------------------------------------------------------------------
-; 参数：
-;   slot — 槽位号（1-99），对应 [Bar] Layout 中的 external_N
-;   text — 要显示在 bar 上的文本。持久显示直到下次推送或 bar 重建。
-;          如果该槽位在 Layout 中配置了 wrap=N，文本可以包含 `n 换行符
-;
-; 返回值：true=发送成功，false=未找到 wm.ahk 窗口
-;
-; 实现细节：
-;   1. 找到隐藏的 wm.ahk 窗口
-;   2. 构造消息 "BAR:槽位:文本"
-;   3. 编码为 UTF-16，通过 SendMessageTimeoutW 发送 WM_COPYDATA (0x4A)
-;      使用 SMTO_ABORTIFHUNG + 2000ms 超时，确保不会因目标卡死而阻塞
+; WMBarPush(slot, text) — 旧版协议（需 Layout 声明 external_N）
 ; ------------------------------------------------------------------------------
 WMBarPush(slot, text) {
+    return _WMSend("BAR:" . slot . ":" . text)
+}
+
+; ------------------------------------------------------------------------------
+; WMBarPushEx(slot, loHi, text, opts := "") — 新版自包含协议
+;   slot  — 槽位号 (1-99)
+;   loHi  — 跨度："0.5/0.8"（比例）或 "(200-550)/1920"（像素）
+;   text  — 显示文本（`n 换行，需配合 wrap=N）
+;   opts  — "键=值,键=值"（全部可选）：
+;             bg=RRGGBB  — 背景色
+;             tx=RRGGBB  — 文字色
+;             rd=on|off  — 圆角开关
+;             rr=N       — 圆角半径 px
+;             fs=N       — 字体大小 pt
+;             wrap=N     — 最大行数（>1 多行，bar 自动增高）
+; ------------------------------------------------------------------------------
+WMBarPushEx(slot, loHi, text, opts := "") {
+    msg := "BAR:" . slot . ":" . loHi . ":" . text
+    if (opts != "")
+        msg .= ":" . opts
+    return _WMSend(msg)
+}
+
+; ---- 底层 WM_COPYDATA 发送 ----
+_WMSend(msg) {
     DetectHiddenWindows(true)
     h := WinExist("wm.ahk ahk_class AutoHotkey")
     if !h
         return false
-    msg  := "BAR:" . slot . ":" . text
     size := (StrLen(msg) + 1) * 2
     buf  := Buffer(size, 0)
     StrPut(msg, buf, "UTF-16")
