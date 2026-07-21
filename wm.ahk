@@ -2592,7 +2592,7 @@ class OSD {
             return m
         for part in StrSplit(optsStr, ",") {
             part := Trim(part)
-            if RegExMatch(part, "^([a-z]{2,3})=(.*)$", &kv)
+            if RegExMatch(part, "^([a-z]{1,3})=(.*)$", &kv)
                 m[kv[1]] := Trim(kv[2])
         }
         return m

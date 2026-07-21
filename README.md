@@ -162,6 +162,7 @@ AHK_WM_OSD("Disk full!", 5000, "fs=36,bg=CC3333,tx=FFFFFF,op=95,pos=30")
 | `fs` | Font size | Config `OSDFontSize` (20) |
 | `op` | Opacity % | Config `OSDOpacity` (78) |
 | `pos` | Vertical position % | Config `OSDPositionPct` (80) |
+| `x` / `y` | Pixel/percentage coordinates | *(center / config)* |
 | `bg` / `tx` | Background / text color | Theme colors |
 | `wr` | Max width (auto-wrap) | 85% monitor width |
 | `rd` / `rr` | Rounded corners on/off + radius | Config values |

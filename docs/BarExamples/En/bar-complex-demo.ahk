@@ -2,34 +2,20 @@
 #SingleInstance Force
 Persistent
 ; ==============================================================================
-; Bar Example 3 — Dual-Slot Dynamic Lyrics Simulator
+; Bar Example 3 — Dual-Slot Dynamic Lyrics Simulator (Self-Contained)
 ; ==============================================================================
 ;
 ; [What this does]
-;   Simulates a music player lyrics display using TWO bar slots:
-;     external_1 — Song title (small font, single line)
-;     external_2 — Current lyric line (large font, 2-line wrap)
+;   Simulates a music player's lyrics display using two bar slots:
+;     slot 1 — Song title (small font, single line)
+;     slot 2 — Current lyric (large font, two-line wrap)
+;   Uses self-contained protocol — NO Layout config needed.
 ;
-;   Lyrics auto-advance every 3 seconds.  Every 5 lines, a celebratory
-;   OSD pops up with playback stats.
+;   Lyrics advance every 3 seconds.  Every 5 lines, an OSD pops up.
 ;
-; [Song]
-;   "Hey Jude" by The Beatles.
+; [Song] "Hey Jude" — The Beatles
 ;
-; [Prerequisites]
-;   1. wm.ahk must be running
-;   2. Add BOTH external_1 and external_2 to [Bar] Layout, e.g.:
-;        Layout=external_1,1/5,7AA2F7,tx,fs=12;external_2,(2-4)/5,9ECE6A,CDD6F4,tx,fs=16,wrap=2;time,+20/20;
-;   3. Reload config (Alt+R) after editing
-;
-; [Key concepts]
-;   - Two independent slots pushed from a single script
-;   - fs= and wrap= per slot (small title + large wrapped lyrics)
-;   - OSD + Bar combined: OSD for occasional notifications, Bar for persistent info
-;   - Push-driven: no polling, updates only when content changes
-;
-; [Controls]
-;   Esc — exit
+; [Controls] Esc — exit
 ; ==============================================================================
 
 global Lyrics := [
@@ -58,12 +44,12 @@ PushLyrics() {
     gCounter++
 
     ; Slot 1: Song title — small font, single line
-    WMBarPush(1, "Hey Jude — The Beatles")
+    WMBarPushEx(1, "0.05/0.35", "Hey Jude — The Beatles", "tx=7AA2F7,fs=12")
 
     ; Slot 2: Current lyric — large font, two-line wrap
-    WMBarPush(2, Lyrics[gIdx])
+    WMBarPushEx(2, "0.35/0.95", Lyrics[gIdx], "tx=CDD6F4,fs=16,wrap=2")
 
-    ; Every 5 lines: OSD celebration with stats
+    ; Every 5 lines: OSD celebration
     if (Mod(gCounter, 5) = 0) {
         AHK_WM_OSD(Format("{} / {} lines played", gIdx, Lyrics.Length)
             , 2000, "fs=16,bg=1E1E2E,tx=9ECE6A,op=85,pos=80")
@@ -77,14 +63,19 @@ SetTimer(PushLyrics, 3000)
 Esc::ExitApp
 
 ; ------------------------------------------------------------------------------
-; WMBarPush(slot, text) — see bar-simple.ahk for full documentation.
+; WMBarPushEx(slot, loHi, text, opts) — Self-contained protocol (see bar-simple.ahk)
 ; ------------------------------------------------------------------------------
-WMBarPush(slot, text) {
+WMBarPushEx(slot, loHi, text, opts := "") {
+    msg := "BAR:" . slot . ":" . loHi . ":" . text
+    if (opts != "")
+        msg .= ":" . opts
+    return _WMSend(msg)
+}
+_WMSend(msg) {
     DetectHiddenWindows(true)
     h := WinExist("wm.ahk ahk_class AutoHotkey")
     if !h
         return false
-    msg  := "BAR:" . slot . ":" . text
     size := (StrLen(msg) + 1) * 2
     buf  := Buffer(size, 0)
     StrPut(msg, buf, "UTF-16")
@@ -99,7 +90,7 @@ WMBarPush(slot, text) {
 }
 
 ; ------------------------------------------------------------------------------
-; AHK_WM_OSD(text, duration, opts) — see OSDExamples/En/osd-custom-all.ahk
+; AHK_WM_OSD(text, duration, opts) — See osd-custom-all.ahk for full docs
 ; ------------------------------------------------------------------------------
 AHK_WM_OSD(text, duration := 1000, opts := "") {
     DetectHiddenWindows(true)

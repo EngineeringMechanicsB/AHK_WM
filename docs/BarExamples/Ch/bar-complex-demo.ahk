@@ -2,33 +2,20 @@
 #SingleInstance Force
 Persistent
 ; ==============================================================================
-; Bar 示例 3 — 双槽位动态歌词模拟器
+; Bar 示例 3 — 双槽位动态歌词模拟器（自包含协议）
 ; ==============================================================================
 ;
 ; 【功能说明】
 ;   模拟音乐播放器歌词显示，使用两个 bar 槽位：
-;     external_1 — 歌名（小字单行）
-;     external_2 — 当前歌词（大字两行换行）
+;     slot 1 — 歌名（小字单行）
+;     slot 2 — 当前歌词（大字两行换行）
+;   使用自包含协议——无需 Layout 配置。
 ;
-;   歌词每 3 秒自动切换到下一句。每 5 句，弹出一条 OSD 显示播放进度。
+;   歌词每 3 秒自动切换到下一句。每 5 句，弹出一条 OSD 显示进度。
 ;
-; 【歌曲】
-;   "Hey Jude" — The Beatles
+; 【歌曲】"Hey Jude" — The Beatles
 ;
-; 【使用前提】
-;   1. wm.ahk 必须正在运行
-;   2. 在 [Bar] Layout 中同时添加 external_1 和 external_2，例如：
-;        Layout=external_1,1/5,7AA2F7,tx,fs=12;external_2,(2-4)/5,9ECE6A,CDD6F4,tx,fs=16,wrap=2;time,+20/20;
-;   3. 修改后按 Alt+R 重载配置
-;
-; 【演示的核心概念】
-;   - 单脚本同时推送两个独立槽位
-;   - 每槽位独立的 fs= 和 wrap= 配置（小字标题 + 大字换行歌词）
-;   - OSD + Bar 联动：OSD 做偶尔的通知，Bar 做持久的信息展示
-;   - 推送驱动：不轮询，内容变化时才更新
-;
-; 【操作】
-;   Esc — 退出
+; 【操作】Esc — 退出
 ; ==============================================================================
 
 global Lyrics := [
@@ -57,12 +44,12 @@ PushLyrics() {
     gCounter++
 
     ; 槽位 1：歌名 — 小字单行
-    WMBarPush(1, "🎵 Hey Jude — The Beatles")
+    WMBarPushEx(1, "0.05/0.35", "🎵 Hey Jude — The Beatles", "tx=7AA2F7,fs=12")
 
     ; 槽位 2：当前歌词 — 大字两行
-    WMBarPush(2, Lyrics[gIdx])
+    WMBarPushEx(2, "0.35/0.95", Lyrics[gIdx], "tx=CDD6F4,fs=16,wrap=2")
 
-    ; 每 5 句弹 OSD 显示播放进度
+    ; 每 5 句弹 OSD 显示进度
     if (Mod(gCounter, 5) = 0) {
         AHK_WM_OSD(Format("已播放 {}/{} 句", gIdx, Lyrics.Length)
             , 2000, "fs=16,bg=1E1E2E,tx=9ECE6A,op=85,pos=80")
@@ -76,14 +63,19 @@ SetTimer(PushLyrics, 3000)
 Esc::ExitApp
 
 ; ------------------------------------------------------------------------------
-; WMBarPush(slot, text) —— 完整文档参见 bar-simple.ahk
+; WMBarPushEx(slot, loHi, text, opts) — 自包含协议，详细文档见 bar-simple.ahk
 ; ------------------------------------------------------------------------------
-WMBarPush(slot, text) {
+WMBarPushEx(slot, loHi, text, opts := "") {
+    msg := "BAR:" . slot . ":" . loHi . ":" . text
+    if (opts != "")
+        msg .= ":" . opts
+    return _WMSend(msg)
+}
+_WMSend(msg) {
     DetectHiddenWindows(true)
     h := WinExist("wm.ahk ahk_class AutoHotkey")
     if !h
         return false
-    msg  := "BAR:" . slot . ":" . text
     size := (StrLen(msg) + 1) * 2
     buf  := Buffer(size, 0)
     StrPut(msg, buf, "UTF-16")
@@ -98,7 +90,7 @@ WMBarPush(slot, text) {
 }
 
 ; ------------------------------------------------------------------------------
-; AHK_WM_OSD(text, duration, opts) —— 完整文档参见 OSDExamples/Ch/osd-custom-all.ahk
+; AHK_WM_OSD(text, duration, opts) — 详细文档见 OSDExamples/Ch/osd-custom-all.ahk
 ; ------------------------------------------------------------------------------
 AHK_WM_OSD(text, duration := 1000, opts := "") {
     DetectHiddenWindows(true)

@@ -112,10 +112,15 @@ Layout=[N,]element,span[,color1,color2,…][,bg|tx][,on|off][,fs=N][,wrap=N]; �
   renders as separate lines; long lines auto-wrap at word boundaries.
 - Legacy `element:span,color,…` syntax is still accepted.
 
-`external_N` widgets display text pushed by **external scripts** via
-`WM_COPYDATA` with the payload `BAR:N:text`. A single push persists until the
-next push or a bar reload — no polling, no temp files. See the bundled
-examples in `docs/BarExamples/` and `docs/OSDExamples/`.
+`external_N` widgets can be created in two ways:
+
+**Self-contained** (v2.11+): `BAR:N:lo/hi:text:key=val` — position, colors, font
+all passed in the push. No Layout declaration needed. Keys: `bg`, `tx`, `rd`,
+`rr`, `fs`, `wrap`.  Example: `BAR:1:0.5/0.8:Hello:bg=7AA2F7,fs=14`
+
+**Legacy**: `BAR:N:text` — requires `external_N` in Layout (see above).
+A single push persists until the next push or a bar reload.
+See the bundled examples in `docs/BarExamples/` and `docs/OSDExamples/`.
 
 ## [Border]
 
@@ -197,7 +202,7 @@ External scripts can override all OSD visual settings per call by appending
 `key=value` pairs to the payload:
 
 ```
-OSD:text[:duration_ms][:fs=24,op=90,pos=50,bg=FF4444,tx=FFFFFF]
+OSD:text[:duration_ms][:fs=24,op=90,x=50%,y=30%,bg=FF4444,tx=FFFFFF]
 ```
 
 | Key | Type | Default | Description |
@@ -205,6 +210,8 @@ OSD:text[:duration_ms][:fs=24,op=90,pos=50,bg=FF4444,tx=FFFFFF]
 | `fs` | int pt | `OSDFontSize` (20) | Font size. |
 | `op` | %  | `OSDOpacity` (78) | Opacity. |
 | `pos` | %  | `OSDPositionPct` (80) | Vertical position (0=top, 100=bottom). |
+| `x` | px/% | *(center)* | Horizontal pos: `300` = 300px, `50%` = half screen. |
+| `y` | px/% | *(pos/config)* | Vertical pos: `200` = 200px, `30%` = screen height %. |
 | `bg` | 6-hex | theme `Color_Bg` | Background color. |
 | `tx` | 6-hex | theme `Color_Active` | Text color. |
 | `wr` | int px | `monW × 0.85` | Max width; text auto-wraps when exceeded. |
@@ -344,7 +351,8 @@ Send a `WM_COPYDATA` message to the hidden main window
 |---|---|
 | `OSD:text[:duration_ms]` | Show an OSD popup using config defaults. |
 | `OSD:text[:duration_ms]:fs=N,op=N,…` | Show an OSD with per-call visual overrides (see [GUI] → OSD per-call customization above). |
-| `BAR:N:text` | Set the content of bar widget `external_N`. Persists until the next push or bar reload. |
+| `BAR:N:text` | (Legacy) Set content of `external_N` bar widget. |
+| `BAR:N:lo/hi:text:key=val,…` | (v2.11+) Self-contained bar push — position, colors, font, wrap all in one call. |
 
 Bundled example scripts live in `docs/OSDExamples/` (OSD popups) and
 `docs/BarExamples/` (bar widgets), each with English (`En/`) and
