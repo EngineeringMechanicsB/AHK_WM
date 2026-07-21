@@ -1504,102 +1504,76 @@ ParseCustomItems(itemsRaw, iconRaw := "", textRaw := "") {
 ; ---- 旧键名自动迁移（v2.9 命名统一为 PascalCase）/ Auto-migrate legacy key names ----
 ; 首次运行时把 [Bar] 的 snake_case 旧键改写为新键并删除旧键；
 ; 之后以 [General] ConfigVersion=2 标记跳过。读取侧仍保留旧键回退，双保险。
+; 转义正则特殊字符
+RegExEscape(s) => RegExReplace(s, "([.*?+\[\]{}()|\\^$])", "\$1")
+
 MigrateConfigKeys() {
     global ConfigFile
     if !FileExist(ConfigFile)
         return
     if (IniRead(ConfigFile, "General", "ConfigVersion", "") = "2")
         return
-    renames := [
-        ["Bar", "time_format",           "TimeFormat"],
-        ["Bar", "date_format",           "DateFormat"],
-        ["Bar", "custom_items",          "CustomItems"],
-        ["Bar", "desktop_labels",        "DesktopLabels"],
-        ["Bar", "current_desktop_left",  "CurrentDesktopLeft"],
-        ["Bar", "current_desktop_right", "CurrentDesktopRight"],
-        ["Bar", "current_desktop_color", "CurrentDesktopColor"],
-        ["Bar", "desktop_display_mode",  "DesktopDisplayMode"],
-        ["Bar", "position",              "Position"],
-        ["Bar", "offset",                "Offset"],
-        ["Bar", "margin_left",           "MarginLeft"],
-        ["Bar", "margin_right",          "MarginRight"],
-        ["Bar", "layout",                "Layout"],
-        ["Bar", "instances",             "Instances"]
-    ]
-    ; Read entire config into memory (avoids IniWrite encoding corruption)
-    cfg := Map()
-    try {
-        allSecs := IniRead(ConfigFile)
-        if (allSecs != "")
-            for sn in StrSplit(allSecs, "`n", "`r") {
-                sn := Trim(sn)
-                if (sn = "")
-                    continue
-                cfg[sn] := Map()
-                pairs := IniRead(ConfigFile, sn)
-                if (pairs != "")
-                    for line in StrSplit(pairs, "`n", "`r")
-                        if RegExMatch(line, "^([^=]+)=(.*)$", &m)
-                            cfg[sn][Trim(m[1])] := m[2]
-            }
-    }
-    ; Rename keys in memory
+    renames := [["Bar","time_format","TimeFormat"],["Bar","date_format","DateFormat"]
+        ,["Bar","custom_items","CustomItems"],["Bar","desktop_labels","DesktopLabels"]
+        ,["Bar","current_desktop_left","CurrentDesktopLeft"],["Bar","current_desktop_right","CurrentDesktopRight"]
+        ,["Bar","current_desktop_color","CurrentDesktopColor"],["Bar","desktop_display_mode","DesktopDisplayMode"]
+        ,["Bar","position","Position"],["Bar","offset","Offset"]
+        ,["Bar","margin_left","MarginLeft"],["Bar","margin_right","MarginRight"]
+        ,["Bar","layout","Layout"],["Bar","instances","Instances"]]
+    ; 文本级替换，保留注释和顺序 / In-place key rename preserves comments
+    content := ""
+    try content := FileRead(ConfigFile, "UTF-16")
+    if (content = "")
+        return
     migrated := 0
     for r in renames {
-        if cfg.Has(r[1]) && cfg[r[1]].Has(r[2]) && !cfg[r[1]].Has(r[3]) {
-            cfg[r[1]][r[3]] := cfg[r[1]][r[2]]
-            cfg[r[1]].Delete(r[2])
-            migrated++
+        sec := r[1], oldKey := r[2], newKey := r[3]
+        secEsc := RegExEscape("[" sec "]")
+        oldEsc := RegExEscape(oldKey)
+        if RegExMatch(content, "is)(" secEsc "[^\[]*)", &secMatch) {
+            secBlock := secMatch[1]
+            if RegExMatch(secBlock, "im)^\s*" oldEsc "\s*=") && !InStr(secBlock, "`n" newKey "=") {
+                newBlock := RegExReplace(secBlock, "im)^\s*" oldEsc "\s*=", newKey "=")
+                content := StrReplace(content, secBlock, newBlock)
+                migrated++
+            }
         }
     }
-    ; Write back as UTF-8
-    if !cfg.Has("General")
-        cfg["General"] := Map()
-    cfg["General"]["ConfigVersion"] := "2"
-    content := ""
-    for sn, km in cfg {
-        content .= "[" sn "]`r`n"
-        for k, v in km
-            content .= k "=" v "`r`n"
-        content .= "`r`n"
+    if (migrated > 0 || !InStr(content, "ConfigVersion=2")) {
+        if RegExMatch(content, "is)(\[General\][^\[]*)", &genMatch) {
+            genBlock := genMatch[1]
+            if !InStr(genBlock, "`nConfigVersion=") {
+                newGen := RTrim(genBlock, "`r`n") "`r`nConfigVersion=2`r`n"
+                content := StrReplace(content, genBlock, newGen)
+            }
+        }
+        try {
+            FileDelete(ConfigFile)
+            FileAppend(content, ConfigFile, "UTF-16")
+        }
     }
-    try {
-        FileDelete(ConfigFile)
-        FileAppend(content, ConfigFile, "UTF-16")
-    }
-    if migrated
-        WMLog("Config migrated: " . migrated . " legacy key(s) renamed to new scheme", "INFO", "Config")
 }
 
-; UTF-8-safe config write: reads full ini, modifies one key, writes back as UTF-8.
-; Replaces direct IniWrite which corrupts encoding when values contain non-ASCII chars.
+; 安全写入：文本级替换保留注释和顺序 / In-place key edit
 _ConfigWrite(section, key, val) {
     global ConfigFile
-    cfg := Map()
-    try {
-        allSecs := IniRead(ConfigFile)
-        if (allSecs != "")
-            for sn in StrSplit(allSecs, "`n", "`r") {
-                sn := Trim(sn)
-                if (sn = "")
-                    continue
-                cfg[sn] := Map()
-                pairs := IniRead(ConfigFile, sn)
-                if (pairs != "")
-                    for line in StrSplit(pairs, "`n", "`r")
-                        if RegExMatch(line, "^([^=]+)=(.*)$", &m)
-                            cfg[sn][Trim(m[1])] := m[2]
-            }
-    }
-    if !cfg.Has(section)
-        cfg[section] := Map()
-    cfg[section][key] := val
     content := ""
-    for sn, km in cfg {
-        content .= "[" sn "]`r`n"
-        for k, v in km
-            content .= k "=" v "`r`n"
-        content .= "`r`n"
+    try content := FileRead(ConfigFile, "UTF-16")
+    if (content = "")
+        return
+    secEsc := RegExEscape("[" section "]")
+    keyEsc := RegExEscape(key)
+    if RegExMatch(content, "is)(" secEsc "[^\[]*)", &secMatch) {
+        secBlock := secMatch[1]
+        if RegExMatch(secBlock, "im)^\s*" keyEsc "\s*=.*$") {
+            newBlock := RegExReplace(secBlock, "im)^\s*" keyEsc "\s*=.*$", key "=" val)
+            content := StrReplace(content, secBlock, newBlock)
+        } else {
+            newBlock := RTrim(secBlock, "`r`n") "`r`n" key "=" val "`r`n"
+            content := StrReplace(content, secBlock, newBlock)
+        }
+    } else {
+        content := RTrim(content, "`r`n") "`r`n`r`n[" section "]`r`n" key "=" val "`r`n"
     }
     try {
         FileDelete(ConfigFile)
