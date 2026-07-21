@@ -19,15 +19,12 @@ global gIdx := 1
 
 PushLine() {
     global gIdx, Lines
-    WMBarPushEx(1, "0.3/0.9", Lines[gIdx], "tx=CDD6F4,fs=14,wrap=2")
+    WMBarPushEx(1, "0.3/0.9", Lines[gIdx], "tx=CDD6F4,fs=11,wrap=2")
     gIdx := Mod(gIdx, Lines.Length) + 1
 }
 
 PushLine()
 SetTimer(PushLine, 5000)
-
-OnExit(Cleanup)
-Cleanup(*) => _WMSend("BAR:1:")
 Esc::ExitApp
 
 WMBarPushEx(slot, loHi, text, opts := "") {

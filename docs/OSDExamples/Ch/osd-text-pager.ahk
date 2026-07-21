@@ -34,7 +34,7 @@ Persistent
 
 ; ==================== 配置区 ====================
 global FILE_PATH      := A_ScriptDir "\osd-pager-demo.txt"  ; 同目录下的示例文本
-global CHARS_PER_PAGE := 10
+global CHARS_PER_PAGE := 20
 global OSD_DURATION   := 0    ; 0 = 持续显示到翻页（tag 替换）
 ; ================================================
 
