@@ -85,7 +85,6 @@ global RULES := [
 
 global FIRED       := Map()
 global LAST_DAY    := ""
-global LAST_MIN    := 0
 
 ; ---- Parse time spec ----
 ParseTime(t) {
@@ -108,14 +107,13 @@ ParseTime(t) {
 
 ; ---- Main check (every 30s) ----
 CheckAndFire() {
-    global FIRED, LAST_DAY, LAST_MIN, RULES
+    global FIRED, LAST_DAY, RULES
 
     ; Midnight reset
     today := FormatTime(, "yyyyMMdd")
     if (LAST_DAY != today) {
         FIRED := Map()
         LAST_DAY := today
-        LAST_MIN := 0
     }
 
     nowMins  := A_Hour * 60 + A_Min
@@ -132,10 +130,8 @@ CheckAndFire() {
         fireKey := "", shouldFire := false
         switch pt.type {
         case "interval":
-            if (nowMins == LAST_MIN)
-                continue
-            slot := (nowMins // pt.interval) * pt.interval
-            fireKey := "i_" . pt.interval . "_" . slot
+            ; Interval: fire when Mod(minute, interval) == 0 (FIRED Map handles debounce)
+            fireKey := "i_" . pt.interval . "_" . (nowMins // pt.interval)
             shouldFire := (Mod(nowMins, pt.interval) == 0)
         case "daily":
             fireKey := "d_" . pt.mins
@@ -156,7 +152,6 @@ CheckAndFire() {
             continue
 
         FIRED[fireKey] := true
-        LAST_MIN := nowMins
         durMs := (rule.dur > 0) ? rule.dur * 1000 : 3000
         ruleOpts := rule.HasOwnProp("opts") ? rule.opts : ""
         AHK_WM_OSD(rule.text, durMs, ruleOpts)
@@ -165,6 +160,11 @@ CheckAndFire() {
 
 SetTimer(CheckAndFire, 30000)
 CheckAndFire()
+
+; Startup confirmation
+TrayTip("⏰ Timed Notify started", RULES.Length " rules loaded. Press Esc to exit.")
+OutputDebug("[osd-timed-notify] started — " RULES.Length " rules loaded`n")
+
 Esc::ExitApp
 
 ; ------------------------------------------------------------------------------

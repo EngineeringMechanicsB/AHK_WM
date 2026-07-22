@@ -53,7 +53,7 @@ Persistent
 global RULES := [
     ; ── 间隔循环：每 30 分钟提醒休息 ──
     {time: "*/30",  text: "👀 已经工作30分钟了，起来活动一下！",
-        dur: 8, opts: "fs=22,bg=2E5E8E,tx=FFFFFF,op=92,pos=tc,x=50%"},
+        dur: 8, opts: "fs=22,bg=2E5E8E,tx=FFFFFF,op=92,x=50%,y=15%"},
 
     ; ── 天循环：上午启动提醒 ──
     {time: "0900",  text: "☕ 早上好！今天有什么计划？",
@@ -73,7 +73,7 @@ global RULES := [
 
     ; ── 天循环：晚间提醒（右下角小字）──
     {time: "2100",  text: "🌙 夜深了，准备休息吧。",
-        dur: 6, opts: "fs=16,bg=1E1E2E,tx=9ECE6A,op=80,pos=br"},
+        dur: 6, opts: "fs=16,bg=1E1E2E,tx=9ECE6A,op=80,x=90%,y=90%"},
 
     ; ── 单次示例（取消注释即可测试，改为当前时间+1分钟）──
     ; {time: "2026_12_25_0800", text: "🎄 圣诞快乐！",
@@ -83,7 +83,6 @@ global RULES := [
 
 global FIRED       := Map()   ; 已触发 key（防抖）
 global LAST_DAY    := ""      ; 日期追踪（午夜重置）
-global LAST_MIN    := 0       ; 上次检查的分钟（间隔模式用）
 
 ; ---- 解析时间规格 ----
 ParseTime(t) {
@@ -106,14 +105,13 @@ ParseTime(t) {
 
 ; ---- 主检查（每30秒）----
 CheckAndFire() {
-    global FIRED, LAST_DAY, LAST_MIN, RULES
+    global FIRED, LAST_DAY, RULES
 
     ; 午夜重置
     today := FormatTime(, "yyyyMMdd")
     if (LAST_DAY != today) {
         FIRED := Map()
         LAST_DAY := today
-        LAST_MIN := 0
     }
 
     nowMins  := A_Hour * 60 + A_Min
@@ -130,11 +128,8 @@ CheckAndFire() {
         fireKey := "", shouldFire := false
         switch pt.type {
         case "interval":
-            ; 间隔模式：当前分钟对间隔取模=0时触发
-            if (nowMins == LAST_MIN)
-                continue
-            slot := (nowMins // pt.interval) * pt.interval
-            fireKey := "i_" . pt.interval . "_" . slot
+            ; 间隔模式：当前分钟对间隔取模=0时触发（FIRED Map 防抖）
+            fireKey := "i_" . pt.interval . "_" . (nowMins // pt.interval)
             shouldFire := (Mod(nowMins, pt.interval) == 0)
         case "daily":
             fireKey := "d_" . pt.mins
@@ -155,7 +150,6 @@ CheckAndFire() {
             continue
 
         FIRED[fireKey] := true
-        LAST_MIN := nowMins
         durMs := (rule.dur > 0) ? rule.dur * 1000 : 3000
         ruleOpts := rule.HasOwnProp("opts") ? rule.opts : ""
         AHK_WM_OSD(rule.text, durMs, ruleOpts)
@@ -164,6 +158,11 @@ CheckAndFire() {
 
 SetTimer(CheckAndFire, 30000)
 CheckAndFire()
+
+; 启动确认：托盘提示 + 首次 OSD 测试
+TrayTip("⏰ 定时通知已启动", "共 " RULES.Length " 条规则，按 Esc 退出")
+OutputDebug("[osd-timed-notify] 启动 — " RULES.Length " 条规则已加载`n")
+
 Esc::ExitApp
 
 ; ------------------------------------------------------------------------------
