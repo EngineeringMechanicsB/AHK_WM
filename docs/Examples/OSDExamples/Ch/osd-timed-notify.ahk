@@ -1,14 +1,6 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Force
 Persistent
-
-; 全局错误处理：记录错误但不退出脚本
-OnError(ErrorHandler, -1)
-ErrorHandler(err, mode) {
-    msg := FormatTime(, "yyyy-MM-dd HH:mm:ss") " ERROR[" mode "]: " err.Message
-    try FileAppend(msg "`n", A_ScriptDir "\timed-notify-errors.log")
-    return 1  ; 非零 = 抑制错误对话框，继续运行
-}
 ; ==============================================================================
 ; OSD 示例 — 定时通知调度器
 ; ==============================================================================
@@ -60,7 +52,7 @@ ErrorHandler(err, mode) {
 ; ╚══════════════════════════════════════════════════════════════╝
 global RULES := [
     ; ── 间隔循环：每 30 分钟提醒休息 ──
-    {time: "*/1",  text: "👀 已经工作30分钟了，起来活动一下！",
+    {time: "*/30",  text: "👀 已经工作30分钟了，起来活动一下！",
         dur: 8, opts: "fs=22,bg=2E5E8E,tx=FFFFFF,op=92,x=50%,y=15%"},
 
     ; ── 天循环：上午启动提醒 ──
@@ -164,15 +156,16 @@ CheckAndFire() {
             AHK_WM_OSD(rule.text, durMs, ruleOpts)
         }
     } catch as e {
-        msg := FormatTime(, "yyyy-MM-dd HH:mm:ss") " TimerError: " e.Message
-        try FileAppend(msg "`n", A_ScriptDir "\timed-notify-errors.log")
+        ; 异常不传播——记录日志即可（定时器不受影响）
+        try FileAppend(FormatTime(, "yyyy-MM-dd HH:mm:ss") " TimerError: " e.Message "`n"
+            , A_ScriptDir "\timed-notify-errors.log")
     }
 }
 
 SetTimer(CheckAndFire, 30000)
 CheckAndFire()
 
-; 启动确认：托盘提示 + 首次 OSD 测试
+; 启动确认
 TrayTip("⏰ 定时通知已启动", "共 " RULES.Length " 条规则，按 Esc 退出")
 OutputDebug("[osd-timed-notify] 启动 — " RULES.Length " 条规则已加载`n")
 
@@ -181,6 +174,8 @@ Esc::ExitApp
 ; ------------------------------------------------------------------------------
 ; AHK_WM_OSD(text, duration_ms, opts)
 ;   通过 WM_COPYDATA 向 wm.ahk 发送 OSD 消息。
+;   关键：使用 SendMessageTimeoutW（2s 超时）防止线程永久阻塞导致定时器被 AHK 删除；
+;         WM_COPYDATA 数据写入独立 Buffer，不依赖 StrPtr 局部变量引用。
 ;   opts 格式："键=值,键=值"（全部可选，未指定回退配置文件默认值）
 ;   完整参数文档见 osd-custom-all.ahk
 ; ------------------------------------------------------------------------------
@@ -189,14 +184,32 @@ AHK_WM_OSD(text, duration := 1000, opts := "") {
     h := WinExist("wm.ahk ahk_class AutoHotkey")
     if !h
         return false
+
     payload := "OSD:" . text . ":" . duration
     if (opts != "")
         payload .= ":" . opts
-    c := StrPut(payload, "UTF-16")
-    b := Buffer(A_PtrSize * 3, 0)
-    NumPut("Ptr", 0, b, 0)
-    NumPut("UInt", c, b, A_PtrSize)
-    NumPut("Ptr", StrPtr(payload), b, A_PtrSize * 2)
-    try SendMessage(0x4A, 0, b.Ptr, , "ahk_id " . h)
+
+    ; 数据副本放入独立 Buffer（非 StrPtr 局部变量引用）
+    dataSize := (StrLen(payload) + 1) * 2  ; UTF-16 字节数（含 null）
+    dataBuf := Buffer(dataSize, 0)
+    StrPut(payload, dataBuf, "UTF-16")
+
+    ; COPYDATASTRUCT: dwData(ptr) + cbData(u32) + padding(u32) + lpData(ptr)
+    cds := Buffer(A_PtrSize * 3, 0)
+    NumPut("Ptr", 0, cds, 0)
+    NumPut("UInt", dataSize, cds, A_PtrSize)
+    NumPut("Ptr", dataBuf.Ptr, cds, A_PtrSize * 2)
+
+    ; SendMessageTimeoutW：2 秒超时，防止 wm.ahk 无响应时无限阻塞线程
+    res := 0
+    try DllCall("User32\SendMessageTimeoutW"
+        , "Ptr", h
+        , "UInt", 0x4A       ; WM_COPYDATA
+        , "Ptr", A_ScriptHwnd
+        , "Ptr", cds.Ptr
+        , "UInt", 0x2        ; SMTO_ABORTIFHUNG
+        , "UInt", 2000       ; 2 秒超时
+        , "UInt*", &res
+        , "Ptr")
     return true
 }

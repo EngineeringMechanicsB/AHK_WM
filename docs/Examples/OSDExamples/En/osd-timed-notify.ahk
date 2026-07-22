@@ -1,14 +1,6 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Force
 Persistent
-
-; Global error handler: log errors, suppress dialogs, keep running
-OnError(ErrorHandler, -1)
-ErrorHandler(err, mode) {
-    msg := FormatTime(, "yyyy-MM-dd HH:mm:ss") " ERROR[" mode "]: " err.Message
-    try FileAppend(msg "`n", A_ScriptDir "\timed-notify-errors.log")
-    return 1  ; non-zero = suppress error dialog, keep running
-}
 ; ==============================================================================
 ; OSD Example — Timed Notification Scheduler
 ; ==============================================================================
@@ -166,8 +158,9 @@ CheckAndFire() {
             AHK_WM_OSD(rule.text, durMs, ruleOpts)
         }
     } catch as e {
-        msg := FormatTime(, "yyyy-MM-dd HH:mm:ss") " TimerError: " e.Message
-        try FileAppend(msg "`n", A_ScriptDir "\timed-notify-errors.log")
+        ; Catch-all: log error, keep timer alive (exception never escapes)
+        try FileAppend(FormatTime(, "yyyy-MM-dd HH:mm:ss") " TimerError: " e.Message "`n"
+            , A_ScriptDir "\timed-notify-errors.log")
     }
 }
 
@@ -183,6 +176,9 @@ Esc::ExitApp
 ; ------------------------------------------------------------------------------
 ; AHK_WM_OSD(text, duration_ms, opts)
 ;   Sends an OSD message via WM_COPYDATA to wm.ahk.
+;   Key: SendMessageTimeoutW (2s timeout) prevents indefinite thread blocking
+;        that would cause AHK to delete the timer callback.
+;        Data copied into independent Buffer, not StrPtr on a local variable.
 ;   opts format: "key=val,key=val" (all optional, fall back to config defaults)
 ;   Full docs: osd-custom-all.ahk
 ; ------------------------------------------------------------------------------
@@ -191,14 +187,32 @@ AHK_WM_OSD(text, duration := 1000, opts := "") {
     h := WinExist("wm.ahk ahk_class AutoHotkey")
     if !h
         return false
+
     payload := "OSD:" . text . ":" . duration
     if (opts != "")
         payload .= ":" . opts
-    c := StrPut(payload, "UTF-16")
-    b := Buffer(A_PtrSize * 3, 0)
-    NumPut("Ptr", 0, b, 0)
-    NumPut("UInt", c, b, A_PtrSize)
-    NumPut("Ptr", StrPtr(payload), b, A_PtrSize * 2)
-    try SendMessage(0x4A, 0, b.Ptr, , "ahk_id " . h)
+
+    ; Data copy into independent buffer (not StrPtr on local var)
+    dataSize := (StrLen(payload) + 1) * 2  ; UTF-16 byte count (incl. null)
+    dataBuf := Buffer(dataSize, 0)
+    StrPut(payload, dataBuf, "UTF-16")
+
+    ; COPYDATASTRUCT: dwData(ptr) + cbData(u32) + padding(u32) + lpData(ptr)
+    cds := Buffer(A_PtrSize * 3, 0)
+    NumPut("Ptr", 0, cds, 0)
+    NumPut("UInt", dataSize, cds, A_PtrSize)
+    NumPut("Ptr", dataBuf.Ptr, cds, A_PtrSize * 2)
+
+    ; SendMessageTimeoutW: 2s timeout, SMTO_ABORTIFHUNG prevents indefinite block
+    res := 0
+    try DllCall("User32\SendMessageTimeoutW"
+        , "Ptr", h
+        , "UInt", 0x4A       ; WM_COPYDATA
+        , "Ptr", A_ScriptHwnd
+        , "Ptr", cds.Ptr
+        , "UInt", 0x2        ; SMTO_ABORTIFHUNG
+        , "UInt", 2000       ; 2s timeout
+        , "UInt*", &res
+        , "Ptr")
     return true
 }
