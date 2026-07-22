@@ -1,6 +1,14 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Force
 Persistent
+
+; 全局错误处理：记录错误但不退出脚本
+OnError(ErrorHandler, -1)
+ErrorHandler(err, mode) {
+    msg := FormatTime(, "yyyy-MM-dd HH:mm:ss") " ERROR[" mode "]: " err.Message
+    try FileAppend(msg "`n", A_ScriptDir "\timed-notify-errors.log")
+    return 1  ; 非零 = 抑制错误对话框，继续运行
+}
 ; ==============================================================================
 ; OSD 示例 — 定时通知调度器
 ; ==============================================================================
@@ -105,54 +113,59 @@ ParseTime(t) {
 
 ; ---- 主检查（每30秒）----
 CheckAndFire() {
-    global FIRED, LAST_DAY, RULES
+    try {
+        global FIRED, LAST_DAY, RULES
 
-    ; 午夜重置
-    today := FormatTime(, "yyyyMMdd")
-    if (LAST_DAY != today) {
-        FIRED := Map()
-        LAST_DAY := today
-    }
-
-    nowMins  := A_Hour * 60 + A_Min
-    userWDay := (A_WDay == 1) ? 7 : A_WDay - 1
-    nowY     := Integer(FormatTime(, "yyyy"))
-    nowMon   := Integer(FormatTime(, "MM"))
-    nowD     := Integer(FormatTime(, "dd"))
-
-    for rule in RULES {
-        pt := ParseTime(rule.time)
-        if !IsObject(pt)
-            continue
-
-        fireKey := "", shouldFire := false
-        switch pt.type {
-        case "interval":
-            ; 间隔模式：当前分钟对间隔取模=0时触发（FIRED Map 防抖）
-            fireKey := "i_" . pt.interval . "_" . (nowMins // pt.interval)
-            shouldFire := (Mod(nowMins, pt.interval) == 0)
-        case "daily":
-            fireKey := "d_" . pt.mins
-            shouldFire := (nowMins == pt.mins)
-        case "weekly":
-            if (pt.wday != userWDay)
-                continue
-            fireKey := "w_" . pt.wday . "_" . pt.mins
-            shouldFire := (nowMins == pt.mins)
-        case "once":
-            if (pt.year != nowY || pt.month != nowMon || pt.day != nowD)
-                continue
-            fireKey := "o_" . rule.time
-            shouldFire := (nowMins == pt.mins)
+        ; 午夜重置
+        today := FormatTime(, "yyyyMMdd")
+        if (LAST_DAY != today) {
+            FIRED := Map()
+            LAST_DAY := today
         }
 
-        if (!shouldFire || FIRED.Has(fireKey))
-            continue
+        nowMins  := A_Hour * 60 + A_Min
+        userWDay := (A_WDay == 1) ? 7 : A_WDay - 1
+        nowY     := Integer(FormatTime(, "yyyy"))
+        nowMon   := Integer(FormatTime(, "MM"))
+        nowD     := Integer(FormatTime(, "dd"))
 
-        FIRED[fireKey] := true
-        durMs := (rule.dur > 0) ? rule.dur * 1000 : 3000
-        ruleOpts := rule.HasOwnProp("opts") ? rule.opts : ""
-        AHK_WM_OSD(rule.text, durMs, ruleOpts)
+        for rule in RULES {
+            pt := ParseTime(rule.time)
+            if !IsObject(pt)
+                continue
+
+            fireKey := "", shouldFire := false
+            switch pt.type {
+            case "interval":
+                ; 间隔模式：当前分钟对间隔取模=0时触发（FIRED Map 防抖）
+                fireKey := "i_" . pt.interval . "_" . (nowMins // pt.interval)
+                shouldFire := (Mod(nowMins, pt.interval) == 0)
+            case "daily":
+                fireKey := "d_" . pt.mins
+                shouldFire := (nowMins == pt.mins)
+            case "weekly":
+                if (pt.wday != userWDay)
+                    continue
+                fireKey := "w_" . pt.wday . "_" . pt.mins
+                shouldFire := (nowMins == pt.mins)
+            case "once":
+                if (pt.year != nowY || pt.month != nowMon || pt.day != nowD)
+                    continue
+                fireKey := "o_" . rule.time
+                shouldFire := (nowMins == pt.mins)
+            }
+
+            if (!shouldFire || FIRED.Has(fireKey))
+                continue
+
+            FIRED[fireKey] := true
+            durMs := (rule.dur > 0) ? rule.dur * 1000 : 3000
+            ruleOpts := rule.HasOwnProp("opts") ? rule.opts : ""
+            AHK_WM_OSD(rule.text, durMs, ruleOpts)
+        }
+    } catch as e {
+        msg := FormatTime(, "yyyy-MM-dd HH:mm:ss") " TimerError: " e.Message
+        try FileAppend(msg "`n", A_ScriptDir "\timed-notify-errors.log")
     }
 }
 

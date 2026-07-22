@@ -1,6 +1,14 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Force
 Persistent
+
+; Global error handler: log errors, suppress dialogs, keep running
+OnError(ErrorHandler, -1)
+ErrorHandler(err, mode) {
+    msg := FormatTime(, "yyyy-MM-dd HH:mm:ss") " ERROR[" mode "]: " err.Message
+    try FileAppend(msg "`n", A_ScriptDir "\timed-notify-errors.log")
+    return 1  ; non-zero = suppress error dialog, keep running
+}
 ; ==============================================================================
 ; OSD Example — Timed Notification Scheduler
 ; ==============================================================================
@@ -107,54 +115,59 @@ ParseTime(t) {
 
 ; ---- Main check (every 30s) ----
 CheckAndFire() {
-    global FIRED, LAST_DAY, RULES
+    try {
+        global FIRED, LAST_DAY, RULES
 
-    ; Midnight reset
-    today := FormatTime(, "yyyyMMdd")
-    if (LAST_DAY != today) {
-        FIRED := Map()
-        LAST_DAY := today
-    }
-
-    nowMins  := A_Hour * 60 + A_Min
-    userWDay := (A_WDay == 1) ? 7 : A_WDay - 1
-    nowY     := Integer(FormatTime(, "yyyy"))
-    nowMon   := Integer(FormatTime(, "MM"))
-    nowD     := Integer(FormatTime(, "dd"))
-
-    for rule in RULES {
-        pt := ParseTime(rule.time)
-        if !IsObject(pt)
-            continue
-
-        fireKey := "", shouldFire := false
-        switch pt.type {
-        case "interval":
-            ; Interval: fire when Mod(minute, interval) == 0 (FIRED Map handles debounce)
-            fireKey := "i_" . pt.interval . "_" . (nowMins // pt.interval)
-            shouldFire := (Mod(nowMins, pt.interval) == 0)
-        case "daily":
-            fireKey := "d_" . pt.mins
-            shouldFire := (nowMins == pt.mins)
-        case "weekly":
-            if (pt.wday != userWDay)
-                continue
-            fireKey := "w_" . pt.wday . "_" . pt.mins
-            shouldFire := (nowMins == pt.mins)
-        case "once":
-            if (pt.year != nowY || pt.month != nowMon || pt.day != nowD)
-                continue
-            fireKey := "o_" . rule.time
-            shouldFire := (nowMins == pt.mins)
+        ; Midnight reset
+        today := FormatTime(, "yyyyMMdd")
+        if (LAST_DAY != today) {
+            FIRED := Map()
+            LAST_DAY := today
         }
 
-        if (!shouldFire || FIRED.Has(fireKey))
-            continue
+        nowMins  := A_Hour * 60 + A_Min
+        userWDay := (A_WDay == 1) ? 7 : A_WDay - 1
+        nowY     := Integer(FormatTime(, "yyyy"))
+        nowMon   := Integer(FormatTime(, "MM"))
+        nowD     := Integer(FormatTime(, "dd"))
 
-        FIRED[fireKey] := true
-        durMs := (rule.dur > 0) ? rule.dur * 1000 : 3000
-        ruleOpts := rule.HasOwnProp("opts") ? rule.opts : ""
-        AHK_WM_OSD(rule.text, durMs, ruleOpts)
+        for rule in RULES {
+            pt := ParseTime(rule.time)
+            if !IsObject(pt)
+                continue
+
+            fireKey := "", shouldFire := false
+            switch pt.type {
+            case "interval":
+                ; Interval: fire when Mod(minute, interval) == 0 (FIRED Map handles debounce)
+                fireKey := "i_" . pt.interval . "_" . (nowMins // pt.interval)
+                shouldFire := (Mod(nowMins, pt.interval) == 0)
+            case "daily":
+                fireKey := "d_" . pt.mins
+                shouldFire := (nowMins == pt.mins)
+            case "weekly":
+                if (pt.wday != userWDay)
+                    continue
+                fireKey := "w_" . pt.wday . "_" . pt.mins
+                shouldFire := (nowMins == pt.mins)
+            case "once":
+                if (pt.year != nowY || pt.month != nowMon || pt.day != nowD)
+                    continue
+                fireKey := "o_" . rule.time
+                shouldFire := (nowMins == pt.mins)
+            }
+
+            if (!shouldFire || FIRED.Has(fireKey))
+                continue
+
+            FIRED[fireKey] := true
+            durMs := (rule.dur > 0) ? rule.dur * 1000 : 3000
+            ruleOpts := rule.HasOwnProp("opts") ? rule.opts : ""
+            AHK_WM_OSD(rule.text, durMs, ruleOpts)
+        }
+    } catch as e {
+        msg := FormatTime(, "yyyy-MM-dd HH:mm:ss") " TimerError: " e.Message
+        try FileAppend(msg "`n", A_ScriptDir "\timed-notify-errors.log")
     }
 }
 
