@@ -116,7 +116,7 @@ Layout=[N,]元素,跨度[,颜色1,颜色2,…][,bg|tx][,on|off][,fs=N][,wrap=N];
 
 **旧版**：`BAR:N:文本` — 需在 Layout 中声明 `external_N`。
 推送一次即持续显示，直到下次推送或栏重载。
-参见随附示例 `docs/BarExamples/` 和 `docs/OSDExamples/`。
+参见随附示例 `docs/Examples/BarExamples/` 和 `docs/Examples/OSDExamples/`。
 
 ## [Border] 边框
 
@@ -345,7 +345,7 @@ OSD:文本[:持续时间毫秒][:fs=24,op=90,x=50%,y=30%,bg=FF4444,tx=FFFFFF]
 | `BAR:N:文本` | （旧版）设置状态栏 external_N 部件内容。 |
 | `BAR:N:lo/hi:文本:键=值,…` | （v2.11+）自包含推送——位置颜色字体换行一次调用。 |
 
-随附示例脚本位于 `docs/OSDExamples/`（OSD 弹窗）和 `docs/BarExamples/`
+随附示例脚本位于 `docs/Examples/OSDExamples/`（OSD 弹窗）和 `docs/Examples/BarExamples/`
 （状态栏部件），每种均提供英文（`En/`）和中文（`Ch/`）版本。
 每个脚本内含可直接复制的辅助函数及完整参数文档。
 

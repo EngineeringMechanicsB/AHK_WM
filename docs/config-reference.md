@@ -120,7 +120,7 @@ all passed in the push. No Layout declaration needed. Keys: `bg`, `tx`, `rd`,
 
 **Legacy**: `BAR:N:text` — requires `external_N` in Layout (see above).
 A single push persists until the next push or a bar reload.
-See the bundled examples in `docs/BarExamples/` and `docs/OSDExamples/`.
+See the bundled examples in `docs/Examples/BarExamples/` and `docs/Examples/OSDExamples/`.
 
 ## [Border]
 
@@ -354,8 +354,8 @@ Send a `WM_COPYDATA` message to the hidden main window
 | `BAR:N:text` | (Legacy) Set content of `external_N` bar widget. |
 | `BAR:N:lo/hi:text:key=val,…` | (v2.11+) Self-contained bar push — position, colors, font, wrap all in one call. |
 
-Bundled example scripts live in `docs/OSDExamples/` (OSD popups) and
-`docs/BarExamples/` (bar widgets), each with English (`En/`) and
+Bundled example scripts live in `docs/Examples/OSDExamples/` (OSD popups) and
+`docs/Examples/BarExamples/` (bar widgets), each with English (`En/`) and
 Chinese (`Ch/`) variants.  Every script includes a ready-to-copy helper
 function with full parameter documentation.
 

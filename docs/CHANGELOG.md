@@ -5,7 +5,7 @@
 - 🆕 **OSD per-call customization** — external scripts can override every visual setting (font size, opacity, position, colors, width, rounding, font face) per OSD call via `key=value` pairs appended to the payload; all keys optional, fall back to `[GUI]` config defaults
 - 🆕 **OSD tag & instance isolation** — `tag=` key lets same-tag OSDs replace each other (no stacking); external OSDs run in a separate instance pool from internal `wm.ahk` OSDs, so the two never interfere
 - 🆕 **Bar per-element `fs=` and `wrap=` attributes** — Layout elements can now set their own font size (`fs=14`) and line count (`wrap=2`); bar auto-grows when wrapped elements need more height
-- 📚 **Bilingual example suite** — new `docs/OSDExamples/` (5 scripts) and `docs/BarExamples/` (3 scripts), each with `En/` and `Ch/` variants, heavily commented with full parameter documentation
+- 📚 **Bilingual example suite** — new `docs/Examples/OSDExamples/` (5 scripts) and `docs/Examples/BarExamples/` (3 scripts), each with `En/` and `Ch/` variants, heavily commented with full parameter documentation
 - 📚 **New examples include**: lyrics reader with tag replacement, timed notification daemon, text-file paginator, dual-slot bar lyrics simulator, multi-line poetry display
 - 🧹 **Removed** `[WorkTime] NotificationRule` — timed notifications are now handled by a standalone script (`osd-timed-notify.ahk`), keeping wm.ahk lean
 

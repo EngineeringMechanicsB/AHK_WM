@@ -189,8 +189,8 @@ WMBarPush(2, "Take a sad song`nand make it better")  ; `n = newline, renders as 
 
 ### Bundled examples
 
-Ready-to-run examples with full documentation are in `docs/OSDExamples/` and
-`docs/BarExamples/`, each with English (`En/`) and Chinese (`Ch/`) variants.
+Ready-to-run examples with full documentation are in `docs/Examples/OSDExamples/` and
+`docs/Examples/BarExamples/`, each with English (`En/`) and Chinese (`Ch/`) variants.
 
 ### Claude Code integration
 

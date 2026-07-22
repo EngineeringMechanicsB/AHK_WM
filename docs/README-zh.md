@@ -190,7 +190,7 @@ WMBarPush(2, "Take a sad song`nand make it better")  ; `n = 换行符，渲染�
 
 ### 随附示例
 
-开箱即用的示例脚本位于 `docs/OSDExamples/` 和 `docs/BarExamples/`，
+开箱即用的示例脚本位于 `docs/Examples/OSDExamples/` 和 `docs/Examples/BarExamples/`，
 每种均提供英文（`En/`）和中文（`Ch/`）双语版本，注释详尽含完整参数文档。
 
 ### Claude Code 集成
