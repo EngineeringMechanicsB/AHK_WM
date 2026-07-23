@@ -174,27 +174,18 @@ External OSDs run in a separate instance pool — they never interfere with
 
 ### Bar custom widgets (`external_N`)
 
-Add `external_N` to `[Bar] Layout`, optionally with `fs=` (font size) and
-`wrap=` (max lines).  The bar auto-grows when wrapped elements need more height.
-
-```
-Layout=external_1,1/5,7AA2F7,tx,fs=12;external_2,(2-4)/5,CDD6F4,tx,fs=14,wrap=2;…
-```
-
-Then push text from any script:
+Like OSD, the bar exposes an external interface — push content from any script:
 ```ahk
-WMBarPush(1, "Now Playing: Hey Jude — The Beatles")
-WMBarPush(2, "Take a sad song`nand make it better")  ; `n = newline, renders as 2 lines
+WMBarPush(1, "0.5/0.8", "Now Playing: Hey Jude — The Beatles")
+WMBarPush(2, "(200-550)/1920", "Take a sad song`nand make it better")  ; `n = newline, renders as 2 lines
 ```
 
 ### Bundled examples
 
-Ready-to-run examples with full documentation are in `docs/Examples/OSDExamples/` and
-`docs/Examples/BarExamples/`, each with English (`En/`) and Chinese (`Ch/`) variants.
+Ready-to-run examples are in `docs/Examples/OSDExamples/` and `docs/Examples/BarExamples/`,
+each with English (`En/`) and Chinese (`Ch/`) variants, heavily commented with full parameter docs.
 
 ### Claude Code integration
-
-Hook AHK_WM into Claude Code for completion notifications:
 
 ```json
 {
@@ -206,10 +197,9 @@ Hook AHK_WM into Claude Code for completion notifications:
 }
 ```
 
-The same pattern works with any tool that can run a `.ahk` file — task schedulers,
-CI pipelines, build scripts, whatever.
+A simple config lets Claude Code pop an OSD on completion — the same idea works for task schedulers, CI pipelines, Pomodoro timers, whatever.
 
-📂 `docs/Examples/OSDExamples/` (5 scripts) and `docs/Examples/BarExamples/` (3 scripts) — 8 ready-to-run demos (Chinese / English, heavily commented).
+📂 `docs/Examples/OSDExamples/` and `docs/Examples/BarExamples/` — several ready-to-run demos to learn from.
 
 <p align="center">
   <img src="docs/images/sep-config.svg" alt="" width="85%">
@@ -229,10 +219,11 @@ All configuration lives in `%USERPROFILE%\.config\AHK_WM\wm_config.ini`. Edit it
 
 ## 🔮 Roadmap
 
-- **WTM border cleanup** — eliminate border ghosting on window close / mode exit
+- **WTM mode** — the current WTM has many rough edges
 - **Per-monitor desktops** — independent desktop switching per monitor
 - **Package managers** — Scoop, Chocolatey, winget distribution
-- **Config GUI** — graphical settings editor
+- **Window exclude rules** — current exclusion rules need improvement
+- **Bar auto-hide & reveal** — currently only full hide; add occlusion-based auto-hide or transparency mode
 
 ---
 
@@ -242,8 +233,6 @@ All configuration lives in `%USERPROFILE%\.config\AHK_WM\wm_config.ini`. Edit it
 |---------|-----|
 | Hotkeys fail in admin windows | Run script as Administrator |
 | Pie menu customization broken | Install AHK v2 (not just the .exe) |
-| Games / UWP act strange | Add to `[Exclude]` |
-| Status bar hidden by fullscreen | By design. Toggle with `Ctrl+Alt+B` |
 | Borders look offset | Adjust `Border` thickness or radius |
 
 ---
