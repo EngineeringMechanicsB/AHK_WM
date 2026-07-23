@@ -6,9 +6,12 @@ Persistent
 ; ==============================================================================
 ;
 ; [What this does]
-;   Reads a .txt file, splits it into pages of N characters each, and lets
-;   you flip through them with arrow keys.  Each page is displayed as an OSD
-;   popup.  Think of it as a "teleprompter" or "slow reader" for any text.
+;   Reads a .txt file, splits it into pages of N words each (space-delimited),
+;   and lets you flip through them with arrow keys.  Each page is displayed as
+;   an OSD popup — works as a "teleprompter" or "slow reader" for any text.
+;
+;   Unlike the Chinese version (character-based), English text is split by
+;   words to avoid breaking mid-word.
 ;
 ; [Prerequisites]
 ;   1. wm.ahk must be running
@@ -23,19 +26,19 @@ Persistent
 ;
 ; [Configurable parameters]
 ;   FILE_PATH      — path to the .txt file to read
-;   CHARS_PER_PAGE — how many characters per page (default 10)
+;   WORDS_PER_PAGE — how many words per page (default 15)
 ;   OSD_DURATION   — display duration in ms (0 = persistent, replaced on flip)
 ;
 ; [How it works]
-;   1. On startup, reads the entire file into memory, strips line breaks.
-;   2. Splits into pages of CHARS_PER_PAGE characters.
+;   1. On startup, reads the entire file, normalizes whitespace.
+;   2. Splits by spaces into words; groups WORDS_PER_PAGE words per page.
 ;   3. Arrow keys call AHK_WM_OSD to show the current page.
 ;   4. Uses the "tag=pager" key so each new page replaces the old one.
 ; ==============================================================================
 
 ; ==================== CONFIGURATION ====================
 global FILE_PATH      := A_ScriptDir "\osd-pager-demo.txt"  ; demo file in same folder
-global CHARS_PER_PAGE := 30
+global WORDS_PER_PAGE := 15
 global OSD_DURATION   := 0    ; 0 = stay until next page (uses tag replacement)
 ; =======================================================
 
@@ -44,9 +47,9 @@ global gPages     := []   ; array of page strings
 global gTotalPage := 0
 global gCurPage   := 1
 
-; ---- Load file and paginate ----
+; ---- Load file and paginate (word-based) ----
 LoadFile(path) {
-    global gText, gPages, gTotalPage, gCurPage
+    global gText, gPages, gTotalPage, gCurPage, WORDS_PER_PAGE
     if !FileExist(path) {
         MsgBox("File not found:`n" . path, "Text Pager", "IconX")
         ExitApp
@@ -56,14 +59,24 @@ LoadFile(path) {
         MsgBox("File is empty or unreadable.", "Text Pager", "IconX")
         ExitApp
     }
-    ; Strip line breaks (remove if you want to preserve paragraphs)
-    gText := RegExReplace(gText, "[\r\n]+", "")
-    len := StrLen(gText)
+    ; Normalize whitespace: newlines → spaces, collapse multiple spaces
+    gText := RegExReplace(gText, "[\r\n]+", " ")
+    gText := Trim(RegExReplace(gText, "\s+", " "))
+    ; Split into words by spaces, group WORDS_PER_PAGE per page
+    words := StrSplit(gText, " ")
     gPages := []
-    start := 1
-    while (start <= len) {
-        gPages.Push(SubStr(gText, start, CHARS_PER_PAGE))
-        start += CHARS_PER_PAGE
+    i := 1
+    while (i <= words.Length) {
+        pageText := ""
+        loop WORDS_PER_PAGE {
+            if (i > words.Length)
+                break
+            if (A_Index > 1)
+                pageText .= " "
+            pageText .= words[i]
+            i++
+        }
+        gPages.Push(pageText)
     }
     gTotalPage := gPages.Length
     gCurPage   := 1
