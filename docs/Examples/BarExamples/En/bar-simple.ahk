@@ -20,7 +20,7 @@ Persistent
 ;   lo/hi = span fraction ("0.5/0.8") or pixel ("(200-550)/1920")
 ;
 ; [Controls]
-;   Esc — exit
+;   Tray right-click → Exit (Esc too common to bind)
 ; ==============================================================================
 
 PushTick() {

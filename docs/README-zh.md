@@ -165,6 +165,7 @@ AHK_WM_OSD("磁盘满了！", 5000, "fs=36,bg=CC3333,tx=FFFFFF,op=95,pos=30")
 | `fs` | 字体大小 | 配置 `OSDFontSize` (20) |
 | `op` | 不透明度 % | 配置 `OSDOpacity` (78) |
 | `pos` | 垂直位置 % | 配置 `OSDPositionPct` (80) |
+| `x` / `y` | 像素/百分比坐标 | *(居中 / 配置)* |
 | `bg` / `tx` | 背景色 / 文字色 | 主题颜色 |
 | `wr` | 最大宽度（自动换行）| 屏幕宽 × 0.85 |
 | `rd` / `rr` | 圆角开关 + 半径 | 配置值 |
@@ -199,7 +200,7 @@ WMBarPush(2, "Take a sad song`nand make it better")  ; `n = 换行符，渲染�
 {
   "hooks": {
     "Stop": [
-      { "command": "C:\\Users\\Administrator\\Desktop\\AHK_WM\\docs\\OSDExamples\\Ch\\osd-simple.ahk" }
+      { "command": "C:\\Users\\Administrator\\Desktop\\AHK_WM\\docs\\Examples\\OSDExamples\\Ch\\osd-simple.ahk" }
     ]
   }
 }
@@ -207,7 +208,7 @@ WMBarPush(2, "Take a sad song`nand make it better")  ; `n = 换行符，渲染�
 
 同样的套路适用于任何能执行 `.ahk` 的工具——任务计划、CI 流水线、构建脚本都行。
 
-📂 `bar-examples/` 和 `osd-examples/` 有 12 个开箱即用的示例（中英文、详细注释）。
+📂 `docs/Examples/OSDExamples/`（5 个脚本）和 `docs/Examples/BarExamples/`（3 个脚本）— 共 8 个开箱即用示例（中英文、详细注释）。
 
 <p align="center">
   <img src="images/sep-config.svg" alt="" width="85%">
@@ -230,7 +231,9 @@ WMBarPush(2, "Take a sad song`nand make it better")  ; `n = 换行符，渲染�
 ## 🔮 路线图
 
 - **WTM 边框清理** — 消除窗口关闭/退出模式时的边框残留
+- **多显示器独立桌面** — 每显示器独立切换桌面
 - **包管理器** — Scoop、Chocolatey、winget 分发
+- **配置 GUI** — 图形化配置编辑器
 
 ---
 

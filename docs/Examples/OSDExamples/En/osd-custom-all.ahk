@@ -5,7 +5,7 @@
 ; ==============================================================================
 ;
 ; [What this does]
-;   Pops up 7 OSD notifications in sequence, each with different visual
+;   Pops up OSD notifications in sequence, each with different visual
 ;   overrides to demonstrate ALL available per-call customization keys.
 ;
 ; [Available override keys]
@@ -105,11 +105,17 @@ AHK_WM_OSD(text, duration := 1000, opts := "") {
     payload := "OSD:" . text . ":" . duration
     if (opts != "")
         payload .= ":" . opts
-    c := StrPut(payload, "UTF-16")
-    b := Buffer(A_PtrSize * 3, 0)
-    NumPut("Ptr", 0, b, 0)
-    NumPut("UInt", c, b, A_PtrSize)
-    NumPut("Ptr", StrPtr(payload), b, A_PtrSize * 2)
-    try SendMessage(0x4A, 0, b.Ptr, , "ahk_id " . h)
+    dataSize := (StrLen(payload) + 1) * 2
+    dataBuf := Buffer(dataSize, 0)
+    StrPut(payload, dataBuf, "UTF-16")
+    cds := Buffer(A_PtrSize * 3, 0)
+    NumPut("Ptr", 0, cds, 0)
+    NumPut("UInt", dataSize, cds, A_PtrSize)
+    NumPut("Ptr", dataBuf.Ptr, cds, A_PtrSize * 2)
+    res := 0
+    DllCall("User32\SendMessageTimeoutW"
+        , "Ptr", h, "UInt", 0x4A, "Ptr", A_ScriptHwnd
+        , "Ptr", cds.Ptr, "UInt", 0x2, "UInt", 2000
+        , "UInt*", &res, "Ptr")
     return true
 }

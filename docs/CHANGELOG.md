@@ -7,6 +7,9 @@
 - 🆕 **Bar per-element `fs=` and `wrap=` attributes** — Layout elements can now set their own font size (`fs=14`) and line count (`wrap=2`); bar auto-grows when wrapped elements need more height
 - 📚 **Bilingual example suite** — new `docs/Examples/OSDExamples/` (5 scripts) and `docs/Examples/BarExamples/` (3 scripts), each with `En/` and `Ch/` variants, heavily commented with full parameter documentation
 - 📚 **New examples include**: lyrics reader with tag replacement, timed notification daemon, text-file paginator, dual-slot bar lyrics simulator, multi-line poetry display
+- 🆕 **osd-timed-notify: `_*/N[xC]` interval-start suffix** — daily/weekly/once schedules can now take an interval suffix (e.g. `1200_*/30` = every 30 min from 12:00, `1400_*/20x3` = 3 times every 20 min from 14:00); interval only runs after the base time, resets at midnight
+- 🛡️ **All example OSD helpers now use `SendMessageTimeoutW`** — 2s timeout + `SMTO_ABORTIFHUNG` prevents indefinite thread blocking when wm.ahk is busy; data copied into independent `Buffer` instead of `StrPtr` on a local variable
+- 🐛 **Removed `Esc::ExitApp` from all example scripts** — Esc is bound by too many apps; all examples now rely on tray-menu exit
 - 🧹 **Removed** `[WorkTime] NotificationRule` — timed notifications are now handled by a standalone script (`osd-timed-notify.ahk`), keeping wm.ahk lean
 
 ### v2.9.0 (2026-07-15)

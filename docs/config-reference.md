@@ -1,6 +1,6 @@
-# AHK_WM Configuration Reference (v2.9.0)
+# AHK_WM Configuration Reference (v2.10.0)
 
-Config file location: `%USERPROFILE%\.config\AHK_WM\wm_config.ini` (UTF-8).
+Config file location: `%USERPROFILE%\.config\AHK_WM\wm_config.ini` (UTF-16 LE).
 The file is created with defaults on first run. After editing, reload the script
 (default hotkey `Alt+R`, or tray → *Reload Script*).
 
@@ -358,12 +358,3 @@ Bundled example scripts live in `docs/Examples/OSDExamples/` (OSD popups) and
 `docs/Examples/BarExamples/` (bar widgets), each with English (`En/`) and
 Chinese (`Ch/`) variants.  Every script includes a ready-to-copy helper
 function with full parameter documentation.
-
-## Self-test
-
-Tray menu → **Run Self-Test** exercises config parsing, INI round-trip, themes,
-GDI gradients, border frames, bar instances, virtual-desktop structures, the
-hotkey table, clipboard capture (snapshot & restore), logging and the external
-bar interface, then shows a PASS/FAIL/SKIP report and writes details to the log.
-It never moves, closes or modifies real windows; checks that would are SKIPped
-by design.

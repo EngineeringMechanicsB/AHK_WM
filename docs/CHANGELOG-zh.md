@@ -7,6 +7,9 @@
 - 🆕 **Bar 逐元素 `fs=` 和 `wrap=` 属性** — Layout 元素可独立设置字体大小（`fs=14`）和行数（`wrap=2`）；bar 自动增高以容纳换行内容
 - 📚 **双语示例套件** — 新增 `docs/Examples/OSDExamples/`（5 个脚本）和 `docs/Examples/BarExamples/`（3 个脚本），每种均有 `En/` 和 `Ch/` 双语版本，注释详尽含完整参数文档
 - 📚 **新示例包括**：tag 替换式歌词播放器、定时通知守护进程、文本文件分页器、双槽位 bar 歌词模拟、多行诗词展示
+- 🆕 **osd-timed-notify：`_*/N[xC]` 间隔后缀** — 天/周/单次循环可附加间隔后缀（如 `1200_*/30` = 12点起每30分钟，`1400_*/20x3` = 14点起每20分钟共3次）；只在基准时间之后触发，午夜重置
+- 🛡️ **所有示例 OSD 辅助函数改用 `SendMessageTimeoutW`** — 2s 超时 + `SMTO_ABORTIFHUNG` 防止 wm.ahk 忙时线程阻塞；数据写入独立 `Buffer` 替代局部变量 `StrPtr`
+- 🐛 **从所有示例脚本中移除 `Esc::ExitApp`** — Esc 被太多应用使用；所有示例现通过托盘菜单退出
 - 🧹 **移除** `[WorkTime] NotificationRule` — 定时通知改为独立脚本（`osd-timed-notify.ahk`），保持 wm.ahk 精简
 
 ### v2.9.0 (2026-07-15)

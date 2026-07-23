@@ -1,6 +1,6 @@
-# AHK_WM 配置参考（v2.9.0）
+# AHK_WM 配置参考（v2.10.0）
 
-配置文件位置：`%USERPROFILE%\.config\AHK_WM\wm_config.ini`（UTF-8 编码）。
+配置文件位置：`%USERPROFILE%\.config\AHK_WM\wm_config.ini`（UTF-16 LE 编码）。
 首次运行时自动生成默认配置。修改后重载脚本生效（默认热键 `Alt+R`，或托盘菜单 → *Reload Script*）。
 
 **取值约定**
@@ -348,10 +348,3 @@ OSD:文本[:持续时间毫秒][:fs=24,op=90,x=50%,y=30%,bg=FF4444,tx=FFFFFF]
 随附示例脚本位于 `docs/Examples/OSDExamples/`（OSD 弹窗）和 `docs/Examples/BarExamples/`
 （状态栏部件），每种均提供英文（`En/`）和中文（`Ch/`）版本。
 每个脚本内含可直接复制的辅助函数及完整参数文档。
-
-## 自检
-
-托盘菜单 → **Run Self-Test**：依次检验配置解析、INI 读写往返、主题完整性、GDI
-渐变、边框窗体、状态栏实例、虚拟桌面结构、热键表、剪贴板捕获（先快照后还原）、
-日志写入及 bar 外部接口，随后显示 PASS/FAIL/SKIP 报告并将明细写入日志。
-自检**绝不移动、关闭或修改真实窗口**；会产生此类影响的检查项按设计标记为 SKIP。

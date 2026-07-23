@@ -6,7 +6,7 @@ Persistent
 ; ==============================================================================
 ;
 ; [Content] Dante Alighieri, Inferno Canto I (public domain·1320)
-; [Controls] Esc — exit (auto-clears bar)
+; [Exit] Tray right-click → Exit (Esc too common to bind)
 ; ==============================================================================
 
 global Lines := [
@@ -16,6 +16,9 @@ global Lines := [
     "Abandon all hope`nye who enter here"
 ]
 global gIdx := 1
+
+OnExit(Cleanup)
+Cleanup(*) => _WMSend("BAR:1:")
 
 PushLine() {
     global gIdx, Lines

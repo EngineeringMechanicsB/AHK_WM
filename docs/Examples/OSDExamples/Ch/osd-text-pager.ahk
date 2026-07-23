@@ -18,11 +18,11 @@ Persistent
 ;   ↓ / → / PgDn — 下一页
 ;   Home         — 跳到第一页
 ;   End          — 跳到最后一页
-;   Esc          — 退出
+;   托盘右键 — 退出（Esc 太常用，不绑）
 ;
 ; 【可调参数】
 ;   FILE_PATH      — 要读取的 .txt 文件路径
-;   CHARS_PER_PAGE — 每页显示字数（默认 10）
+;   CHARS_PER_PAGE — 每页显示字数（默认 20）
 ;   OSD_DURATION   — 显示时长毫秒（0 = 持续显示，翻页时替换）
 ;
 ; 【工作原理】
@@ -129,11 +129,17 @@ AHK_WM_OSD(text, duration := 1000, opts := "") {
     payload := "OSD:" . text . ":" . duration
     if (opts != "")
         payload .= ":" . opts
-    c := StrPut(payload, "UTF-16")
-    b := Buffer(A_PtrSize * 3, 0)
-    NumPut("Ptr", 0, b, 0)
-    NumPut("UInt", c, b, A_PtrSize)
-    NumPut("Ptr", StrPtr(payload), b, A_PtrSize * 2)
-    try SendMessage(0x4A, 0, b.Ptr, , "ahk_id " . h)
+    dataSize := (StrLen(payload) + 1) * 2
+    dataBuf := Buffer(dataSize, 0)
+    StrPut(payload, dataBuf, "UTF-16")
+    cds := Buffer(A_PtrSize * 3, 0)
+    NumPut("Ptr", 0, cds, 0)
+    NumPut("UInt", dataSize, cds, A_PtrSize)
+    NumPut("Ptr", dataBuf.Ptr, cds, A_PtrSize * 2)
+    res := 0
+    DllCall("User32\SendMessageTimeoutW"
+        , "Ptr", h, "UInt", 0x4A, "Ptr", A_ScriptHwnd
+        , "Ptr", cds.Ptr, "UInt", 0x2, "UInt", 2000
+        , "UInt*", &res, "Ptr")
     return true
 }

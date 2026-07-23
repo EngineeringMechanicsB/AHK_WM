@@ -200,7 +200,7 @@ Hook AHK_WM into Claude Code for completion notifications:
 {
   "hooks": {
     "Stop": [
-      { "command": "C:\\Users\\Administrator\\Desktop\\AHK_WM\\docs\\OSDExamples\\En\\osd-simple.ahk" }
+      { "command": "C:\\Users\\Administrator\\Desktop\\AHK_WM\\docs\\Examples\\OSDExamples\\En\\osd-simple.ahk" }
     ]
   }
 }
@@ -209,7 +209,7 @@ Hook AHK_WM into Claude Code for completion notifications:
 The same pattern works with any tool that can run a `.ahk` file — task schedulers,
 CI pipelines, build scripts, whatever.
 
-📂 `docs/bar-examples/` and `docs/osd-examples/` have 12 ready-to-run demos (Chinese / English, heavily commented).
+📂 `docs/Examples/OSDExamples/` (5 scripts) and `docs/Examples/BarExamples/` (3 scripts) — 8 ready-to-run demos (Chinese / English, heavily commented).
 
 <p align="center">
   <img src="docs/images/sep-config.svg" alt="" width="85%">
