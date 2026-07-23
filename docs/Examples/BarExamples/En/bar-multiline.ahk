@@ -5,15 +5,15 @@ Persistent
 ; Bar Example 2 — Multi-Line Text (Self-Contained)
 ; ==============================================================================
 ;
-; [Content] Dante Alighieri, Inferno Canto I (public domain·1320)
+; [Content] Les Misérables — Do You Hear the People Sing? (public domain novel·1862)
 ; [Exit] Ctrl+Alt+F12 (or tray right-click → Exit)
 ; ==============================================================================
 
 global Lines := [
-    "Midway upon the journey`nof our life",
-    "I found myself within`na forest dark",
-    "For the straightforward`npathway had been lost",
-    "Abandon all hope`nye who enter here"
+    "Do you hear the people sing`nSinging the song of angry men",
+    "It is the music of the people`nWho will not be slaves again",
+    "When the beating of your heart`nEchoes the beating of the drums",
+    "There is a life about to start`nWhen tomorrow comes"
 ]
 global gIdx := 1
 
