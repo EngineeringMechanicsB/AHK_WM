@@ -163,10 +163,10 @@ CheckAndFire() {
 }
 
 SetTimer(CheckAndFire, 30000)
+Persistent(true)  ; 显式保活
 CheckAndFire()
 
 ; 启动确认
-TrayTip("⏰ 定时通知已启动", "共 " RULES.Length " 条规则，按 Esc 退出")
 OutputDebug("[osd-timed-notify] 启动 — " RULES.Length " 条规则已加载`n")
 
 Esc::ExitApp

@@ -165,10 +165,10 @@ CheckAndFire() {
 }
 
 SetTimer(CheckAndFire, 30000)
+Persistent(true)  ; explicit keep-alive
 CheckAndFire()
 
 ; Startup confirmation
-TrayTip("⏰ Timed Notify started", RULES.Length " rules loaded. Press Esc to exit.")
 OutputDebug("[osd-timed-notify] started — " RULES.Length " rules loaded`n")
 
 Esc::ExitApp
