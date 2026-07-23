@@ -51,12 +51,7 @@ PushVerse() {
 PushVerse()
 SetTimer(PushVerse, 3000)
 
-OnExit(Cleanup)
-Cleanup(*) {
-    _WMSend("BAR:1:")
-    _WMSend("BAR:2:")
-}
-; Exit: tray right-click → Exit (Esc too common to bind)
+^!F12::ExitApp  ; Ctrl+Alt+F12 to exit (safer than Esc)
 
 WMBarPushEx(slot, loHi, text, opts := "") {
     msg := "BAR:" . slot . ":" . loHi . ":" . text

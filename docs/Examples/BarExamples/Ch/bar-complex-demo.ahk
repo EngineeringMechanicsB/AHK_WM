@@ -10,7 +10,6 @@ Persistent
 ;   slot 2 — 当前句（大字两行）
 ;   每 3 秒切一句，每 6 句弹 OSD。退出时清空 bar + 恢复高度。
 ;
-; 【退出】托盘右键 → Exit（Esc 太常用，不绑）
 ; ==============================================================================
 
 global Verses := [
@@ -51,12 +50,7 @@ PushVerse() {
 PushVerse()
 SetTimer(PushVerse, 3000)
 
-OnExit(Cleanup)
-Cleanup(*) {
-    _WMSend("BAR:1:")
-    _WMSend("BAR:2:")
-}
-; 退出：托盘右键 → Exit（Esc 太常用，不绑）
+^!F12::ExitApp  ; Ctrl+Alt+F12 退出（比 Esc 安全）
 
 WMBarPushEx(slot, loHi, text, opts := "") {
     msg := "BAR:" . slot . ":" . loHi . ":" . text

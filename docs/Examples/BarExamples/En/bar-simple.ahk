@@ -30,10 +30,7 @@ PushTick() {
 PushTick()
 SetTimer(PushTick, 3000)
 
-; Clear bar on exit
-OnExit(Cleanup)
-Cleanup(*) => _WMSend("BAR:1:")
-; Exit: tray right-click → Exit (Esc too common to bind)
+^!F12::ExitApp  ; Ctrl+Alt+F12 to exit (safer than Esc)
 
 ; ------------------------------------------------------------------------------
 ; WMBarPush(slot, text) — Old protocol (requires Layout external_N)

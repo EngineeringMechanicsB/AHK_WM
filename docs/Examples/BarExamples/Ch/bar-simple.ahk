@@ -18,8 +18,6 @@ Persistent
 ;
 ;   lo/hi = 宽度比例 "0.5/0.8" 或像素 "(200-550)/1920"
 ;
-; 【操作】
-;   托盘右键 → Exit（Esc 太常用，不绑）
 ; ==============================================================================
 
 PushTick() {
@@ -29,10 +27,7 @@ PushTick() {
 PushTick()
 SetTimer(PushTick, 3000)
 
-; 退出时清空 bar 内容
-OnExit(Cleanup)
-Cleanup(*) => _WMSend("BAR:1:")
-; 退出：托盘右键 → Exit（Esc 太常用，不绑）
+^!F12::ExitApp  ; Ctrl+Alt+F12 退出（比 Esc 安全）
 
 ; ------------------------------------------------------------------------------
 ; WMBarPush(slot, text) — 旧版协议（需 Layout 声明 external_N）

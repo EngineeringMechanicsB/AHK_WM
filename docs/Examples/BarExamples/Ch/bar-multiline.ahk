@@ -6,7 +6,7 @@ Persistent
 ; ==============================================================================
 ;
 ; 【内容】红楼梦·太虚幻境对联（公有领域）
-; 【退出】托盘右键 → Exit（Esc 太常用，不绑）
+; 【退出】Ctrl+Alt+F12（或托盘右键 → Exit）
 ; ==============================================================================
 
 global Lines := [
@@ -17,9 +17,6 @@ global Lines := [
 ]
 global gIdx := 1
 
-OnExit(Cleanup)
-Cleanup(*) => _WMSend("BAR:1:")
-
 PushLine() {
     global gIdx, Lines
     WMBarPushEx(1, "0.3/0.9", Lines[gIdx], "tx=CDD6F4,fs=11,wrap=2")
@@ -28,7 +25,8 @@ PushLine() {
 
 PushLine()
 SetTimer(PushLine, 5000)
-; 退出：托盘右键 → Exit（Esc 太常用，不绑）
+
+^!F12::ExitApp  ; Ctrl+Alt+F12 退出（比 Esc 安全）
 
 WMBarPushEx(slot, loHi, text, opts := "") {
     msg := "BAR:" . slot . ":" . loHi . ":" . text

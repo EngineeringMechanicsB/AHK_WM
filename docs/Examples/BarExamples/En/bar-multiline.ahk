@@ -6,7 +6,7 @@ Persistent
 ; ==============================================================================
 ;
 ; [Content] Dante Alighieri, Inferno Canto I (public domain·1320)
-; [Exit] Tray right-click → Exit (Esc too common to bind)
+; [Exit] Ctrl+Alt+F12 (or tray right-click → Exit)
 ; ==============================================================================
 
 global Lines := [
@@ -17,9 +17,6 @@ global Lines := [
 ]
 global gIdx := 1
 
-OnExit(Cleanup)
-Cleanup(*) => _WMSend("BAR:1:")
-
 PushLine() {
     global gIdx, Lines
     WMBarPushEx(1, "0.3/0.9", Lines[gIdx], "tx=CDD6F4,fs=11,wrap=2")
@@ -28,7 +25,8 @@ PushLine() {
 
 PushLine()
 SetTimer(PushLine, 5000)
-; Exit: tray right-click → Exit (Esc too common to bind)
+
+^!F12::ExitApp  ; Ctrl+Alt+F12 to exit (safer than Esc)
 
 WMBarPushEx(slot, loHi, text, opts := "") {
     msg := "BAR:" . slot . ":" . loHi . ":" . text
