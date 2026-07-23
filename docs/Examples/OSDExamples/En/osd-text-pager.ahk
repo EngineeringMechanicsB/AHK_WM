@@ -35,7 +35,7 @@ Persistent
 
 ; ==================== CONFIGURATION ====================
 global FILE_PATH      := A_ScriptDir "\osd-pager-demo.txt"  ; demo file in same folder
-global CHARS_PER_PAGE := 10
+global CHARS_PER_PAGE := 30
 global OSD_DURATION   := 0    ; 0 = stay until next page (uses tag replacement)
 ; =======================================================
 

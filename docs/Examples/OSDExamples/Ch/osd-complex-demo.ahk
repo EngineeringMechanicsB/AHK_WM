@@ -26,22 +26,22 @@ Persistent
 ; ==============================================================================
 
 global Lyrics := [
-    "Hey Jude, don't make it bad",
-    "Take a sad song and make it better",
-    "Remember to let her into your heart",
-    "Then you can start to make it better",
-    "Hey Jude, don't be afraid",
-    "You were made to go out and get her",
-    "The minute you let her under your skin",
-    "Then you begin to make it better",
-    "And anytime you feel the pain",
-    "Hey Jude, refrain",
-    "Don't carry the world upon your shoulders",
-    "For well you know that it's a fool",
-    "Who plays it cool",
-    "By making his world a little colder",
-    "Na na na na na na na na na",
-    "Hey Jude..."
+    "花谢花飞花满天",
+    "红消香断有谁怜",
+    "游丝软系飘春榭",
+    "落絮轻沾扑绣帘",
+    "闺中女儿惜春暮",
+    "愁绪满怀无释处",
+    "手把花锄出绣帘",
+    "忍踏落花来复去",
+    "柳丝榆荚自芳菲",
+    "不管桃飘与李飞",
+    "桃李明年能再发",
+    "明年闺中知有谁",
+    "三月香巢已垒成",
+    "梁间燕子太无情",
+    "明年花发虽可啄",
+    "却不道人去梁空巢也倾"
 ]
 global gIdx := 1
 
