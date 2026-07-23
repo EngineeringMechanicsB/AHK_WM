@@ -78,7 +78,7 @@ Space:: {
     AHK_WM_OSD("Bottom notification",  3000, "fs=16,bg=3355CC,tx=FFFFFF,op=90,pos=85,tag=demo3")
 }
 
-Esc::ExitApp
+; Exit: tray right-click → Exit (Esc too common to bind)
 
 ; ------------------------------------------------------------------------------
 ; AHK_WM_OSD(text, duration, opts)

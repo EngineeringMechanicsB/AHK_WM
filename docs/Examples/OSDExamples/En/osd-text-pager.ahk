@@ -113,7 +113,7 @@ End:: {
     gCurPage := gTotalPage
     ShowPage(gTotalPage)
 }
-Esc::ExitApp
+; Exit: tray right-click → Exit (Esc too common to bind)
 
 ; ---- Startup ----
 LoadFile(FILE_PATH)

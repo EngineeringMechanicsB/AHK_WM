@@ -112,7 +112,7 @@ End:: {
     gCurPage := gTotalPage
     ShowPage(gTotalPage)
 }
-Esc::ExitApp
+; 退出：托盘右键 → Exit（Esc 太常用，不绑）
 
 ; ---- 启动 ----
 LoadFile(FILE_PATH)

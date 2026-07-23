@@ -32,7 +32,7 @@ SetTimer(PushTick, 3000)
 ; 退出时清空 bar 内容
 OnExit(Cleanup)
 Cleanup(*) => _WMSend("BAR:1:")
-Esc::ExitApp
+; 退出：托盘右键 → Exit（Esc 太常用，不绑）
 
 ; ------------------------------------------------------------------------------
 ; WMBarPush(slot, text) — 旧版协议（需 Layout 声明 external_N）

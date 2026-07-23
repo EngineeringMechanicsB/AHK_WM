@@ -75,7 +75,7 @@ Space:: {
     AHK_WM_OSD("底部通知",   3000, "fs=16,bg=3355CC,tx=FFFFFF,op=90,pos=85,tag=demo3")
 }
 
-Esc::ExitApp
+; 退出：托盘右键 → Exit（Esc 太常用，不绑）
 
 ; ------------------------------------------------------------------------------
 ; AHK_WM_OSD(text, duration, opts) —— 参见 osd-custom-all.ahk 完整参数文档

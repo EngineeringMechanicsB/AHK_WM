@@ -25,7 +25,7 @@ PushLine() {
 
 PushLine()
 SetTimer(PushLine, 5000)
-Esc::ExitApp
+; Exit: tray right-click → Exit (Esc too common to bind)
 
 WMBarPushEx(slot, loHi, text, opts := "") {
     msg := "BAR:" . slot . ":" . loHi . ":" . text

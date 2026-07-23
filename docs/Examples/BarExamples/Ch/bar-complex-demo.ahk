@@ -56,7 +56,7 @@ Cleanup(*) {
     _WMSend("BAR:1:")
     _WMSend("BAR:2:")
 }
-Esc::ExitApp
+; 退出：托盘右键 → Exit（Esc 太常用，不绑）
 
 WMBarPushEx(slot, loHi, text, opts := "") {
     msg := "BAR:" . slot . ":" . loHi . ":" . text
