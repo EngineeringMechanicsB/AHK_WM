@@ -1,4 +1,4 @@
-# AHK_WM 配置参考（v2.10.0）
+# AHK_WM 配置参考（v2.10.1）
 
 配置文件位置：`%USERPROFILE%\.config\AHK_WM\wm_config.ini`（UTF-16 LE 编码）。
 首次运行时自动生成默认配置。修改后重载脚本生效（默认热键 `Alt+R`，或托盘菜单 → *Reload Script*）。

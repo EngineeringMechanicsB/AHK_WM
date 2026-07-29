@@ -1,4 +1,4 @@
-# AHK_WM Configuration Reference (v2.10.0)
+# AHK_WM Configuration Reference (v2.10.1)
 
 Config file location: `%USERPROFILE%\.config\AHK_WM\wm_config.ini` (UTF-16 LE).
 The file is created with defaults on first run. After editing, reload the script

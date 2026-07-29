@@ -49,7 +49,7 @@ Persistent
 ; 一、环境与全局指令 / 1. Environment & Global Directives
 ; ==============================================================================
 
-global WM_Version := "2.10.0"
+global WM_Version := "2.10.1"
 global FontName
 
 SetWorkingDir(A_ScriptDir)
@@ -66,13 +66,11 @@ SetControlDelay(0)
 global Color_Bg, Color_Text, Color_Active, Color_Task
 global Border_Drag_Color, Border_Pin_Color
 global PM_Bg, PM_BtnShutdown, PM_BtnSleep, PM_BtnReboot
-; Per-component colors (v2.8) / 组件色
 
 ; ---- Status-bar state / 状态栏 ----
 global Bar_Height, Bar_Transparent, Bar_FontSize
 global Bar_MonitorIdx := 1
 global Bar_Visible    := true
-; (已移除旧版全局 Bar 控件引用，现由 BarInstance 类管理)
 global Bar_AutoHide   := false
 global Bar_FsHidden   := false
 global Bar_ShownState := true
@@ -83,10 +81,7 @@ global Bar_MarginLeft  := 0
 global Bar_MarginRight := 0
 global Bars := []
 global Bar_Cfg := Map()
-; 外部脚本推送的 bar 自定义部件内容（槽位号 → 文本，持续显示直至下次更新）
-; External bar widget data pushed via WM_COPYDATA (slot -> text, persists until next push)
 global Bar_ExternalData := Map()
-; 外部动态槽位配置（自包含协议推送，无需 Layout 声明）
 global Bar_ExternalSlots := Map()
 
 ; ---- Pie-menu parameters / 功能环 ----
@@ -230,7 +225,6 @@ global Themes := Map(
 
 ; ---- Theme key normalization (v2.8: per-component) / 主题补全 ----
 for _tname, _tmap in Themes {
-    ; 边框色：从预设旧键推导 / Border: derive from legacy preset keys
     if !_tmap.Has("Border_FocusColor")
         _tmap["Border_FocusColor"] := _tmap.Has("WTM_BorderFocusColor")
             ? _tmap["WTM_BorderFocusColor"]
@@ -318,7 +312,6 @@ SplitEscaped(str, delim) {
 }
 
 ; ---- UnescapeSpaces / 转义空格还原 ----
-; 将 \s 转为空格、\\ 转为反斜杠。IniRead 会修剪尾随空格，用此函数还原
 UnescapeSpaces(str) {
     result := "", i := 1
     while (i <= StrLen(str)) {
@@ -343,13 +336,11 @@ ParseColor(cstr) {
     cstr := Trim(cstr)
     if (cstr = "")
         return {isGrad:false, first:"", colors:[]}
-    ; 移除 # 前缀 / Strip # prefix
     cstr := RegExReplace(cstr, "i)^#", "")
     parts := StrSplit(cstr, ",")
     colors := []
     for p in parts {
         p := Trim(p)
-        ; 每个颜色段也去掉 # (支持 #RRGGBB,#RRGGBB 格式)
         p := RegExReplace(p, "i)^#", "")
         if (p != "")
             colors.Push(p)
@@ -365,29 +356,24 @@ C1(raw, def := "000000") {
 }
 
 ; ---- GDI helpers ----
-; RgnRoundRect / 圆角矩形 ----
 RgnRoundRect(w, h, r) {
     d := Max(1, r * 2)
     return DllCall("Gdi32\CreateRoundRectRgn"
         , "Int",0,"Int",0,"Int",w+1,"Int",h+1,"Int",d,"Int",d,"Ptr")
 }
-; RGB→BGR / Convert RGB hex to GDI BGR COLORREF
 BgrFromRgb(hex) => ((hex & 0xFF) << 16) | (hex & 0xFF00) | (hex >> 16)
-; Screen-compatible bitmap / 兼容位图
 ScrBitmap(w, h) {
     scrDC := DllCall("Gdi32\CreateDC", "Str","DISPLAY", "Ptr",0, "Ptr",0, "Ptr",0, "Ptr")
     hBM := DllCall("Gdi32\CreateCompatibleBitmap", "Ptr",scrDC, "Int",w,"Int",h,"Ptr")
     DllCall("Gdi32\DeleteDC", "Ptr",scrDC)
     return hBM
 }
-; Create font with ClearType quality / 创建字体(ClearType)
 MakeFont(fh, name := FontName) {
     return DllCall("Gdi32\CreateFontW"
         , "Int",fh, "Int",0, "Int",0, "Int",0, "Int",700
         , "Int",0, "Int",0, "Int",0, "Int",0, "Int",0
         , "Int",5, "Int",0, "Int",0, "Str",name, "Ptr")
 }
-; Clip bitmap to rounded rect, bgColor fills corners (hex RRGGBB) / 圆角裁剪
 RoundClipBM(hBM, w, h, r, bgColor := "") {
     hOut := ScrBitmap(w, h)
     if !hOut
@@ -420,7 +406,6 @@ RoundClipBM(hBM, w, h, r, bgColor := "") {
 }
 
 ; ---- MakeGradientBM / 统一渐变位图（含可选圆角）----
-; fillColor: ""且bgBM=0 → 不填充(黑色); ""且bgBM≠0 → 从bgBM取样填充; 指定颜色 → 填充该色
 MakeGradientBM(w, h, colors, rounded := "off", radius := 0, fillColor := "", bgBM := 0, bgOffX := 0, bgOffY := 0) {
     global Color_Bg, Color_Active
     if (w < 2 || h < 2)
@@ -440,9 +425,7 @@ MakeGradientBM(w, h, colors, rounded := "off", radius := 0, fillColor := "", bgB
     }
     dcD := DllCall("Gdi32\CreateCompatibleDC", "Ptr", 0, "Ptr")
     hOldD := DllCall("Gdi32\SelectObject", "Ptr", dcD, "Ptr", hOut, "Ptr")
-    ; 填充角部 / Fill corners
     if (fillColor != "") {
-        ; 显式指定色 / Explicit fill color
         rc := Buffer(16, 0)
         NumPut("Int", 0, "Int", 0, "Int", w, "Int", h, rc)
         bgVal := Integer("0x" fillColor)
@@ -450,7 +433,6 @@ MakeGradientBM(w, h, colors, rounded := "off", radius := 0, fillColor := "", bgB
         DllCall("User32\FillRect", "Ptr", dcD, "Ptr", rc, "Ptr", hBgBr)
         DllCall("Gdi32\DeleteObject", "Ptr", hBgBr)
     } else if (bgBM != 0) {
-        ; 渐变 bar：从背景位图取样 / Gradient bar: sample from bg bitmap
         dcBg := DllCall("Gdi32\CreateCompatibleDC", "Ptr", 0, "Ptr")
         hOldBg := DllCall("Gdi32\SelectObject", "Ptr", dcBg, "Ptr", bgBM, "Ptr")
         DllCall("Gdi32\BitBlt", "Ptr", dcD, "Int", 0, "Int", 0, "Int", w, "Int", h
@@ -458,7 +440,6 @@ MakeGradientBM(w, h, colors, rounded := "off", radius := 0, fillColor := "", bgB
         DllCall("Gdi32\SelectObject", "Ptr", dcBg, "Ptr", hOldBg, "Ptr")
         DllCall("Gdi32\DeleteDC", "Ptr", dcBg)
     } else {
-        ; 纯色 bar：回退用 bar 底色 / Solid bar: fallback to bar bg color
         rc := Buffer(16, 0)
         NumPut("Int", 0, "Int", 0, "Int", w, "Int", h, rc)
         bgVal := Integer("0x" C1(Color_Bg))
@@ -466,7 +447,6 @@ MakeGradientBM(w, h, colors, rounded := "off", radius := 0, fillColor := "", bgB
         DllCall("User32\FillRect", "Ptr", dcD, "Ptr", rc, "Ptr", hBgBr)
         DllCall("Gdi32\DeleteObject", "Ptr", hBgBr)
     }
-    ; 圆角裁剪 + 渐变覆绘 / Clip & draw gradient
     hRgn := RgnRoundRect(w, h, r)
     DllCall("Gdi32\SelectClipRgn", "Ptr", dcD, "Ptr", hRgn)
     dcS := DllCall("Gdi32\CreateCompatibleDC", "Ptr", 0, "Ptr")
@@ -488,7 +468,6 @@ CreateGradient(W, H, V := 0, Colors*) {
     N := Colors.Length
     if (N < 1)
         return 0
-    ; 单色：复制自身作为第二色，生成纯色位图
     if (N = 1) {
         Colors.Push(Colors[1])
         N := 2
@@ -497,9 +476,7 @@ CreateGradient(W, H, V := 0, Colors*) {
     Y := V ? 0 : H
     xOFF := X ? 0 : Ceil(W / (N - 1))
     yOFF := Y ? 0 : Ceil(H / (N - 1))
-    ; TRIVERTEX: {x:Int32, y:Int32, Red:UInt16, Green:UInt16, Blue:UInt16, Alpha:UInt16} = 16 bytes
     VERT := Buffer(N * 16, 0)
-    ; GRADIENT_RECT: {UpperLeft:UInt32, LowerRight:UInt32} = 8 bytes
     MESH := Buffer(N * 8, 0)
     Loop N {
         if V
@@ -538,13 +515,8 @@ TextOnGradient(W, H, Colors, Text, FontSize, Style := "text", fontFace := FontNa
         return 0
     if (W > 4096 || H > 512)
         return 0
-    ; 对齐标志 / Alignment flags
     alignFlags := (Align = "Left") ? 0x0 : (Align = "Right") ? 0x2 : 0x1
-    ; wrapLines>0 时用 DT_WORDBREAK 替代 DT_SINGLELINE 实现多行换行
     drawFlags := (wrapLines > 0) ? (alignFlags | 0x10 | 0x4) : (alignFlags | 0x20 | 0x4)
-    ; DT_WORDBREAK(0x10) | DT_VCENTER(0x4)  — 多行居中
-    ; DT_SINGLELINE(0x20) | DT_VCENTER(0x4) — 单行居中（默认）
-    ; bg / bg_rounded 模式 / gradient bg + white text
     if (Style = "bg" || Style = "bg_rounded") {
         hBM := CreateGradient(W, H, 0, Colors*)
         if (!hBM)
@@ -567,8 +539,6 @@ TextOnGradient(W, H, Colors, Text, FontSize, Style := "text", fontFace := FontNa
             hBM := RoundClipBM(hBM, W, H, Max(4, Min(W, H) // 6), RoundedBg)
         return hBM
     }
-    ; text 模式：文字渐变色（背景透明，跟随 bar 背景）
-    ; text mode: gradient text, transparent bg (follows bar bg)
 
     fh := -Round(FontSize * A_ScreenDPI / 72)
     hFont := MakeFont(fh, fontFace)
@@ -623,7 +593,6 @@ TextOnGradient(W, H, Colors, Text, FontSize, Style := "text", fontFace := FontNa
         DllCall("Gdi32.dll\SelectObject", "Ptr", bgDC, "Ptr", hOldBg, "Ptr")
         DllCall("Gdi32.dll\DeleteDC", "Ptr", bgDC)
     } else {
-        ; 纯色背景 / Solid bg
         bgVal := Integer("0x" C1(RoundedBg != "" ? RoundedBg : "000000"))
         bgRef := BgrFromRgb(bgVal)
         hBgBrush := DllCall("Gdi32.dll\CreateSolidBrush", "UInt", bgRef, "Ptr")
@@ -681,9 +650,6 @@ _WMLogLevelNum(name) {
 }
 
 ; ---- WMLog / 日志 ----
-; 结构化日志：毫秒时间戳 + 级别 + 组件 + 消息。
-; 同组件同消息去重计数（每重复 50 次补记一条汇总）；超过 MaxSizeKB 轮转为 .old。
-; 日志文件跨 Reload 追加保留 / Log persists across script reloads (append mode).
 WMLog(msg, level := "INFO", comp := "Core") {
     global ConfigDir, WM_LogFile, WM_LogLevel, WM_LogMaxKB, WM_LogSeen
     if (WM_LogFile = "")
@@ -740,7 +706,6 @@ WMFormatErr(context, err) {
 }
 
 ; ---- WMLogErr / 异常日志 ----
-; 去重由 WMLog 统一处理（同一错误点生成相同文本 → 自动计数去重）
 WMLogErr(context, err) {
     WMLog(WMFormatErr(context, err), "ERROR", "Error")
 }
@@ -776,8 +741,6 @@ RoundWindowEx(guiOrHwnd, enabled, radius, corners := "all") {
         d := r * 2
         if (d <= 0)
             return
-        ; 禁用 DWM 非客户区渲染，消除 Win10 19041+ SetWindowRgn 白边
-        ; Disable DWM non-client rendering to fix SetWindowRgn white artifacts
         DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", hwnd, "UInt", 2, "Int*", 1, "UInt", 4)
         hRgn := DllCall("Gdi32\CreateRoundRectRgn"
             , "Int", 0, "Int", 0, "Int", w + 1, "Int", h + 1
@@ -850,7 +813,6 @@ ParseAxis(tok) {
         throw Error("empty axis")
     if (tok = "1")
         return {lo: 0.0, hi: 1.0, align: "Center"}
-    ; 范围格式 / Range format: (a-c)/b, (a-c)/+b, (a-c)/-b
     if RegExMatch(tok, "^\((\d+)\s*-\s*(\d+)\)/([+\-]?)(\d+)$", &m) {
         a := Integer(m[1]), c := Integer(m[2]), b := Integer(m[4])
         sign := m[3]
@@ -859,7 +821,6 @@ ParseAxis(tok) {
         align := (sign = "+") ? "Right" : (sign = "-") ? "Left" : "Center"
         return {lo: (a - 1) / b, hi: c / b, align: align}
     }
-    ; 简单格式 / Simple format: a/b, a/+b, a/-b
     if RegExMatch(tok, "^(\d+)/([+\-]?)(\d+)$", &m) {
         a := Integer(m[1]), b := Integer(m[3])
         sign := m[2]
@@ -1235,7 +1196,6 @@ RestoreLayoutState() {
             }
             if RegExMatch(line, "i)^F(\d+)=(.+)$", &m) {
                 hw := Integer(Trim(m[2]))
-                ; 键必须为整数（与 SwitchDesktop 等处一致），字符串键会导致查不到
                 if hw && WinExist(hw)
                     DesktopFocus[Integer(m[1])] := hw
                 continue
@@ -1244,7 +1204,6 @@ RestoreLayoutState() {
         FileDelete(stateFile)
     }
     if restored {
-        ; 显示当前桌面窗口 / Show current desktop windows
         if Desktops.Has(CurrentDesktop) {
             loop Desktops[CurrentDesktop].Length {
                 h := Desktops[CurrentDesktop][Desktops[CurrentDesktop].Length - A_Index + 1]
@@ -1293,7 +1252,6 @@ LoadOrInitConfig()
 Loop DesktopCount
     Desktops[A_Index] := []
 
-; Restore layout from prior reload / 尝试恢复
 if RestoreLayoutState()
     isFirstRun := false
 
@@ -1468,17 +1426,20 @@ CloseWindowDispatch(*) {
 ; 六、配置生成与迁移 / 6. Configuration Generation & Migration
 ; ==============================================================================
 
+; ---- 去除颜色值 # 前缀 / Strip # prefix from color values ----
+_StripHash(s) => (s != "" && SubStr(s, 1, 1) = "#") ? SubStr(s, 2) : s
+
 ; ---- CfgRead / 配置读取 ----
 CfgRead(sec, key, defVal, fallbacks*) {
     global ConfigFile
     miss := "__WM_MISSING__"
     v := IniRead(ConfigFile, sec, key, miss)
     if (v != miss)
-        return v
+        return _StripHash(v)
     for fb in fallbacks {
         v := IniRead(ConfigFile, fb[1], fb[2], miss)
         if (v != miss)
-            return v
+            return _StripHash(v)
     }
     return defVal
 }
@@ -1502,9 +1463,6 @@ ParseCustomItems(itemsRaw, iconRaw := "", textRaw := "") {
 }
 
 ; ---- 旧键名自动迁移（v2.9 命名统一为 PascalCase）/ Auto-migrate legacy key names ----
-; 首次运行时把 [Bar] 的 snake_case 旧键改写为新键并删除旧键；
-; 之后以 [General] ConfigVersion=2 标记跳过。读取侧仍保留旧键回退，双保险。
-; 转义正则特殊字符
 RegExEscape(s) => RegExReplace(s, "([.*?+\[\]{}()|\\^$])", "\$1")
 
 MigrateConfigKeys() {
@@ -1520,7 +1478,6 @@ MigrateConfigKeys() {
         ,["Bar","position","Position"],["Bar","offset","Offset"]
         ,["Bar","margin_left","MarginLeft"],["Bar","margin_right","MarginRight"]
         ,["Bar","layout","Layout"],["Bar","instances","Instances"]]
-    ; 文本级替换，保留注释和顺序 / In-place key rename preserves comments
     content := ""
     try content := FileRead(ConfigFile, "UTF-16")
     if (content = "")
@@ -1554,7 +1511,6 @@ MigrateConfigKeys() {
     }
 }
 
-; 安全写入：文本级替换保留注释和顺序 / In-place key edit
 _ConfigWrite(section, key, val) {
     global ConfigFile
     content := ""
@@ -1586,17 +1542,13 @@ _ConfigWrite(section, key, val) {
 ; ==============================================================================
 
 ; ---- SanitizeConfigEncoding / 修复配置文件编码 ----
-; 检测 INI 文件中是否出现 Unicode 替换字符（UTF-16 被误存为 ANSI 的标志），
-; 若是则用 IniRead 读出所有值，按 UTF-8 重建文件，保留全部配置数据。
 SanitizeConfigEncoding() {
     global ConfigFile
     raw := ""
     try raw := FileRead(ConfigFile)
-    ; 未出现乱码标记 → 无需修复
     if !InStr(raw, Chr(0xFFFD)) && !InStr(raw, "��")
         return
     WMLog("Config encoding corrupted, repairing...")
-    ; 用 IniRead 抢救所有 section/key
     sections := ["General","Theme","Paths","Desktop","Bar","Border","Tiling","Snapping",
                  "PieMenu","GUI","WorkTime","Exclude","WinSelect","WinSelectSidebar","Hotkeys"]
     backup := Map()
@@ -1612,7 +1564,6 @@ SanitizeConfigEncoding() {
             }
         }
     }
-    ; 重建文件（UTF-8）
     newContent := ";==========================================================================`r`n"
         . "; AHK WM Configuration — auto-repaired`r`n"
         . ";==========================================================================`r`n`r`n"
@@ -1665,16 +1616,16 @@ PauseOnFullscreen=off
 
 [Theme]
 ; All colors support gradient / 渐变色支持
-Background=0e050f
-Text=e5e9f0
-Active=744da9
-BorderDrag=A020F0,CBA6F7
-BorderPin=FF5555
-BorderUnfocus=666666
-PowerMenuBg=2E3440
-PowerBtnShutdown=B48EAD
-PowerBtnSleep=5E81AC
-PowerBtnReboot=BF616A
+Background=#0e050f
+Text=#e5e9f0
+Active=#744da9
+BorderDrag=#A020F0,#CBA6F7
+BorderPin=#FF5555
+BorderUnfocus=#666666
+PowerMenuBg=#2E3440
+PowerBtnShutdown=#B48EAD
+PowerBtnSleep=#5E81AC
+PowerBtnReboot=#BF616A
 ; Per-component (default = base color) / 组件专属
 
 [Paths]
@@ -1748,7 +1699,7 @@ MarginRight=0
 	; Examples:
 	;   1,time,20/20,ff0000,00ff00,tx;desktops,(1-3)/-20,FAB387,bg,on;cpu,14/+20;
 	;----------------------------------------------------------------------
-Layout=custom_1,(4-7)/20,B48EAD,CF8DC9,bg,on;desktops,(1-3)/20;date,(18-19)/20;time,20/20,744da9,CF8DC9;progress,3/5,744da9,e5e9f0;
+Layout=custom_1,(4-7)/20,#B48EAD,#CF8DC9,bg,on;desktops,(1-3)/20;date,(18-19)/20;time,20/20,#744da9,#CF8DC9;progress,3/5,#744da9,#e5e9f0;
 ; Multi-bar instances: M,pos,offset;...  M=monitor or * / 多栏实例
 Instances=1,top,0
 ; Auto-hide on fullscreen: on|off / 全屏自动隐藏
@@ -1880,7 +1831,7 @@ WorkEnd=1745
 ; Task slots / 任务时段
 ;   weekday_start_end,color,...;...  1=Mon..7=Sun
 ;   Colors optional, fallback = theme / 颜色可选，默认主题色
-TaskTimes=1_1200_1300,CDD6F4;2_1200_1300,CDD6F4;3_1200_1300,CDD6F4;4_1200_1300,CDD6F4;5_1200_1300,CDD6F4;6_1200_1300,CDD6F4;7_1200_1300,CDD6F4;2_1700_1745;3_0900_0920;1_1545_1600;2_1545_1600;3_1545_1600;4_1545_1600;5_1545_1600;1_1330_1500;
+TaskTimes=1_1200_1300,#CDD6F4;2_1200_1300,#CDD6F4;3_1200_1300,#CDD6F4;4_1200_1300,#CDD6F4;5_1200_1300,#CDD6F4;6_1200_1300,#CDD6F4;7_1200_1300,#CDD6F4;2_1700_1745;3_0900_0920;1_1545_1600;2_1545_1600;3_1545_1600;4_1545_1600;5_1545_1600;1_1330_1500;
 
 [Exclude]
 ; Excluded titles / 排除标题 contains|re:|=
@@ -2010,9 +1961,7 @@ WTMMoveRight=Alt+Shift+L
             ExitApp
         }
     } else {
-        ; 检测配置文件编码损坏（UTF-16 → ANSI 误存导致中文乱码）并自动修复
         SanitizeConfigEncoding()
-        ; 旧键名自动迁移（v2.9 统一命名）/ Migrate legacy key names
         MigrateConfigKeys()
     }
 
@@ -2042,7 +1991,6 @@ WTMMoveRight=Alt+Shift+L
     PM_BtnSleep    := CfgRead("Theme", "PowerBtnSleep",    "5E81AC", ["Colors","PowerBtnSleep"])
     PM_BtnReboot   := CfgRead("Theme", "PowerBtnReboot",   "BF616A", ["Colors","PowerBtnReboot"])
     ; -- 组件专属色（空值回退基础色）/ Per-component colors (empty = base) --
-    ; Use CfgRead with fallback; C1 handles empty with default color
 
     Bar_Height       := Pct2PxH(Integer(CfgRead("Bar", "HeightPct",  "3",  ["StatusBar","HeightPct"])))
     Bar_Transparent  := Pct2Alpha(Integer(CfgRead("Bar", "Opacity",  "78", ["StatusBar","Opacity"])))
@@ -2076,8 +2024,6 @@ WTMMoveRight=Alt+Shift+L
     if !(Border_Mode = "top" || Border_Mode = "full")
         Border_Mode := "full"
 
-    ; 颜色统一从 [Theme] 读取，[Border] FocusColor 作为旧版回退
-    ; Colors unified in [Theme]; [Border] FocusColor kept as legacy fallback
     Border_FocusColor   := CfgRead("Theme", "BorderDrag",   "A020F0", ["Border","FocusColor"], ["Colors","BorderDrag"])
     Border_UnfocusColor := CfgRead("Theme", "BorderUnfocus", "555555", ["Border","UnfocusColor"], ["Colors","BorderUnfocus"])
 
@@ -2102,7 +2048,6 @@ WTMMoveRight=Alt+Shift+L
 
     Tile_Gap         := Integer(CfgRead("Tiling", "Gap", "15", ["Layout","Gap"]))
     LayoutRules      := ParseLayoutRules(CfgRead("Tiling", "Rules", "", ["Layout","Rules"]))
-    ; 缺省值与模板一致改为 off（原代码默认 on；模板显式写 off，绝大多数用户不受影响）
     Tile_IncludeAlwaysOnTop := BarShown(IniRead(ConfigFile, "Tiling", "TileAlwaysOnTop", "off"))
 
     Snap_Enable   := BarShown(IniRead(ConfigFile, "Snapping", "Enable", "on"))
@@ -2145,10 +2090,8 @@ WTMMoveRight=Alt+Shift+L
     if !(Desktop_HideMethod = "minimize" || Desktop_HideMethod = "hide")
         Desktop_HideMethod := "minimize"
 
-    ; [Bar] 键名 v2.9 统一为 PascalCase，旧 snake_case 键作为回退 / new names, legacy fallbacks
     Bar_Cfg := Map()
     Bar_Cfg["layout"]       := ParseBarLayout(CfgRead("Bar", "Layout", "", ["Bar","layout"]))
-    ; 从 bar 1 layout 推断组件开关 / Derive widget flags from bar 1 layout
     _bar1 := Bar_Cfg["layout"].Has(1) ? Bar_Cfg["layout"][1] : Map()
     for k in ["desktops","time","date","progress"]
         Bar_Cfg[k] := _bar1.Has(k)
@@ -2161,7 +2104,6 @@ WTMMoveRight=Alt+Shift+L
     Bar_Cfg["position"]     := StrLower(CfgRead("Bar", "Position", "top", ["Bar","position"]))
     Bar_Cfg["offset"]       := SafeInt(CfgRead("Bar", "Offset", "0", ["Bar","offset"]), 0)
     Bar_Cfg["instances"]    := CfgRead("Bar", "Instances", "", ["Bar","instances"])
-    ; layout 已在上面解析，此处复用 / layout already parsed above
 
     Bar_Cfg["custom_items"] := ParseCustomItems(
         CfgRead("Bar", "CustomItems", "", ["Bar","custom_items"]),
@@ -2201,7 +2143,6 @@ WTMMoveRight=Alt+Shift+L
     Vim_Width  := Pct2PxW(Integer(CfgRead("Paths", "EditorWidthPct",  "52", ["VimLayout","WidthPct"])))
     Vim_Height := Pct2PxH(Integer(CfgRead("Paths", "EditorHeightPct", "74", ["VimLayout","HeightPct"])))
 
-    ; 默认值与模板一致改为 off（原代码默认 on 与模板注释矛盾）/ default aligned with template
     Work_Mode       := IniRead(ConfigFile, "WorkTime", "Mode",       "off")
     Work_WeekendBar := IniRead(ConfigFile, "WorkTime", "WeekendBar", "off")
     Work_Start      := IniRead(ConfigFile, "WorkTime", "WorkStart",  "0900")
@@ -2274,7 +2215,22 @@ WTMMoveRight=Alt+Shift+L
         }
     }
 
-    if (ActiveTheme != "custom" && Themes.Has(ActiveTheme)) {
+    if (ActiveTheme = "wallpaper") {
+        wpFile := ConfigDir "\wallpaper_theme.ini"
+        if FileExist(wpFile) {
+            Color_Bg     := _StripHash(IniRead(wpFile, "Theme", "Background",       Color_Bg))
+            Color_Text   := _StripHash(IniRead(wpFile, "Theme", "Text",             Color_Text))
+            Color_Active := _StripHash(IniRead(wpFile, "Theme", "Active",           Color_Active))
+            Color_Task   := _StripHash(IniRead(wpFile, "Theme", "Task",             Color_Task))
+            Border_FocusColor   := _StripHash(IniRead(wpFile, "Theme", "BorderDrag",    Border_FocusColor))
+            Border_Pin_Color    := _StripHash(IniRead(wpFile, "Theme", "BorderPin",     Border_Pin_Color))
+            Border_UnfocusColor := _StripHash(IniRead(wpFile, "Theme", "BorderUnfocus", Border_UnfocusColor))
+            PM_Bg          := _StripHash(IniRead(wpFile, "Theme", "PowerMenuBg",      PM_Bg))
+            PM_BtnShutdown := _StripHash(IniRead(wpFile, "Theme", "PowerBtnShutdown", PM_BtnShutdown))
+            PM_BtnSleep    := _StripHash(IniRead(wpFile, "Theme", "PowerBtnSleep",    PM_BtnSleep))
+            PM_BtnReboot   := _StripHash(IniRead(wpFile, "Theme", "PowerBtnReboot",   PM_BtnReboot))
+        }
+    } else if (ActiveTheme != "custom" && Themes.Has(ActiveTheme)) {
         palette := Themes[ActiveTheme]
         for key, val in palette
             try %key% := val
@@ -2454,7 +2410,6 @@ ShowHelpGui(*) {
 class WelcomeScreen {
     static GuiObj := ""
 
-    ; -- 显示欢迎屏 / Show the welcome screen --
     static Show() {
         if IsObject(this.GuiObj)
             return
@@ -2510,7 +2465,6 @@ class WelcomeScreen {
 
         g.Show(Format("x{} y{} w{} h{} NoActivate", vx, vy, vw, vh))
         WinSetTransparent(245, g.Hwnd)
-        ; ★ v2.6.2: force welcome screen to top so it's never behind the bar
         try WinSetAlwaysOnTop(1, g.Hwnd)
         try WinActivate(g.Hwnd)
         this.GuiObj := g
@@ -2520,7 +2474,6 @@ class WelcomeScreen {
         SetTimer(ObjBindMethod(this, "WaitClose"), 50)
     }
 
-    ; -- 提示闪烁 / Blink the hint line --
     static Blink() {
         if !IsObject(this.GuiObj) {
             SetTimer(ObjBindMethod(this, "Blink"), 0)
@@ -2532,7 +2485,6 @@ class WelcomeScreen {
         }
     }
 
-    ; -- 等待关闭 / Wait for a close key --
     static WaitClose() {
         if !IsObject(this.GuiObj) {
             SetTimer(ObjBindMethod(this, "WaitClose"), 0)
@@ -2543,7 +2495,6 @@ class WelcomeScreen {
             this.Close()
     }
 
-    ; -- 关闭欢迎屏 / Close the welcome screen --
     static Close() {
         SetTimer(ObjBindMethod(this, "WaitClose"), 0)
         SetTimer(ObjBindMethod(this, "Blink"),     0)
@@ -2585,7 +2536,6 @@ class OSD {
     static GuiObj := 0, Timer := 0           ; 内部 OSD（wm.ahk 自身调用，单实例互替）
     static ExtGuis := Map()                  ; 外部 OSD（脚本调用，多实例共存，互不干扰）
 
-    ; -- 解析键值选项 "fs=24,op=90,bg=FF4444" → Map --
     static _ParseOpts(optsStr) {
         m := Map()
         if (optsStr = "")
@@ -2598,7 +2548,6 @@ class OSD {
         return m
     }
 
-    ; -- 内部 OSD（wm.ahk 自身调用，始终使用配置文件设置，单实例）--
     static Show(text, duration := 1000) {
         if IsObject(this.GuiObj) {
             try this.GuiObj.Destroy()
@@ -2613,7 +2562,6 @@ class OSD {
         monW := mR - mL
         cx := (mL + mR) // 2
 
-        ; Scale padding & max-width to font size / 随字号缩放
         fScale := OSD_FontSize / 20.0
         padX := Round(30 * fScale)
         padY := Round(12 * fScale)
@@ -2627,7 +2575,6 @@ class OSD {
         g.Show(Format("NoActivate AutoSize Hide"))
         g.GetPos(, , &gw, &gh)
         if (gw > maxW) {
-            ; Rebuild with constrained width, multi-line / 超宽则换行重建
             g.Destroy()
             g := Gui("+AlwaysOnTop -Caption +ToolWindow +Disabled +Owner -DPIScale")
             g.BackColor := Color_Bg
@@ -2646,7 +2593,6 @@ class OSD {
         SetTimer(this.Timer, -duration)
     }
 
-    ; -- 外部 OSD（脚本通过 WM_COPYDATA 调用，支持 per-call 覆盖，多实例共存）--
     static ShowExternal(text, duration := 1000, optsStr := "") {
         global OSD_FontSize, OSD_Transparent, OSD_Height, Color_Bg, Color_Active
         global OSD_Rounded, OSD_Radius
@@ -2733,7 +2679,6 @@ class OSD {
         return extId
     }
 
-    ; -- 销毁指定外部 OSD 实例（仅销毁自身，不影响内部 OSD）--
     static _DestroyExt(extId) {
         if !OSD.ExtGuis.Has(extId)
             return
@@ -2746,35 +2691,22 @@ class OSD {
 ShowOSD(text) => OSD.Show(text)
 
 ; ---- 外部消息接口 / External interface via WM_COPYDATA ----
-; 其他 AHK 脚本可通过 SendMessage 向 AHK_WM 发送消息（查找主窗口
-; "wm.ahk ahk_class AutoHotkey"），支持两种协议：
-;   "OSD:消息文本[:持续时间ms][:键值选项]"  → 弹出 OSD 提示（外部，per-call 自定义）
-;   "BAR:槽位号:文本"                      → 旧版 bar（需 Layout 声明 external_N）
-;   "BAR:槽位号:lo/hi:文本[:键值选项]"      → 新版 bar（自包含，无需 Layout）
 ;
-; OSD 键值: fs=N,op=N,x=N[%],y=N[%],pos=N,bg=RRGGBB,tx=RRGGBB,wr=N,rd=on|off,rr=N,fn=Name,tag=ID
-;   x=N[%] / y=N[%] — 像素或%坐标; pos=N — 旧版垂直%
-; BAR 键值: bg=RRGGBB,tx=RRGGBB,rd=on|off,rr=N,fs=N,wrap=N
-; 所有键均可选，未指定回退默认值。外部 OSD 与内部 OSD 实例隔离、互不干扰。
 OnMessage(0x4A, _WM_OnCopyData)  ; WM_COPYDATA
 
 _WM_OnCopyData(wParam, lParam, msgNum, hwnd) {
     global Bar_ExternalData
-    ; COPYDATASTRUCT: dwData(ptr) + cbData(u32) + lpData(ptr)
     cds := lParam
     cbData := NumGet(cds, A_PtrSize, "UInt")
     lpData := NumGet(cds, A_PtrSize * 2, "Ptr")
     if !lpData || !cbData
         return false
-    ; cbData 是字节数：转字符数读取并剔除结尾 NUL
     text := RTrim(StrGet(lpData, cbData // 2, "UTF-16"), Chr(0))
     if (SubStr(text, 1, 4) = "OSD:") {
         payload := SubStr(text, 5)
         dur := 1000, optsStr := ""
-        ; 先尝试匹配键值选项后缀 / Try key=value suffix first
         if RegExMatch(payload, "^(.*?):([a-z]{1,4}=.*)$", &mKv) {
             pre := mKv[1], optsStr := mKv[2]
-            ; pre 可能还带持续时间 :digits
             if RegExMatch(pre, "^(.*):(\d+)$", &mDur)
                 payload := mDur[1], dur := Integer(mDur[2])
             else
@@ -2799,7 +2731,6 @@ _WM_OnCopyData(wParam, lParam, msgNum, hwnd) {
                 txt := mOpts[1]
                 optsStr := mOpts[2]
             }
-            ; 更新槽位配置
             cfg := Bar_ExternalSlots.Has(slot) ? Bar_ExternalSlots[slot] : Map()
             cfg["lo"] := lo
             cfg["hi"] := hi
@@ -2818,7 +2749,6 @@ _WM_OnCopyData(wParam, lParam, msgNum, hwnd) {
             return true
         }
         ; ---- 旧格式 / 清理：BAR:slot:text ----
-        ; 空文本 + 自包含槽位 → 删除槽位配置，重建 bar 恢复原高度
         if (rest = "" && Bar_ExternalSlots.Has(slot)) {
             Bar_ExternalSlots.Delete(slot)
             Bar_ExternalData.Delete(slot)
@@ -2851,8 +2781,6 @@ class BorderFrame {
     Color := ""
     LastW := -1, LastH := -1, LastT := -1, LastR := -1
     LastMode := ""
-    ; 上次 Place 的完整几何（未变时跳过 SetWindowPos，高刷屏下省大量系统调用）
-    ; Last placement geometry — unchanged placements skip SetWindowPos entirely
     LastPX := -99999, LastPY := -99999, LastPW := -1, LastPH := -1
     LastThk := -1, LastRadC := -1, LastPMode := ""
     _GbW := -1, _GbH := -1  ; Gradient cache dims / 渐变缓存尺寸
@@ -2884,16 +2812,11 @@ class BorderFrame {
         }
         this.Color    := color
         this.GradCols := pc.isGrad ? pc.colors : []
-        ; 渐变内容已变：销毁旧渐变图并强制下次 Place 重建
-        ; Gradient changed: drop cached picture so next Place rebuilds it
         this._GbW := -1, this._GbH := -1
         if IsObject(this.GradPic) {
             try this.GradPic.Destroy()
             this.GradPic := ""
         }
-        ; 重置几何缓存，强制下次 Place 完整重建（颜色变了但位置未变时也必须重绘）
-        ; Reset geometry cache so next Place does a full rebuild (required when color
-        ; changes but position/size stay the same — Place would otherwise skip it).
         this.LastPX := -99999, this.LastPY := -99999
         if (this.GradCols.Length > 1 && this.LastPW > 0)
             this._GradBg(this.LastPW, this.LastPMode = "top" ? this.LastThk : this.LastPH)
@@ -2907,7 +2830,6 @@ class BorderFrame {
             return
         this._GbW := w, this._GbH := h
         if this.BigGradBM {
-            ; Reuse big bitmap — just Move existing Picture, no destroy/recreate
             if IsObject(this.GradPic) {
                 try this.GradPic.Move(0, 0, w, h)
             } else {
@@ -2915,7 +2837,6 @@ class BorderFrame {
             }
             return
         }
-        ; No big bitmap — create exact-size gradient, add before destroy to avoid flash
         oldPic := this.GradPic
         hBM := CreateGradient(w, h, 0, this.GradCols*)
         if hBM {
@@ -2954,8 +2875,6 @@ class BorderFrame {
         } else {
             w := Round(Max(t*2 + 1, w)), h := Round(Max(t*2 + 1, h))
         }
-        ; 几何完全未变：跳过重定位（锚定窗口时仅低成本重申 Z 序）
-        ; Unchanged geometry: skip SetWindowPos; hwnd-anchored frames re-assert z-order only
         if (x = this.LastPX && y = this.LastPY && w = this.LastPW && h = this.LastPH
          && t = this.LastThk && rad = this.LastRadC && mode = this.LastPMode) {
             if (insertAfter != -1 && insertAfter != 0) {
@@ -2975,7 +2894,6 @@ class BorderFrame {
             if (exb & 0x8)
                 try WinSetAlwaysOnTop(false, this.Gui.Hwnd)
         }
-        ; Update gradient BEFORE resize — prevents flash / 先更新渐变再调尺寸
         this._GradBg(w, h)
         try DllCall("SetWindowPos", "Ptr", this.Gui.Hwnd, "Ptr", ins
             , "Int", x, "Int", y, "Int", w, "Int", h
@@ -3015,8 +2933,6 @@ class BorderFrame {
     }
 
     ; -- 显示（不激活）/ Show without activating --
-    ; 修复：旧版 Show() 实际执行 SW_HIDE，且各处调用的 Hide() 并不存在
-    ; Fix: legacy Show() actually hid the window and callers used a missing Hide()
     Show() {
         if IsObject(this.Gui)
             try DllCall("ShowWindow", "Ptr", this.Gui.Hwnd, "Int", 8)   ; SW_SHOWNA
@@ -3052,7 +2968,6 @@ class DragBorder {
             return
         this.Destroy()
         this.Frame := BorderFrame(Border_FocusColor, Border_Opacity)
-        ; Pre-render one large gradient at monitor resolution — reuse during resize
         pc := ParseColor(Border_FocusColor)
         if (pc.isGrad) {
             MonitorGetWorkArea(MonitorGetPrimary(), &mL, &mT, &mR, &mB)
@@ -3073,7 +2988,6 @@ class DragBorder {
         ot := Border_OffsetTop
         x -= o, y -= (o + ot), w += 2*o, h += 2*o + ot
         rad := (Border_Rounded = "on") ? Border_Radius : 0
-        ; Skip if unchanged / 未变则跳过
         if (x = this.LastX && y = this.LastY && w = this.LastW && h = this.LastH)
             return
         this.LastX := x, this.LastY := y, this.LastW := w, this.LastH := h
@@ -3150,7 +3064,6 @@ class PinBorder {
             o  := Border_Pin_Offset
             ot := Border_Pin_OffsetTop
             x -= o, y -= (o + ot), w += 2*o, h += 2*o + ot
-            ; ★ v2.6.4: Pin bar uses own rounded settings from [Border] PinRounded/PinRadius
             rad := (Border_Pin_Rounded = "on") ? Border_Pin_Radius : 0
             frame.Place(x, y, w, h, t, rad, Border_Pin_Transparent, Border_Pin_Mode, -1)
         }
@@ -3439,7 +3352,6 @@ SwitchDesktop(target, *) {
             if !AlwaysVisible.Has(hwnd)
                 HideWin(hwnd)
         }
-        ; 从底到顶恢复 Z 序 / Restore bottom→top to preserve Z-order
         loop Desktops[target].Length {
             h := Desktops[target][Desktops[target].Length - A_Index + 1]
             ShowWin(h)
@@ -3459,7 +3371,6 @@ SwitchDesktop(target, *) {
             WTM.OnDesktopSwitched(target)
         if AllBorders.Active
             AllBorders.Rebuild()
-        ; 隐藏不可见窗口的置顶边框（目标桌面窗口已 ShowWin 可见，不会被隐藏）
         for hwnd, frame in PinBorder.Map.Clone() {
             if !AlwaysVisible.Has(hwnd) {
                 try {
@@ -3490,14 +3401,12 @@ MoveWindowToDesktop(target, *) {
     _RemoveFromAllDesktops(hwnd)
 
     Desktops[target].InsertAt(1, hwnd)
-    ; 记录被移动窗口为目标的聚焦窗口，切换桌面时自动聚焦
     DesktopFocus[target] := hwnd
 
     if (target != CurrentDesktop) {
         HideWin(hwnd)
         ShowOSD("Window -> Desktop " . target)
     } else {
-        ; 同桌面移动：立即置顶 / Same-desktop move: raise immediately
         try WinMoveTop(hwnd)
     }
     WTM.OnWindowChanged()
@@ -3522,8 +3431,6 @@ MoveAndSwitch(target, *) {
     if (hwnd && WinExist(hwnd)) {
         try ShowWin(hwnd)
         FocusWindowSafely(hwnd)
-        ; 用户带窗口过来是为了立即使用：抵达后置于目标桌面所有窗口之上
-        ; （一次性 Z 序调整，非持久置顶）/ One-shot raise on arrival, not a pin
         try WinMoveTop(hwnd)
         DesktopFocus[target] := hwnd
     }
@@ -3539,7 +3446,6 @@ BarShown(str) {
     s := StrLower(Trim(str))
     return !(s = "" || s = "false" || s = "off" || s = "0")
 }
-; 通用别名（非 Bar 场景使用更清晰的命名）
 BoolCfg(str) => BarShown(str)
 
 ; ---- Parse "element:expr;..." bar layout / 布局解析 ----
@@ -3601,14 +3507,15 @@ ParseBarLayout(str) {
             continue
         }
         idx++
-        ; 解析剩余字段：颜色(6位hex)、模式(bg/tx)、圆角(on/off)、字体(fs=N)、换行(wrap=N)
         colors := [], mode := "text", rounded := "off", fontSize := 0, wrapLines := 0
         loop fields.Length - idx + 1 {
             f := Trim(fields[idx + A_Index - 1])
             if (f = "")
                 continue
-            if RegExMatch(f, "^[0-9a-fA-F]{6}$")
+            if RegExMatch(f, "i)^#?[0-9a-fA-F]{6}$") {
+                f := _StripHash(f)
                 colors.Push(f)
+            }
             else if (f = "bg" || f = "tx")
                 mode := (f = "bg") ? "bg" : "text"
             else if (f = "on" || f = "off")
@@ -3626,8 +3533,6 @@ ParseBarLayout(str) {
 }
 
 ; ---- ParseCurColor / 当前桌面高亮颜色解析 ----
-; 格式同 layout 颜色尾部：color1,color2,...,bg|tx,on|off
-; 返回 {colors, mode, rounded} 或空 Map（未配置）
 ParseCurColor(raw) {
     raw := Trim(raw)
     if (raw = "")
@@ -3640,8 +3545,10 @@ ParseCurColor(raw) {
         f := Trim(f)
         if (f = "")
             continue
-        if RegExMatch(f, "^[0-9a-fA-F]{6}$")
+        if RegExMatch(f, "i)^#?[0-9a-fA-F]{6}$") {
+            f := _StripHash(f)
             colors.Push(f)
+        }
         else if (f = "bg" || f = "tx")
             mode := (f = "bg") ? "bg" : "text"
         else if (f = "on" || f = "off")
@@ -3666,8 +3573,6 @@ WorkRangeMins(&baseStart, &baseEnd) {
 }
 
 ; ---- Today's task slots / 任务时段 ----
-; 支持颜色: weekday_start_end,color1,color2,...;  颜色可选，无则用主题色
-; 颜色值必须是 6 位十六进制 RRGGBB（大小写均可），可以 # 开头
 WorkDayTasks(baseStart, baseEnd) {
     global Work_TaskTimes
     out := []
@@ -3677,12 +3582,11 @@ WorkDayTasks(baseStart, baseEnd) {
     Loop Parse, Work_TaskTimes, ";" {
         if (A_LoopField = "")
             continue
-        ; 分离时间部分和颜色部分 / Split time and color parts
         taskFields := StrSplit(A_LoopField, ",")
         timePart := Trim(taskFields[1])
         taskColors := []
         loop taskFields.Length - 1 {
-            c := Trim(taskFields[A_Index + 1])
+            c := _StripHash(Trim(taskFields[A_Index + 1]))
             if (c != "")
                 taskColors.Push(c)
         }
@@ -3711,20 +3615,13 @@ WorkDayTasks(baseStart, baseEnd) {
 
 ; ---- System status (Wi-Fi, BT, Batt, Vol, Disk, Mem, CPU) / 系统状态 ----
 GetSysInfo(what) {
-    ; CPU sampling state (function-level, not inside case) / CPU采样状态
     static cpuLastIdle := 0, cpuLastKernel := 0, cpuLastUser := 0
-    ; 缓存：避免每秒 fork 子进程 / Cache to avoid spawning child process every second
     static wifiCache := "", wifiCacheTime := 0, diskCache := "", diskCacheTime := 0
-    ; WiFi 异步查询状态 / Async Wi-Fi query state
     static wifiPending := false, wifiTmp := A_Temp . "\_wm_wifi.tmp", wifiDone := A_Temp . "\_wm_wifi.done"
     try {
         switch what {
         case "wifi":
             now := A_TickCount
-            ; 异步刷新：后台进程写临时文件，后续 tick 收取结果。
-            ; 原实现 RunWait 会在 UI 线程阻塞最长 ~1s，造成 bar/边框间歇卡顿。
-            ; Async refresh: background process writes a temp file collected on a
-            ; later tick — the old RunWait blocked the event loop for up to ~1s.
             if wifiPending {
                 if FileExist(wifiDone) {
                     out := ""
@@ -3864,7 +3761,6 @@ class BarInstance {
     GradText := Map()   ; 渐变文字
     BgGradBM := 0       ; bar背景渐变
     TaskMarkerBMs := [] ; 任务标记位图句柄（用于释放）
-    ; 桌面高亮（仅 cur_color 配置后启用）/ Desktop highlight cells
     DesktopCellCtrls := []       ; 所有动态控件（每轮 UpdateDesktops 销毁重建）
     DesktopCurColor  := Map()    ; 解析后的 cur_color
     DesktopSeg       := {cx:0, cy:0, cw:0, ch:0}
@@ -3873,7 +3769,6 @@ class BarInstance {
     DesktopLayoutRounded := "off"
     DesktopLayoutAlign   := "Center"  ; 文字对齐 / text alignment
 
-    ; 系统部件元数据表（UpdateClock + _BuildElements 共用）/ System widget metadata
     static SysWidgets := [
         {ctrl: "WifiCtrl",  key: "wifi",    gradKey: "wifi",      sysFn: "wifi",   label: "WiFi"},
         {ctrl: "BattCtrl",  key: "battery", gradKey: "battery",   sysFn: "battery", label: "Batt"},
@@ -3883,7 +3778,6 @@ class BarInstance {
         {ctrl: "CpuCtrl",   key: "cpu",     gradKey: "cpu",       sysFn: "cpu",     label: "CPU"},
     ]
 
-    ; WidgetMeta: 元素名 → 元数据快速索引（供 _BuildElements 使用）
     static WidgetMeta := Map()
     static __InitWidgetMeta() {
         for w in BarInstance.SysWidgets
@@ -3926,7 +3820,6 @@ class BarInstance {
             if myLayout.Has(k)
                 return myLayout[k]
         }
-        ; 动态外部槽位（自包含协议，无需 Layout 声明）
         if RegExMatch(name, "^external_(\d+)$", &me) {
             global Bar_ExternalSlots
             n := Integer(me[1])
@@ -4034,7 +3927,6 @@ class BarInstance {
         layout := this._MyLayout()
         for elName, seg in layout
             minThick := _BarScanWrapFn(elName, seg, minThick, this)
-        ; 动态外部槽位
         global Bar_ExternalSlots
         for n, ec in Bar_ExternalSlots {
             seg := {wrapLines: ec.Has("wrap") ? Integer(ec["wrap"]) : 0
@@ -4057,7 +3949,6 @@ class BarInstance {
         g.BackColor := pcBg.first
         g.SetFont("s" Bar_FontSize " w600 c" C1(Color_Active), FontName)
         this.Gui := g
-        ; 渐变背景 / Gradient bar background (位图圆角，不经 SetWindowRgn)
         if (pcBg.isGrad) {
             hBMBg := this._GradBgBM(bw, bh, pcBg.colors, Bar_Rounded, Bar_Radius, pcBg.first)
             if hBMBg {
@@ -4070,8 +3961,6 @@ class BarInstance {
 
         g.Show(Format("x{} y{} w{} h{} NoActivate", bx, by, bw, bh))
         WinSetTransparent(Bar_Transparent, g.Hwnd)
-        ; 纯色背景用 SetWindowRgn（已加 DWM 修复）；渐变背景位图已有圆角无需再设
-        ; Solid bg: SetWindowRgn (DWM fix applied); Gradient bg: bitmap already rounded
         if (!pcBg.isGrad)
             RoundWindowEx(g, Bar_Rounded, Bar_Radius, Bar_CornerMode)
         this.UpdateDesktops()
@@ -4079,16 +3968,12 @@ class BarInstance {
 
     ; -- 文本/渐变控件统一创建（各元素分支共用的唯一实现）--
     ; -- Canonical text-or-gradient ctrl factory shared by every element branch --
-    ; 多色/ bg 模式/ 多行换行 → 走渐变位图路径（GDI DT_WORDBREAK 换行），否则普通 Text 控件
     _AddTextOrGrad(g, el, cx, cy, cw, ch, colors, mode, rounded, txt, align, fontSize := 0, wrapLines := 0) {
-        ; wrapLines>0 强制走 GDI 路径（非渐变 Text 控件无法多行换行）
         if (colors.Length > 1 || (colors.Length > 0 && mode = "bg") || wrapLines > 0) {
             useColors := colors
-            ; 单色+多行：复制颜色使其通过 TextOnGradient 的 Colors.Length>=2 检查
             if (wrapLines > 0 && colors.Length == 1)
                 useColors := [colors[1], colors[1]]
             else if (wrapLines > 0 && colors.Length == 0) {
-                ; 无颜色：用主题色做"伪渐变"保证多行渲染
                 global Color_Active
                 useColors := [Color_Active, Color_Active]
             }
@@ -4106,7 +3991,6 @@ class BarInstance {
 
     ; -- 构建系统部件控件（由 WidgetMeta 驱动）/ Build a single system widget ctrl ----
     _BuildSysWidget(g, el, cx, cy, cw, ch, colors, mode, rounded, align) {
-        ; 惰性初始化 WidgetMeta / Lazy-init WidgetMeta
         if BarInstance.WidgetMeta.Count = 0 {
             for w in BarInstance.SysWidgets {
                 BarInstance.WidgetMeta[w.sysFn] := w
@@ -4147,7 +4031,6 @@ class BarInstance {
             if RegExMatch(key, "^external_\d+$")
                 elements.Push(key)
         }
-        ; 动态外部槽位（自包含协议，无需 Layout 声明）
         global Bar_ExternalSlots
         for n, _ in Bar_ExternalSlots {
             key := "external_" n
@@ -4186,8 +4069,6 @@ class BarInstance {
                     this.DesktopLayoutRounded := rounded
                     this.DesktopLayoutAlign   := align
                     if (this.DesktopCurColor.HasOwnProp("colors")) {
-                        ; 高亮模式：layoutBg 在此提前创建（与其他 bg 部件相同），桌面标签在 UpdateDesktops 刷新
-                        ; Highlight mode: layoutBg created here (same timing as other bg elements)
                         layoutBgStatic := (colors.Length > 0 && mode = "bg")
                         if layoutBgStatic
                             this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, " ", align)
@@ -4197,7 +4078,6 @@ class BarInstance {
                                 this.DesktopsCtrl.SetFont("c" colors[1])
                         }
                     } else {
-                        ; 原逻辑 / Legacy
                         if (colors.Length > 1 || (colors.Length > 0 && mode = "bg"))
                             this._AddGradTextCtrl(g, el, cx, cy, cw, ch, colors, mode, rounded, " ", align)
                         else {
@@ -4224,26 +4104,19 @@ class BarInstance {
                         txt := (n >= 1 && n <= items.Length) ? items[n] : ""
                         this._AddTextOrGrad(g, el, cx, cy, cw, ch, colors, mode, rounded, txt, align)
                     } else if RegExMatch(el, "^external_(\d+)$", &me) {
-                        ; 外部推送部件：初值取自 Bar_ExternalData（bar 重建后内容保留）
-                        ; External widget: initial value from Bar_ExternalData (survives bar rebuild)
                         n := Integer(me[1])
                         txt := Bar_ExternalData.Has(n) ? Bar_ExternalData[n] : ""
-                        ; 提取 per-slot 字体大小和换行配置
                         elFS := (seg.HasOwnProp("fontSize") && seg.fontSize > 0) ? seg.fontSize : 0
                         elWL := (seg.HasOwnProp("wrapLines") && seg.wrapLines > 0) ? seg.wrapLines : 0
-                        ; 自动检测：文本含换行符但未显式配置 wrap → 自动启用多行
                         if (elWL == 0 && InStr(txt, "`n"))
                             elWL := Max(2, StrSplit(txt, "`n").Length)
-                        ; 外部槽位始终强制走 GDI 路径（普通 Text 控件无法后续切换多行）
                         if (elWL == 0)
                             elWL := 1
-                        ; 根据字体和行数调整高度，防止 GDI bitmap 太小裁切内容
                         if (elFS > 0 || elWL > 1) {
                             useFS := (elFS > 0) ? elFS : Bar_FontSize
                             ch := Max(ch, this._LineHeightForFont(useFS) * Max(1, elWL) + 4)
                         }
                         ctrl := this._AddTextOrGrad(g, el, cx, cy, cw, ch, colors, mode, rounded, txt, align, elFS, elWL)
-                        ; 渐变路径经 GradText 更新，存 "" 占位 / gradient path updates via GradText
                         this.ExtCtrls[n] := this.GradText.Has(el) ? "" : ctrl
                     }
             }
@@ -4251,7 +4124,6 @@ class BarInstance {
     }
 
     ; -- 外部部件刷新（推送驱动，非轮询）/ Refresh external widgets (push-driven) --
-    ; slot=0 刷新全部；值未变则跳过 / slot=0 refreshes all; unchanged values skipped
     UpdateExternal(slot := 0) {
         global Bar_ExternalData
         for n, ctrl in this.ExtCtrls {
@@ -4280,11 +4152,9 @@ class BarInstance {
 
         ; ===== bg 模式：彩色背景 + Text 叠加（文字透明显示 bar 底色）=====
         if (mode = "bg") {
-            ; 圆角用bar底色填充，保持bar背景连续感 / Fill corners with bar bg for seamless look
             hBM := this._GradBgBM(w, h, colors, rounded, 0, C1(Color_Bg))
             if hBM
                 g.Add("Picture", Format("x{} y{} w{} h{}", Round(cx), Round(cy), w, h), "HBITMAP:" hBM)
-            ; 文字浮于背景上方，背景透明，文字色=bar底色（呈现"挖空"效果）
             tColor := C1(Color_Bg)
             ctrl := g.Add("Text", Format("x{} y{} w{} h{} {} BackgroundTrans c{}"
                 , Round(cx), Round(cy), w, h, align, tColor), txt)
@@ -4323,7 +4193,6 @@ class BarInstance {
         gi := this.GradText[el]
         if (gi.w < 2 || gi.h < 2)
             return
-        ; 单色bg：直接更新文字 / Solid bg: just update text
         if (gi.HasOwnProp("isSimple") && gi.isSimple) {
             try gi.ctrl.Value := newText
             return
@@ -4332,10 +4201,8 @@ class BarInstance {
         if (gi.mode = "bg") {
             style := gi.rounded = "on" ? "bg_rounded" : "bg"
         }
-        ; 使用 per-slot 的 fontSize 和 wrapLines（无覆盖时回退全局）
         eFS := (gi.HasOwnProp("fontSize") && gi.fontSize > 0) ? gi.fontSize : Bar_FontSize
         eWL := (gi.HasOwnProp("wrapLines") && gi.wrapLines > 0) ? gi.wrapLines : 0
-        ; 自动检测：文本含换行符但未配置 wrap → 自动启用多行渲染
         if (eWL <= 1 && InStr(newText, "`n")) {
             eWL := Max(2, StrSplit(newText, "`n").Length)
             gi.wrapLines := eWL  ; 更新存储值，下次不重复检测
@@ -4415,12 +4282,10 @@ class BarInstance {
             tColors := (task.HasOwnProp("Colors") && IsObject(task.Colors)) ? task.Colors : []
             if (mkW > 0 && taskH > 0) {
                 if (tColors.Length > 1) {
-                    ; 多色渐变
                     hBM := CreateGradient(mkW, taskH, 0, tColors*)
                     this.Gui.Add("Picture", Format("x{} y{} w{} h{}", mkX, useY, mkW, taskH), "HBITMAP:" hBM)
                     this.TaskMarkerBMs.Push(hBM)
                 } else {
-                    ; 单色 / 主题回退：统一走 CreateGradient
                     useColors := (tColors.Length = 1) ? [tColors[1], tColors[1]] : ParseColor(Color_Task).colors
                     if (useColors.Length = 0)
                         useColors := [C1(Color_Task), C1(Color_Task)]
@@ -4512,7 +4377,6 @@ class BarInstance {
                 } else {
                     lbl := (i <= labels.Length) ? labels[i] : (i "")
                     if gradientTx {
-                        ; 渐变文字 / Gradient text bitmap per label
                         hBM := TextOnGradient(w, seg.ch, this.DesktopLayoutColors, lbl, Bar_FontSize, "text", FontName, this.BgGradBM, Round(x), C1(Color_Bg), this.DesktopLayoutAlign)
                         ctrl := g.Add("Picture", Format("x{} y{} w{} h{}", Round(x), seg.cy, w, seg.ch), hBM ? "HBITMAP:" hBM : "")
                         ctrl.hBM := hBM
@@ -4574,7 +4438,6 @@ class BarInstance {
     }
 
     ; -- 时钟/进度更新 / Update clock & progress --
-    ; 渐变模式下每 tick 重建渐变位图至当前填充宽度
     UpdateClock(pct) {
         global Bar_Cfg
         if IsObject(this.TimeCtrl) {
@@ -4611,7 +4474,6 @@ class BarInstance {
                 }
             }
         }
-        ; 渐变进度条 / Gradient progress bar
         if (this.ProgHasGradient && IsObject(this.ProgGradientPic)) {
             newBM := 0, doUpdate := false
             if (this.IsHorizontal()) {
@@ -4641,7 +4503,6 @@ class BarInstance {
                     this.ProgGradientPic.Visible := false
                 }
             }
-            ; 仅在新位图成功创建后替换旧位图，避免 GDI 泄漏
             if (doUpdate) {
                 if (this.ProgOldBM)
                     DllCall("Gdi32.dll\DeleteObject", "Ptr", this.ProgOldBM)
@@ -4675,7 +4536,6 @@ class BarInstance {
         for hBM in this.TaskMarkerBMs
             DllCall("Gdi32.dll\DeleteObject", "Ptr", hBM)
         this.TaskMarkerBMs := []
-        ; 桌面控件的 HBITMAP 必须手动释放（GUI 销毁不会自动删 GDI 位图）
         for ctrl in this.DesktopCellCtrls {
             try {
                 if (ctrl.HasOwnProp("hBM") && ctrl.hBM)
@@ -4774,7 +4634,6 @@ DestroyAllBars() {
         return
     for b in Bars {
         try {
-            ; 强制清理残余桌面控件位图 / Force-clean leftover desktop cell bitmaps
             for ctrl in b.DesktopCellCtrls {
                 try {
                     if (ctrl.HasOwnProp("hBM") && ctrl.hBM)
@@ -4782,7 +4641,6 @@ DestroyAllBars() {
                 }
             }
             b.DesktopCellCtrls := []
-            ; 清理渐变文字位图 / Clean gradient text bitmaps
             for _el, gi in b.GradText {
                 try {
                     if (gi.oldBM)
@@ -4790,7 +4648,6 @@ DestroyAllBars() {
                 }
             }
             b.GradText := Map()
-            ; 清理进度条位图 / Clean progress bar bitmaps
             if (b.ProgOldBM) {
                 try DllCall("Gdi32.dll\DeleteObject", "Ptr", b.ProgOldBM)
                 b.ProgOldBM := 0
@@ -4799,7 +4656,6 @@ DestroyAllBars() {
                 try DllCall("Gdi32.dll\DeleteObject", "Ptr", b.BgGradBM)
                 b.BgGradBM := 0
             }
-            ; 销毁 GUI / Destroy GUI window
             if IsObject(b.Gui) {
                 try b.Gui.Destroy()
                 b.Gui := ""
@@ -4922,7 +4778,6 @@ ApplyPauseOnFullscreen() {
         }
         return
     }
-    ; 仅检测有 bar 的显示器——无 bar 的显示器上单窗口平铺不应触发暂停
     fullscreen := false
     if IsSet(Bars) {
         for b in Bars {
@@ -5325,7 +5180,6 @@ GatherSnapLines(skipHwnd, &vLines, &hLines) {
         try {
             if (WinGetMinMax(h) = -1)
                 continue
-            ; ★ FIX: use visual rect for consistent snapping
             if !GetWindowVisualRect(h, &ox, &oy, &ow, &oh)
                 WinGetPos(&ox, &oy, &ow, &oh, h)
         } catch
@@ -5477,7 +5331,6 @@ DragMoveHandler(*) {
     }
 
     MouseGetPos(&startX, &startY)
-    ; ★ FIX: use visual rect for snapping, convert back for WinMove
     if !GetWindowVisualRect(hwnd, &vx, &vy, &vw, &vh) {
         try WinGetPos(&vx, &vy, &vw, &vh, hwnd)
         catch
@@ -5495,8 +5348,6 @@ DragMoveHandler(*) {
     lastCX := "", lastCY := ""
     while GetKeyState("LButton", "P") {
         MouseGetPos(&curX, &curY)
-        ; 鼠标未动：不做任何窗口操作并让出 CPU（高刷屏下大幅降低占用与延迟）
-        ; Cursor idle: skip all work and yield — keeps 120Hz+ drags cheap and responsive
         if (curX = lastCX && curY = lastCY) {
             Sleep(4)
             continue
@@ -5523,7 +5374,6 @@ DragResizeHandler(*) {
     if (WinGetMinMax(hwnd) == 1)
         return
 
-    ; ★ FIX: use visual rect for snapping, convert back for WinMove
     if !GetWindowVisualRect(hwnd, &vx, &vy, &vw, &vh) {
         try WinGetPos(&vx, &vy, &vw, &vh, hwnd)
         catch
@@ -5549,7 +5399,6 @@ DragResizeHandler(*) {
     lastCX := "", lastCY := ""
     while GetKeyState("RButton", "P") {
         MouseGetPos(&curX, &curY)
-        ; 鼠标未动：跳过并让出 CPU / Cursor idle: skip & yield
         if (curX = lastCX && curY = lastCY) {
             Sleep(4)
             continue
@@ -5561,7 +5410,6 @@ DragResizeHandler(*) {
         SnapResize(nX, nW, nY, nH, vx, vy, fixedRight, fixedBottom, isLeft, isUp
                  , vLines, hLines, ctx, &nX, &nW, &nY, &nH)
         if (nW > 50 && nH > 50) {
-            ; ★ v2.6.2: convert visual size back to WinGetPos size
             try WinMove(nX - frameDX, nY - frameDY, nW + frameDW, nH + frameDH, hwnd)
             catch
                 break
@@ -5694,7 +5542,6 @@ class WTM {
     }
 
     ; -- 停用 / Deactivate --
-    ; 边框必须全部清干净，不留幽灵边框 / All borders must be removed — no ghosts
     static Deactivate() {
         this.Active := false
         SetTimer(this.TickFn, 0)
@@ -5713,9 +5560,6 @@ class WTM {
     }
 
     ; -- 桌面切换处理 / Handle a desktop switch --
-    ; 恢复目标桌面已保存的顺序（不再从头重建），保证各桌面布局互相独立
-    ; Restores the target desktop's saved order instead of rebuilding from scratch,
-    ; so each desktop keeps its own tiling layout across switches.
     static OnDesktopSwitched(target := 0) {
         if !this.Active
             return
@@ -5786,18 +5630,12 @@ class WTM {
     }
 
     ; -- 单显示器平铺 / Tile one monitor --
-    ; WTM 用 Border_Gap（为边框留空间）且不加 DWM 补偿，见 TileWindowsOnMonitor 注释
     static _TileMonitor(monIdx, wins) {
         global Border_Gap
         TileWindowsOnMonitor(wins, monIdx, Border_Gap, false)
     }
 
     ; -- 成员+几何签名 / Membership & geometry signature --
-    ; v2.9: 加入量化后的窗口位置/尺寸（32px 粒度），使手动移动或缩放任何托管窗口
-    ; 在稳定后也会触发重排（AutoTile 完成后立即刷新签名，平铺本身不会再次触发）。
-    ; Includes 32px-quantized geometry so moving/resizing any managed window
-    ; re-tiles the monitor once the change settles; AutoTile refreshes the
-    ; signature afterwards so tiling itself never re-triggers.
     static _Signature() {
         arr := []
         for hwnd in GetVisibleWindow() {
@@ -5831,20 +5669,16 @@ class WTM {
     }
 
     ; -- 定时刷新（Alt 按住期间推迟重排，避免组合键过程中误平铺）--
-    ; -- Periodic tick (retile deferred while Alt is held, so unfinished
-    ;    Alt-chords / desktop switches never trigger a mid-sequence retile) --
     static Tick() {
         global DesktopIsSwitching
         if !this.Active || DesktopIsSwitching
             return
-        ; 每 tick 检查签名，窗口开关即时响应 / Check signature every tick for instant response
         if !GetKeyState("Alt", "P") {
             sig := this._Signature()
             if (sig != this._LastSig) {
                 this._LastSig := sig
                 this._LastSigChange := A_TickCount
             }
-            ; 签名稳定 ≥80ms 后执行重排，避免快速关闭多个窗口时的闪烁
             if (this._LastSigChange && A_TickCount - this._LastSigChange >= 80) {
                 this._LastSigChange := 0
                 sig2 := this._Signature()
@@ -5927,8 +5761,6 @@ class WTM {
     }
 
     ; -- 同屏交换目标选取 / Pick the in-monitor swap target --
-    ; 与 _PickNeighbor 相同逻辑：欧氏距离最近者优先，无主轴/副轴差异
-    ; Same logic as _PickNeighbor: closest by Euclidean distance, no primary/secondary bias
     static _PickSwapTarget(hwnd, dir, monIdx) {
         if !WinExist(hwnd)
             return 0
@@ -6041,8 +5873,6 @@ class WTM {
     }
 
     ; -- 浮动/置顶排除切换 / Toggle float + pin exclusion --
-    ; WTM 模式下窗口热键统一作用于聚焦窗口（而非鼠标下窗口）/ In WTM mode,
-    ; window-targeting hotkeys act on the FOCUSED window, not the one under the cursor.
     static TogglePinExclude() {
         hwnd := 0
         try hwnd := WinGetID("A")
@@ -6141,8 +5971,6 @@ class WTM {
 
     ; -- 移除全部边框 + 验证循环 / Destroy all + verify until clean --
     static DestroyAllBorders() {
-        ; 第一轮：收集所有边框 HWND 并逐一 DestroyWindow
-        ; Round 1: collect all HWNDs and destroy them
         hwnds := []
         for hwnd, bf in this.BorderMap {
             try {
@@ -6155,8 +5983,6 @@ class WTM {
         this.BorderMap   := Map()
         this.BorderState := Map()
 
-        ; 验证循环：只要还有残留就继续补刀，最多 20 轮
-        ; Verify loop: keep killing survivors, up to 20 rounds
         loop 20 {
             survivors := []
             for _, hwnd in hwnds {
@@ -6184,13 +6010,9 @@ class WTM {
     }
 
     ; -- 全部边框刷新 / Refresh all borders --
-    ; 焦点变化或窗口列表变化时全毁全建，杜绝残留颜色/几何缓存不一致。
-    ; 纯几何变化（移动/缩放）仍走增量更新路径 / incremental path for pure geometry.
-    ; Full teardown + rebuild on focus change or window-list change.
     static RefreshBorder() {
         if !this.Active
             return
-        ; 计算签名：焦点 + 窗口列表 + 个数 / Build signature: focus + window list + count
         sig := (this.FocusHwnd ? this.FocusHwnd : 0) . "|"
         for hwnd in this.TileOrder
             sig .= hwnd . ","
@@ -6215,7 +6037,6 @@ class WTM {
             }
             return
         }
-        ; 签名未变：仅更新几何（移动/缩放）/ Signature unchanged: geometry-only update
         for hwnd, _ in this.BorderMap.Clone() {
             if !WinExist(hwnd)
                 this.RemoveBorder(hwnd)
@@ -6434,8 +6255,6 @@ class WinSelect {
     }
 
     ; -- 启动选择模式 / Start the selection mode --
-    ; ★ v2.6.3: 可在任何桌面运行（包括空桌面），侧边栏显示其他桌面的锁定窗口
-    ; ★ v2.6.3: works on every desktop (including empty ones); sidebar shows locked windows from other desktops
     static Start() {
         global WS_Scale, WS_Letters
         if this.Active {
@@ -6443,21 +6262,15 @@ class WinSelect {
             return
         }
         this._CleanLocks()
-        ; GetVisibleWindow 借助 WinGetList 返回的是 Z 序（上→下）
-        ; GetVisibleWindow uses WinGetList which is z-ordered (top->bottom)
         wins := GetVisibleWindow()
-        ; 构造当前桌面的可见窗口集合 / Build set of visible HWNDs on this desktop
         visibleSet := Map()
         for hwnd in wins
             visibleSet[hwnd] := true
-        ; 构建侧边栏字母列表：锁定的、但在当前桌面不可见的窗口
-        ; Build sidebar letters: locked windows NOT visible on the current desktop
         sidebarLetters := []
         for L, hwnd in this.Locks {
             if !visibleSet.Has(hwnd) && WinExist(hwnd)
                 sidebarLetters.Push(L)
         }
-        ; 既无可见窗口也无侧边栏可显示 / No visible windows AND no sidebar items
         if (wins.Length = 0 && sidebarLetters.Length = 0) {
             ShowOSD("WinSelect: No Windows")
             return
@@ -6489,15 +6302,12 @@ class WinSelect {
             this.Items.Push({hwnd:hwnd, letter:letter, gui:"", x:x, y:y, w:w, h:h})
         }
 
-        ; 平铺窗口并显示标签（仅当有可见窗口时）/ Tile & label only when visible windows exist
         if (this.Items.Length > 0) {
             tileHwnds := []
             for it in this.Items
                 tileHwnds.Push(it.hwnd)
             this._TileForSelect(tileHwnds)
 
-            ; 在平铺后的位置上缩小窗口并显示标签
-            ; Shrink each tiled window in place, then show its label
             for it in this.Items {
                 if (WS_Scale < 0.999) {
                     try WinGetPos(&tx, &ty, &tw, &th, it.hwnd)
@@ -6513,7 +6323,6 @@ class WinSelect {
             }
         }
 
-        ; 创建侧边栏（如有锁定窗口不在当前桌面）/ Show sidebar for locked-but-absent windows
         if (sidebarLetters.Length > 0)
             this._CreateSidebar(sidebarLetters)
 
@@ -6537,7 +6346,6 @@ class WinSelect {
         global Color_Bg, Color_Active
         bg := (WS_BarColor != "") ? WS_BarColor : Color_Bg
         fg := (WS_TextColor != "") ? WS_TextColor : Color_Active
-        ; ★ FIX: use visual rect for bar width to match visible window area
         if !GetWindowVisualRect(it.hwnd, &x, &y, &w, &h) {
             try WinGetPos(&x, &y, &w, &h, it.hwnd)
             catch
@@ -6620,8 +6428,6 @@ class WinSelect {
                 this.Locks.Delete(key)
             }
         }
-        ; 还原全部窗口位置与层级（目标窗口随后单独抬升）
-        ; Restore all positions & z-order (target is raised separately below)
         this._RestoreAll()
         if (!target || !WinExist(target))
             return
@@ -6667,8 +6473,6 @@ class WinSelect {
         try ShowWin(hwnd)
     }
 
-    ; ★ v2.6.3: 创建侧边栏 — 显示其他桌面的锁定窗口字母
-    ; ★ v2.6.3: Create sidebar — show letters of locked windows from other desktops
     static _CreateSidebar(sidebarLetters) {
         global WS_Sidebar_FontSize, WS_Sidebar_Width, WS_Sidebar_Position
         global WS_Sidebar_OffsetX, WS_Sidebar_OffsetY
@@ -6677,7 +6481,6 @@ class WinSelect {
         if (sidebarLetters.Length = 0)
             return false
         this.SidebarItems := sidebarLetters.Clone()
-        ; 确定侧边栏位置 / Determine sidebar position
         MouseGetPos(&mx, &my)
         mon := GetMonitorIndexAtPoint(mx, my)
         MonitorGetWorkArea(mon, &mL, &mT, &mR, &mB)
@@ -6687,17 +6490,13 @@ class WinSelect {
             ? (mR - sw - WS_Sidebar_OffsetX)
             : (mL + WS_Sidebar_OffsetX)
         sy := mT + WS_Sidebar_OffsetY
-        ; 构建 GUI / Build the sidebar GUI
         g := Gui("-Caption +AlwaysOnTop +ToolWindow +Owner -DPIScale")
         g.BackColor := Color_Bg
         g.MarginX := 0, g.MarginY := 0
-        ; 标题 / Title
         titleH := Round(WS_Sidebar_FontSize * 2.2)
         g.SetFont("s" WS_Sidebar_FontSize " w700 c" Color_Active, FontName)
         g.Add("Text", "x0 y4 w" sw " h" titleH " Center +0x200 BackgroundTrans", "Locks")
-        ; 分隔线 / Separator
         g.Add("Text", "x8 y" (titleH+2) " w" (sw-16) " h1 Background" Color_Active, "")
-        ; 字母项 / Letter items
         itemH := Max(36, Round(WS_Sidebar_FontSize * 2.6))
         itemY := titleH + 10
         g.SetFont("s" WS_Sidebar_FontSize " w600 c" Color_Active, FontName)
@@ -6714,11 +6513,9 @@ class WinSelect {
         return true
     }
 
-    ; ★ v2.6.3: 侧边栏字母点击 / Sidebar letter click handler
     static _SidebarClick(letter, ctl, *) {
         if !this.Active
             return
-        ; 停止活跃的 InputHook / Stop the active input hook
         try {
             if IsObject(this.IH)
                 this.IH.Stop()
@@ -6726,7 +6523,6 @@ class WinSelect {
         this._Finish(letter, "")
     }
 
-    ; ★ v2.6.3: 销毁侧边栏 / Destroy sidebar GUI
     static _DestroySidebar() {
         if IsObject(this.SidebarGui) {
             try this.SidebarGui.Destroy()
@@ -6738,8 +6534,6 @@ class WinSelect {
     ; -- 还原层级 / Re-apply captured z-order (top->bottom list) --
     static _RestoreZOrder(order) {
         static SWP := 0x1 | 0x2 | 0x10   ; NOSIZE | NOMOVE | NOACTIVATE
-        ; 从最底层向最顶层逐个置顶，最终复原相对层级
-        ; Push each window to the top of its band from bottom to top
         i := order.Length
         while (i >= 1) {
             h := order[i]
@@ -6765,17 +6559,13 @@ class WinSelect {
             try {
                 if WinExist(it.hwnd) {
                     WinMove(it.x, it.y, it.w, it.h, it.hwnd)
-                    ; ★ v2.6.2: re-apply always-on-top if pin is active
                     if PinBorder.Map.Has(it.hwnd)
                         WinSetAlwaysOnTop(1, it.hwnd)
                 }
             }
         }
-        ; 复原层级（不激活），保持各窗口相对上下层关系
-        ; Restore z-order without activating, keeping relative stacking
         if (zorder.Length > 0)
             this._RestoreZOrder(zorder)
-        ; ★ v2.6.3: 销毁侧边栏 / destroy sidebar GUI
         this._DestroySidebar()
         this.Items := []
         this.ZOrder := []
@@ -6797,10 +6587,7 @@ class WinSelect {
 ; ==============================================================================
 
 ; ---- Clipboard-change callback / 剪贴板变 ----
-; OnClipboardChange 由系统触发，覆盖一切复制途径（Ctrl+C、右键菜单、程序内 Edit 菜单等）。
-; dataType: 1=文本 2=二进制（文件、图像等）
 OnClipboardChanged(dataType) {
-    ; 防抖：200ms 内重复触发忽略 / Debounce: ignore rapid re-fires
     static lastTick := 0
     if (A_TickCount - lastTick < 200)
         return
@@ -6843,7 +6630,6 @@ RecordClipboard() {
     if (Type(txt) != "String" || txt == "" || txt == LastClipContent)
         return
     LastClipContent := txt
-    ; 超大内容截断，防止历史文件被单次复制撑爆 / Cap oversized payloads
     if (Clip_MaxChars > 0 && StrLen(txt) > Clip_MaxChars) {
         WMLog("Clipboard entry truncated (" . StrLen(txt) . " -> " . Clip_MaxChars . " chars)", "INFO", "Clipboard")
         txt := SubStr(txt, 1, Clip_MaxChars) . "`r`n[... truncated / 已截断 ...]"
@@ -6853,7 +6639,6 @@ RecordClipboard() {
 }
 
 ; ---- 记录二进制剪贴板内容信息 / Log binary clipboard content info ----
-; 文件复制 → 记录文件路径列表；图像等 → 记录内容类型（不保存数据本身）
 RecordClipboardBinary() {
     global Path_OutputFile, Clip_LogBinary, LastClipContent
     if !Clip_LogBinary
@@ -6937,7 +6722,6 @@ ShowPowerMenu(*) {
     pGui := Gui("+AlwaysOnTop -Caption +ToolWindow +Owner")
     pcBg := ParseColor(PM_Bg)
     pGui.BackColor := pcBg.first
-    ; 渐变背景 / Gradient background
     if (pcBg.isGrad) {
         pw := Round(500 * wsc), ph := Round(160 * hsc)
         hBMBg := CreateGradient(pw, ph, 0, pcBg.colors*)
@@ -7019,6 +6803,557 @@ Explorer_GetPath() {
 }
 
 ; ==============================================================================
+; 21a. Generate Theme from Wallpaper / 壁纸取色生成主题
+; ==============================================================================
+
+; ---- GDIPlus 常量 ----
+
+; ---- 获取当前壁纸文件路径 ----
+_GetWallpaperPath() {
+    try {
+        path := RegRead("HKCU\Control Panel\Desktop", "WallPaper")
+        if FileExist(path)
+            return path
+    }
+    transcoded := A_AppData "\Microsoft\Windows\Themes\TranscodedWallpaper"
+    if FileExist(transcoded)
+        return transcoded
+    try {
+        CLSID := "{C2CF3110-460E-4fc1-B9D0-8A1C0C9CC4BD}"
+        IID   := "{B92B56A9-8B55-4E14-9A89-0199BBB6F93B}"
+        dw := ComObject(CLSID, IID)
+        count := 0
+        ComCall(3, dw, "UInt*", &count)
+        if count > 0 {
+            pMonID := 0
+            ComCall(4, dw, "UInt", 0, "Ptr*", &pMonID)
+            if pMonID {
+                pWP := 0
+                ComCall(11, dw, "Ptr", pMonID, "Ptr*", &pWP)
+                if pWP {
+                    path := StrGet(pWP)
+                    if FileExist(path)
+                        return path
+                }
+            }
+        }
+    }
+    return ""
+}
+
+; ---- GDIPlus 生命周期 ----
+_Gdip_Startup() {
+    si := Buffer(A_PtrSize = 8 ? 24 : 16, 0)
+    NumPut("UInt", 1, si, 0)
+    token := 0
+    DllCall("gdiplus.dll\GdiplusStartup", "UPtr*", &token, "Ptr", si.Ptr, "Ptr", 0)
+    return token
+}
+
+_Gdip_Shutdown(token) {
+    DllCall("gdiplus.dll\GdiplusShutdown", "UPtr", token)
+}
+
+; ---- 感知亮度 (0-255) ----
+_Lum(r, g, b) => Round(0.299 * r + 0.587 * g + 0.114 * b)
+
+; ---- 饱和度 (0-255) ----
+_Sat(r, g, b) {
+    maxC := Max(r, Max(g, b)), minC := Min(r, Min(g, b))
+    return maxC = 0 ? 0 : Round((maxC - minC) / maxC * 255)
+}
+
+; ---- RGB → HSL (输出 0-255 量程) ----
+_RGB2HSL(r, g, b) {
+    r := r / 255, g := g / 255, b := b / 255
+    maxC := Max(r, Max(g, b)), minC := Min(r, Min(g, b))
+    l := (maxC + minC) / 2
+    if (maxC = minC) {
+        return {h:0, s:0, l:Round(l*255)}
+    }
+    d := maxC - minC
+    s := l > 0.5 ? d / (2 - maxC - minC) : d / (maxC + minC)
+    if (maxC = r)
+        h := Mod((g - b) / d + (g < b ? 6 : 0), 6) / 6
+    else if (maxC = g)
+        h := ((b - r) / d + 2) / 6
+    else
+        h := ((r - g) / d + 4) / 6
+    return {h:Round(h*255), s:Round(s*255), l:Round(l*255)}
+}
+
+; ---- HSL → RGB ----
+_HSL2RGB(h, s, l) {
+    h := h / 255, s := s / 255, l := l / 255
+    if (s = 0)
+        return {r:Round(l*255), g:Round(l*255), b:Round(l*255)}
+    q := l < 0.5 ? l * (1 + s) : l + s - l * s
+    p := 2 * l - q
+    _h2c(t) {
+        if t < 0
+            t += 1
+        if t > 1
+            t -= 1
+        if t < 1/6
+            return Round((p + (q - p) * 6 * t) * 255)
+        if t < 1/2
+            return Round(q * 255)
+        if t < 2/3
+            return Round((p + (q - p) * (2/3 - t) * 6) * 255)
+        return Round(p * 255)
+    }
+    return {r:_h2c(h + 1/3), g:_h2c(h), b:_h2c(h - 1/3)}
+}
+
+; ---- RGB → Hex 字符串 (含 # 前缀) ----
+_RGB2Hex(r, g, b) => Format("#{:02X}{:02X}{:02X}", r, g, b)
+
+; ---- 从壁纸提取主色调（返回 [{r,g,b,count}, ...] 按频次降序）----
+_ExtractWallpaperColors(filePath, sampleStep := 10, quantLevels := 24, topN := 16) {
+    pBitmap := 0
+    DllCall("gdiplus.dll\GdipCreateBitmapFromFile", "Ptr", StrPtr(filePath), "UPtr*", &pBitmap)
+    if pBitmap = 0
+        return []
+
+    width := 0, height := 0
+    DllCall("gdiplus.dll\GdipGetImageWidth",  "UPtr", pBitmap, "UInt*", &width)
+    DllCall("gdiplus.dll\GdipGetImageHeight", "UPtr", pBitmap, "UInt*", &height)
+
+    rect := Buffer(16, 0)
+    NumPut("UInt", 0, rect, 0), NumPut("UInt", 0, rect, 4)
+    NumPut("UInt", width, rect, 8), NumPut("UInt", height, rect, 12)
+
+    bmd := Buffer(A_PtrSize = 8 ? 32 : 24, 0)
+    DllCall("gdiplus.dll\GdipBitmapLockBits",
+        "UPtr", pBitmap, "Ptr", rect.Ptr,
+        "UInt", 0x0001,  ; ImageLockModeRead
+        "Int",  0x26200A, ; PixelFormat32bppARGB
+        "Ptr",  bmd.Ptr)
+
+    scan0  := NumGet(bmd, A_PtrSize = 8 ? 16 : 12, "UPtr")
+    stride := NumGet(bmd, 8, "Int")
+
+    colorMap := Map()
+    bucket := 256 // quantLevels
+
+    y := 0
+    while y < height {
+        x := 0
+        while x < width {
+            offset := y * stride + x * 4
+            b := NumGet(scan0 + offset, 0, "UChar")
+            g := NumGet(scan0 + offset, 1, "UChar")
+            r := NumGet(scan0 + offset, 2, "UChar")
+
+            qr := r // bucket
+            qg := g // bucket
+            qb := b // bucket
+            key := (qr << 16) | (qg << 8) | qb
+
+            if colorMap.Has(key) {
+                colorMap[key].count += 1
+            } else {
+                colorMap[key] := {
+                    r: qr * bucket + bucket // 2,
+                    g: qg * bucket + bucket // 2,
+                    b: qb * bucket + bucket // 2,
+                    count: 1
+                }
+            }
+            x += sampleStep
+        }
+        y += sampleStep
+    }
+
+    DllCall("gdiplus.dll\GdipBitmapUnlockBits", "UPtr", pBitmap, "Ptr", bmd.Ptr)
+    DllCall("gdiplus.dll\GdipDisposeImage", "UPtr", pBitmap)
+
+    arr := []
+    for _, v in colorMap
+        arr.Push(v)
+
+    if arr.Length > 1 {
+        Loop arr.Length - 1 {
+            i := A_Index
+            Loop arr.Length - i {
+                j := i + A_Index
+                if arr[j].count > arr[i].count {
+                    tmp := arr[i], arr[i] := arr[j], arr[j] := tmp
+                }
+            }
+        }
+    }
+
+    result := []
+    loop Min(topN, arr.Length)
+        result.Push(arr[A_Index])
+    return result
+}
+
+; ---- 屏幕采样提取壁纸主色调 ----
+_ExtractScreenColors(quantLevels := 24, topN := 16) {
+    global Bar_Visible
+
+    barWasVisible := Bar_Visible
+    if (barWasVisible) {
+        Bar_Visible := false
+        ApplyBarVisibility()
+    }
+
+    WinMinimizeAll()
+    Sleep(400)
+    try ControlHide("SysListView321", "ahk_class Progman")
+    try ControlHide("SysListView321", "ahk_class WorkerW")
+    WinHide("ahk_class Shell_TrayWnd")
+    Sleep(200)
+    mW := A_ScreenWidth, mH := A_ScreenHeight
+    MouseMove(mW - 2, mH - 2, 0)
+
+    colorMap := Map()
+    bucket := 256 // quantLevels
+    xStep := Max(8, mW // 70)
+    yStep := Max(10, mH // 30)
+
+    ; 生长式进度条：显示在采样行下方 y+4，绝不遮盖采样点
+    bar := Gui("+AlwaysOnTop +ToolWindow -Caption")
+    bar.BackColor := "FF3333"
+    tick := 0
+
+    y := 0
+    while (y < mH) {
+        x := 0
+        while (x < mW) {
+            c := PixelGetColor(x, y)
+            qr := ((c >> 16) & 0xFF) // bucket
+            qg := ((c >> 8) & 0xFF) // bucket
+            qb := (c & 0xFF) // bucket
+            key := (qr << 16) | (qg << 8) | qb
+            if colorMap.Has(key)
+                colorMap[key].count += 1
+            else
+                colorMap[key] := {r: qr * bucket + bucket // 2, g: qg * bucket + bucket // 2, b: qb * bucket + bucket // 2, count: 1}
+            tick++
+            if (Mod(tick, 10) = 0)
+                bar.Show("x0 y" (y+4) " w" x " h4 NoActivate")
+            x += xStep
+        }
+        bar.Show("x0 y" (y+4) " w" mW " h4 NoActivate")
+        y += yStep
+    }
+
+    y := mH - 1
+    x := 0
+    while (x < mW) {
+        c := PixelGetColor(x, y)
+        qr := ((c >> 16) & 0xFF) // bucket
+        qg := ((c >> 8) & 0xFF) // bucket
+        qb := (c & 0xFF) // bucket
+        key := (qr << 16) | (qg << 8) | qb
+        if colorMap.Has(key)
+            colorMap[key].count += 1
+        else
+            colorMap[key] := {r: qr * bucket + bucket // 2, g: qg * bucket + bucket // 2, b: qb * bucket + bucket // 2, count: 1}
+        x += xStep
+    }
+
+    bar.Destroy()
+    WinShow("ahk_class Shell_TrayWnd")
+    WinMinimizeAllUndo()
+    Sleep(100)
+    try ControlShow("SysListView321", "ahk_class Progman")
+    try ControlShow("SysListView321", "ahk_class WorkerW")
+    if (barWasVisible) {
+        Bar_Visible := true
+        ApplyBarVisibility()
+    }
+
+    arr := []
+    for _, v in colorMap
+        arr.Push(v)
+    if (arr.Length > 1) {
+        Loop arr.Length - 1 {
+            i := A_Index
+            Loop arr.Length - i {
+                j := i + A_Index
+                if (arr[j].count > arr[i].count) {
+                    tmp := arr[i], arr[i] := arr[j], arr[j] := tmp
+                }
+            }
+        }
+    }
+    result := []
+    loop Min(topN, arr.Length)
+        result.Push(arr[A_Index])
+    return result
+}
+
+; ---- 从壁纸生成主题并应用 ----
+GenerateThemeFromWallpaper(*) {
+    global ConfigFile, ConfigDir
+
+    ShowOSD("Sampling wallpaper...")
+
+    colors := _ExtractScreenColors(24, 16)
+    if (colors.Length < 3) {
+        ShowOSD("Not enough colors extracted")
+        return
+    }
+
+    info := []
+    for _, c in colors {
+        hsl := _RGB2HSL(c.r, c.g, c.b)
+        info.Push({r:c.r, g:c.g, b:c.b, h:hsl.h, s:hsl.s, l:hsl.l, lum:_Lum(c.r,c.g,c.b), sat:_Sat(c.r,c.g,c.b), cnt:c.count})
+    }
+
+    ; ---- 排序 (内联冒泡) ----
+    byFreq := info.Clone()
+    if (byFreq.Length > 1) {
+        Loop byFreq.Length - 1 {
+            i := A_Index
+            Loop byFreq.Length - i {
+                j := i + A_Index
+                if (byFreq[j].cnt > byFreq[i].cnt) {
+                    tmp := byFreq[i], byFreq[i] := byFreq[j], byFreq[j] := tmp
+                }
+            }
+        }
+    }
+
+    byLum := info.Clone()
+    if (byLum.Length > 1) {
+        Loop byLum.Length - 1 {
+            i := A_Index
+            Loop byLum.Length - i {
+                j := i + A_Index
+                if (byLum[j].lum < byLum[i].lum) {
+                    tmp := byLum[i], byLum[i] := byLum[j], byLum[j] := tmp
+                }
+            }
+        }
+    }
+
+    bySat := info.Clone()
+    if (bySat.Length > 1) {
+        Loop bySat.Length - 1 {
+            i := A_Index
+            Loop bySat.Length - i {
+                j := i + A_Index
+                if (bySat[j].sat > bySat[i].sat) {
+                    tmp := bySat[i], bySat[i] := bySat[j], bySat[j] := tmp
+                }
+            }
+        }
+    }
+
+    ; ---- 分配主题色 ----
+    _Eq(a, b) => _RGB2Hex(a.r, a.g, a.b) = _RGB2Hex(b.r, b.g, b.b)
+
+    bg := byLum[1]
+    if (bg.l > 35) {
+        hsl := _RGB2HSL(bg.r, bg.g, bg.b)
+        hsl.l := Max(8, bg.l - 30)
+        rgb := _HSL2RGB(hsl.h, hsl.s, hsl.l)
+        bg := {r:rgb.r, g:rgb.g, b:rgb.b, h:hsl.h, s:hsl.s, l:hsl.l, lum:_Lum(rgb.r,rgb.g,rgb.b), sat:bg.sat, cnt:bg.cnt}
+    }
+
+    tx := byLum[byLum.Length]
+    if (tx.l < 200) {
+        hsl := _RGB2HSL(tx.r, tx.g, tx.b)
+        hsl.l := Max(215, tx.l + 50)
+        hsl.s := Max(0, hsl.s - 40)
+        rgb := _HSL2RGB(hsl.h, hsl.s, hsl.l)
+        tx := {r:rgb.r, g:rgb.g, b:rgb.b, h:hsl.h, s:hsl.s, l:hsl.l, lum:_Lum(rgb.r,rgb.g,rgb.b), sat:0, cnt:tx.cnt}
+    }
+
+    pin := ""
+    for _, c in bySat {
+        if (_Eq(c, bg) || _Eq(c, tx))
+            continue
+        pin := c
+        break
+    }
+    if (pin = "") {
+        rgb := _HSL2RGB(3, 230, 130)
+        pin := {r:rgb.r, g:rgb.g, b:rgb.b, h:3, s:230, l:130, lum:_Lum(rgb.r,rgb.g,rgb.b), sat:230, cnt:1}
+    }
+
+    active := ""
+    for _, c in byFreq {
+        if (_Eq(c, bg) || _Eq(c, tx))
+            continue
+        active := c
+        break
+    }
+    if (active = "") {
+        rgb := _HSL2RGB(Mod(pin.h+80,255), 200, 135)
+        active := {r:rgb.r, g:rgb.g, b:rgb.b, h:Mod(pin.h+80,255), s:200, l:135, lum:_Lum(rgb.r,rgb.g,rgb.b), sat:200, cnt:1}
+    }
+
+    bdr := ""
+    for _, c in bySat {
+        if (_Eq(c, bg) || _Eq(c, tx) || _Eq(c, pin))
+            continue
+        hd := Abs(c.h - active.h)
+        if (hd > 128)
+            hd := 255 - hd
+        if (hd > 20) {
+            bdr := c
+            break
+        }
+    }
+    if (bdr = "") {
+        rgb := _HSL2RGB(Mod(active.h+85,255), 200, 130)
+        bdr := {r:rgb.r, g:rgb.g, b:rgb.b, h:Mod(active.h+85,255), s:200, l:130, lum:_Lum(rgb.r,rgb.g,rgb.b), sat:200, cnt:1}
+    }
+
+    task := ""
+    for _, c in byFreq {
+        if (_Eq(c, bg) || _Eq(c, tx) || _Eq(c, active))
+            continue
+        task := c
+        break
+    }
+    if (task = "") {
+        rgb := _HSL2RGB(Mod(active.h+100,255), 160, 135)
+        task := {r:rgb.r, g:rgb.g, b:rgb.b, h:Mod(active.h+100,255), s:160, l:135, lum:_Lum(rgb.r,rgb.g,rgb.b), sat:160, cnt:1}
+    }
+
+    unfocus := ""
+    for _, c in byLum {
+        if (c.sat < 60 && c.lum > 40 && c.lum < 120) {
+            unfocus := c
+            break
+        }
+    }
+    if (unfocus = "") {
+        rgb := _HSL2RGB(bg.h, Max(0,bg.s-70), Min(bg.l+35, 120))
+        unfocus := {r:rgb.r, g:rgb.g, b:rgb.b, h:bg.h, s:Max(0,bg.s-70), l:Min(bg.l+35,120), lum:_Lum(rgb.r,rgb.g,rgb.b), sat:Max(0,bg.s-70), cnt:1}
+    }
+
+    rgb := _HSL2RGB(bg.h, bg.s, Min(bg.l+18, 65))
+    pmBg := {r:rgb.r, g:rgb.g, b:rgb.b}
+
+    sdBest := "", sdBestSc := -1
+    for _, c in info {
+        hd := Abs(c.h - 0)
+        if (hd > 128)
+            hd := 255 - hd
+        if (hd <= 35 && c.sat >= 30) {
+            sc := c.sat * 2 + c.cnt
+            if (sc > sdBestSc) {
+                sdBestSc := sc
+                sdBest := {r:c.r, g:c.g, b:c.b}
+            }
+        }
+    }
+    if (sdBest = "") {
+        for _, c in info {
+            if (c.sat >= 15) {
+                hsl := _RGB2HSL(c.r, c.g, c.b)
+                hsl.h := 3
+                hsl.s := Max(hsl.s, 210)
+                rgb := _HSL2RGB(hsl.h, hsl.s, 130)
+                sdBest := {r:rgb.r, g:rgb.g, b:rgb.b}
+                break
+            }
+        }
+    }
+    if (sdBest = "") {
+        rgb := _HSL2RGB(3, 210, 130)
+        sdBest := {r:rgb.r, g:rgb.g, b:rgb.b}
+    }
+    sd := sdBest
+
+    slBest := "", slBestSc := -1
+    for _, c in info {
+        hd := Abs(c.h - 150)
+        if (hd > 128)
+            hd := 255 - hd
+        if (hd <= 35 && c.sat >= 30) {
+            sc := c.sat * 2 + c.cnt
+            if (sc > slBestSc) {
+                slBestSc := sc
+                slBest := {r:c.r, g:c.g, b:c.b}
+            }
+        }
+    }
+    if (slBest = "") {
+        for _, c in info {
+            if (c.sat >= 15) {
+                hsl := _RGB2HSL(c.r, c.g, c.b)
+                hsl.h := 150
+                hsl.s := Max(hsl.s, 200)
+                rgb := _HSL2RGB(hsl.h, hsl.s, 130)
+                slBest := {r:rgb.r, g:rgb.g, b:rgb.b}
+                break
+            }
+        }
+    }
+    if (slBest = "") {
+        rgb := _HSL2RGB(150, 200, 130)
+        slBest := {r:rgb.r, g:rgb.g, b:rgb.b}
+    }
+    sl := slBest
+
+    rbBest := "", rbBestSc := -1
+    for _, c in info {
+        hd := Abs(c.h - 22)
+        if (hd > 128)
+            hd := 255 - hd
+        if (hd <= 35 && c.sat >= 30) {
+            sc := c.sat * 2 + c.cnt
+            if (sc > rbBestSc) {
+                rbBestSc := sc
+                rbBest := {r:c.r, g:c.g, b:c.b}
+            }
+        }
+    }
+    if (rbBest = "") {
+        for _, c in info {
+            if (c.sat >= 15) {
+                hsl := _RGB2HSL(c.r, c.g, c.b)
+                hsl.h := 22
+                hsl.s := Max(hsl.s, 210)
+                rgb := _HSL2RGB(hsl.h, hsl.s, 130)
+                rbBest := {r:rgb.r, g:rgb.g, b:rgb.b}
+                break
+            }
+        }
+    }
+    if (rbBest = "") {
+        rgb := _HSL2RGB(22, 210, 130)
+        rbBest := {r:rgb.r, g:rgb.g, b:rgb.b}
+    }
+    rb := rbBest
+
+    ShowOSD("Applying theme...")
+
+    ; ---- 写入独立 wallpaper 主题文件，不动主配置 ----
+    wpFile := ConfigDir "\wallpaper_theme.ini"
+    try FileDelete(wpFile)
+    IniWrite(_RGB2Hex(bg.r,bg.g,bg.b),       wpFile, "Theme", "Background")
+    IniWrite(_RGB2Hex(tx.r,tx.g,tx.b),       wpFile, "Theme", "Text")
+    IniWrite(_RGB2Hex(active.r,active.g,active.b), wpFile, "Theme", "Active")
+    IniWrite(_RGB2Hex(bdr.r,bdr.g,bdr.b),    wpFile, "Theme", "BorderDrag")
+    IniWrite(_RGB2Hex(pin.r,pin.g,pin.b),    wpFile, "Theme", "BorderPin")
+    IniWrite(_RGB2Hex(unfocus.r,unfocus.g,unfocus.b), wpFile, "Theme", "BorderUnfocus")
+    IniWrite(_RGB2Hex(pmBg.r,pmBg.g,pmBg.b), wpFile, "Theme", "PowerMenuBg")
+    IniWrite(_RGB2Hex(sd.r,sd.g,sd.b),       wpFile, "Theme", "PowerBtnShutdown")
+    IniWrite(_RGB2Hex(sl.r,sl.g,sl.b),       wpFile, "Theme", "PowerBtnSleep")
+    IniWrite(_RGB2Hex(rb.r,rb.g,rb.b),       wpFile, "Theme", "PowerBtnReboot")
+    catalog := "`r`n; All extracted wallpaper colors:`r`n"
+    for _, c in colors
+        catalog .= "; " _RGB2Hex(c.r, c.g, c.b) "`t(count:" c.count ")`r`n"
+    FileAppend(catalog, wpFile, "UTF-8")
+
+    _ConfigWrite("General", "ActiveTheme", "wallpaper")
+
+    ShowOSD("Theme from wallpaper — reloading")
+    Sleep(800)
+    ScriptReload()
+}
+
+; ==============================================================================
 ; 21. Theme Switching / 二十一主
 ; ==============================================================================
 
@@ -7050,9 +7385,9 @@ ExportThemeToCustom(*) {
     )
     for key, val in palette {
         if nameMap.Has(key)
-            _ConfigWrite("Theme", nameMap[key], val)
+            _ConfigWrite("Theme", nameMap[key], "#" val)
         else if borderMap.Has(key)
-            _ConfigWrite("Border", borderMap[key], val)
+            _ConfigWrite("Border", borderMap[key], "#" val)
     }
     _ConfigWrite("General", "ActiveTheme", "custom")
     ShowOSD("Exported -> custom")
@@ -7078,9 +7413,13 @@ SetupTrayIcon() {
 
     themeMenu := Menu()
     themeMenu.Add("custom (use [Colors])", ApplyTheme.Bind("custom"))
+    themeMenu.Add("wallpaper (from image)", ApplyTheme.Bind("wallpaper"))
     for name, _ in Themes
         themeMenu.Add(name, ApplyTheme.Bind(name))
-    try themeMenu.Check(ActiveTheme = "custom" ? "custom (use [Colors])" : ActiveTheme)
+    themeMenu.Add()  ; separator
+    themeMenu.Add("Generate from Wallpaper", (*) => GenerateThemeFromWallpaper())
+    try themeMenu.Check(ActiveTheme = "wallpaper" ? "wallpaper (from image)"
+                      : ActiveTheme = "custom" ? "custom (use [Colors])" : ActiveTheme)
     A_TrayMenu.Add("Theme", themeMenu)
     A_TrayMenu.Add()
 

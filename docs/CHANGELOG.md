@@ -1,5 +1,14 @@
 # Changelog
 
+### v2.10.1 (2026-07-29)
+
+- 🆕 **Generate Theme from Wallpaper** — extract dominant colors from the desktop wallpaper via screen sampling and auto-generate a full theme palette; accessible from tray menu `Theme > Generate from Wallpaper`; generated theme stored in `wallpaper_theme.ini` without touching user's `[Theme]` config; switch back via `Theme > wallpaper (from image)`
+- 🎨 **Theme color assignment** — intelligently maps wallpaper colors to theme roles: darkest → Background, lightest → Text, most frequent → Active, most vivid → BorderPin, hue-matched → PM buttons; all colors guaranteed distinct with automatic divergence
+- 🔴 **Scan progress indicator** — real-time growing red bar shows sampling position during extraction; bar rendered below scan line to avoid contaminating samples
+- 🖥️ **Sampling environment** — auto-hides status bar, minimizes all windows, hides desktop icons and taskbar during scan; restores everything on completion
+- 🔗 **Color `#` prefix** — all config hex color values now use standard `#RRGGBB` format; backward-compatible reading strips `#` automatically
+- 🔗 **Per-task color support** — `TaskTimes` config entries support color suffixes (e.g. `1_1200_1300,#ff0000,#00ff00`)
+
 ### v2.10.0 (2026-07-17)
 
 - 🆕 **OSD per-call customization** — external scripts can override every visual setting (font size, opacity, position, colors, width, rounding, font face) per OSD call via `key=value` pairs appended to the payload; all keys optional, fall back to `[GUI]` config defaults
