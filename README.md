@@ -1,12 +1,12 @@
 <div align="center">
 
-# 🔲 AHK WM <sub>v2.10.1</sub>
+# 🔲 AHK WM <sub>v2.10.2</sub>
 
 <p>
   <img src="https://img.shields.io/badge/AutoHotkey-v2.0-cba6f7?style=flat-square" alt="AutoHotkey v2" />
   <img src="https://img.shields.io/badge/platform-Windows_7_~_11-b4befe?style=flat-square" alt="Platform" />
   <img src="https://img.shields.io/badge/license-MIT-f5c2e7?style=flat-square" alt="License" />
-  <img src="https://img.shields.io/badge/release-v2.10.1-cba6f7?style=flat-square" alt="Release" />
+  <img src="https://img.shields.io/badge/release-v2.10.2-cba6f7?style=flat-square" alt="Release" />
 </p>
 
 <p>
