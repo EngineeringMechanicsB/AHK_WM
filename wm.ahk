@@ -49,7 +49,7 @@ Persistent
 ; 一、环境与全局指令 / 1. Environment & Global Directives
 ; ==============================================================================
 
-global WM_Version := "2.10.1"
+global WM_Version := "2.10.2"
 global FontName
 
 SetWorkingDir(A_ScriptDir)
@@ -3066,6 +3066,7 @@ class PinBorder {
             x -= o, y -= (o + ot), w += 2*o, h += 2*o + ot
             rad := (Border_Pin_Rounded = "on") ? Border_Pin_Radius : 0
             frame.Place(x, y, w, h, t, rad, Border_Pin_Transparent, Border_Pin_Mode, -1)
+            try WinSetAlwaysOnTop(true, frame.Gui.Hwnd)
         }
     }
 }
@@ -4816,10 +4817,15 @@ TogglePin(*) {
     if AlwaysVisible.Has(hwnd) {
         AlwaysVisible.Delete(hwnd)
         PinBorder.Remove(hwnd)
+        try WinSetAlwaysOnTop(0, hwnd)
+        _RemoveFromAllDesktops(hwnd)
+        if Desktops.Has(CurrentDesktop)
+            Desktops[CurrentDesktop].InsertAt(1, hwnd)
         ShowOSD("Unpinned")
     } else {
         AlwaysVisible[hwnd] := true
         PinBorder.Add(hwnd)
+        try WinSetAlwaysOnTop(1, hwnd)
         ShowOSD("Pinned (Always Visible)")
     }
 }

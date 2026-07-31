@@ -1,5 +1,10 @@
 # Changelog
 
+### v2.10.2 (2026-07-31)
+
+- 🐛 **PinBorder Z-order fix** — pin borders now stay in the topmost Z band so they render above the target window instead of being partially hidden behind it
+- 🐛 **TogglePin unpin cleanup** — unpinning now removes the window from all other virtual desktops, keeping it only on the current desktop; also properly sets/clears `AlwaysOnTop` on the target window
+
 ### v2.10.1 (2026-07-29)
 
 - 🆕 **Generate Theme from Wallpaper** — extract dominant colors from the desktop wallpaper via screen sampling and auto-generate a full theme palette; accessible from tray menu `Theme > Generate from Wallpaper`; generated theme stored in `wallpaper_theme.ini` without touching user's `[Theme]` config; switch back via `Theme > wallpaper (from image)`
