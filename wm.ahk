@@ -2825,6 +2825,9 @@ class BorderFrame {
         g := Gui("-Caption +ToolWindow +E0x20 -DPIScale")
         g.BackColor := pc.first
         g.Show("NoActivate x-3000 y-3000 w10 h10")
+        ; 打标记：-Caption 窗口的标题不显示，只用于让 WTM.SweepOrphanBorders
+        ; 能把这批窗口认出来（漏删的边框全靠它兜底回收）
+        try g.Title := "AHKWM_BORDER"
         try WinSetTransparent(opacity, g.Hwnd)
         this.Gui      := g
         this.Color    := color
@@ -5798,7 +5801,7 @@ class WTM {
     static _LastTick  := 0          ; 上次 tick 的 A_TickCount
     static _FsMon     := Map()      ; 各显示器是否有"真全屏"窗口（慢速刷新）
     static SoloMon    := Map()      ; monIdx → hwnd：单人模式（该屏只留这一个窗口）
-    static SoloManual := Map()      ; monIdx → true：手动全屏（WTMFull），窗口不最大化
+    static SoloAuto   := Map()      ; monIdx → true：该 solo 是"窗口被最大化"触发的
     static SoloHidden := Map()      ; solo 期间被隐藏的窗口（退出时复原）
     static Anim       := Map()      ; hwnd → 动画状态
     static AnimStarted := false
@@ -5826,7 +5829,7 @@ class WTM {
         this._SlowAccum  := 0
         this._FsMon      := Map()
         this.SoloMon     := Map()
-        this.SoloManual  := Map()
+        this.SoloAuto    := Map()
         this.SoloHidden  := Map()
         this._StopAnim()
         ; 进入时以当前活动窗口为焦点，避免沿用上次会话留下的过期 hwnd
@@ -5835,6 +5838,15 @@ class WTM {
         try this.FocusHwnd := WinGetID("A")
         this.RebuildOrder()
         this.SeedOrderByPosition()    ; 首次进入按屏幕位置定序（回答.md Q6）
+        ; 进入模式时先把"被最大化"的窗口还原：用户对模式的预期是"进入即全部平铺"，
+        ; 不是"把同屏别的窗口全藏起来"。
+        ; 模式**内**用户手动最大化仍然会触发单人模式，不受这里影响。
+        for hwnd in this.TileOrder {
+            try {
+                if (WinGetMinMax(hwnd) = 1)
+                    WinRestore(hwnd)
+            }
+        }
         ; 记下当前平铺区域，免得第一次慢检查把"首次"当成"bar 变了"而无谓重铺
         this._LastArea := this._AreaSig()
         this._LastBSig := "", this._LastBFocus := 0    ; 诊断签名清零
@@ -6032,13 +6044,13 @@ class WTM {
         if (this._FsMon.Has(monIdx) && this._FsMon[monIdx])
             return
         if this.SoloMon.Has(monIdx) {
-            if (this.SoloManual.Has(monIdx) && this.SoloManual[monIdx]) {
-                ; 手动全屏：窗口没被最大化，就把"只有它一个窗口"的布局铺满整屏
-                ; （照样尊重 bar 与 WTM_Gap），视觉上就是"只开一个窗口进的 WTM"
-                wins := [this.SoloMon[monIdx]]
-            } else {
-                ; 自动 solo：窗口已被系统最大化，位置交给系统，脚本不插手
-                return
+            ; 自动 solo（窗口被系统最大化）：位置交给系统，脚本不插手。
+            ; 手动全屏不在这里特判 —— 它的机制就是"把非聚焦窗口藏起来"，
+            ; 下面的收集自然只剩那一个窗口，于是按普通单窗口铺满平铺区域。
+            solo := this.SoloMon[monIdx]
+            try {
+                if (WinExist(solo) && WinGetMinMax(solo) = 1)
+                    return
             }
         }
         if (wins = 0) {
@@ -6051,6 +6063,16 @@ class WTM {
                 if (m = monIdx)
                     wins.Push(hwnd)
             }
+        }
+        ; 被 solo 藏起来的窗口不占槽位 —— 否则"单窗口"会被铺成 1/N 的几个格子之一，
+        ; 而不是铺满整片平铺区域（churn 也来自这些不可见窗口来回改槽位）
+        if (this.SoloHidden.Count > 0) {
+            vis := []
+            for hwnd in wins {
+                if !this.SoloHidden.Has(hwnd)
+                    vis.Push(hwnd)
+            }
+            wins := vis
         }
         if (wins.Length = 0)
             return
@@ -6072,14 +6094,15 @@ class WTM {
             if !WinExist(r.hwnd)
                 continue
             this._Placed[r.hwnd] := {x: r.x, y: r.y, w: r.w, h: r.h, mon: monIdx}
-            ; solo 的窗口保持系统最大化状态，不要碰
-            keep := false
-            for m, h in this.SoloMon {
-                if (h = r.hwnd)
-                    keep := true
-            }
-            if keep
+            ; 最大化 / 最小化的窗口一律不碰：MoveWinTo 里的 WinRestore 会把它
+            ; 拉回普通状态，直接毁掉"自动 solo"（那一屏的判据就是窗口处于最大化）。
+            ; 手动全屏的窗口是普通状态，照常摆 —— 它本来就该被铺满。
+            try {
+                if (WinGetMinMax(r.hwnd) != 0)
+                    continue
+            } catch {
                 continue
+            }
             if (animate && WTM_AnimMs > 0)
                 this._AnimMove(r.hwnd, r.x, r.y, r.w, r.h)
             else {
@@ -6104,9 +6127,8 @@ class WTM {
             return
         }
         try {
-            if (WinGetMinMax(hwnd) != 0) {   ; 最大化/最小化不做动画
+            if (WinGetMinMax(hwnd) != 0) {   ; 最大化/最小化不做动画，也别动它
                 this._AnimDrop(hwnd)
-                MoveWinTo(hwnd, tx, ty, tw, th)
                 return
             }
             WinGetPos(&cx, &cy, &cw, &ch, hwnd)
@@ -6139,12 +6161,6 @@ class WTM {
                 this._AnimDrop(hwnd)
                 continue
             }
-            p := (now - a.t0) / a.dur
-            if (p >= 1) {
-                this._AnimDrop(hwnd)
-                try MoveWinTo(hwnd, a.x1, a.y1, a.w1, a.h1)
-                continue
-            }
             try {
                 if (WinGetMinMax(hwnd) != 0) {
                     this._AnimDrop(hwnd)
@@ -6154,6 +6170,13 @@ class WTM {
                 this._AnimDrop(hwnd)
                 continue
             }
+            p := (now - a.t0) / a.dur
+            if (p >= 1) {
+                this._AnimDrop(hwnd)
+                try MoveWinTo(hwnd, a.x1, a.y1, a.w1, a.h1)
+                try this._DrawBorder(hwnd, this.FocusHwnd)
+                continue
+            }
             e := 1 - (1 - p) ** 3          ; ease-out cubic
             x := Round(a.x0 + (a.x1 - a.x0) * e)
             y := Round(a.y0 + (a.y1 - a.y0) * e)
@@ -6161,6 +6184,10 @@ class WTM {
             h := Round(Max(50, a.h0 + (a.h1 - a.h0) * e))
             try DllCall("SetWindowPos", "Ptr", hwnd, "Ptr", 0
                 , "Int", x, "Int", y, "Int", w, "Int", h, "UInt", 0x4 | 0x10)  ; NOZORDER|NOACTIVATE
+            ; 边框跟窗口同帧搬，别等下一轮 15ms 快速轮询 —— 那样动画途中
+            ; 未聚焦窗口的边框会明显滞后，看着就像"停在原位没动"
+            ; （拖拽边框之所以跟得紧，正是因为在拖拽处理里逐帧同步的）
+            try this._DrawBorder(hwnd, this.FocusHwnd)
         }
     }
 
@@ -6247,6 +6274,50 @@ class WTM {
         }
         this._CheckFullscreen()
         this._CheckDrift()
+        this.SweepOrphanBorders()
+    }
+
+    ; -- 孤儿边框兜底回收 / Recycle leaked border windows --
+    ; BorderMap 只管它自己那批。真正漏出去的边框（销毁失败、登记前被打断、
+    ; 某个所有者清场时漏掉一个）不在任何 Map 里，RefreshBorder 永远看不见它
+    ; —— 表现就是"偶见边框未消除 / 边框卡住"。这里按窗口标题标记把本进程
+    ; 建的全部边框窗口枚举一遍，凡是不属于任何所有者的就回收。
+    ; 两轮确认（先记账、下一轮才销毁）是为了绕开"新建窗口 → 登记进 Map"之间
+    ; 那个瞬间：那一瞬间窗口存在但还没登记，单轮判定会把它误杀。
+    static _OrphanSeen := Map()
+    static SweepOrphanBorders() {
+        keep := Map()
+        for _, m in [this.BorderMap, AllBorders.Frames, PinBorder.Map] {
+            for _, bf in m {
+                try {
+                    if (IsObject(bf) && IsObject(bf.Gui) && bf.Gui.Hwnd)
+                        keep[bf.Gui.Hwnd] := true
+                }
+            }
+        }
+        try {
+            if (IsObject(DragBorder.Frame) && IsObject(DragBorder.Frame.Gui) && DragBorder.Frame.Gui.Hwnd)
+                keep[DragBorder.Frame.Gui.Hwnd] := true
+        }
+        me   := DllCall("GetCurrentProcessId")
+        seen := Map()
+        for h in WinGetList("AHKWM_BORDER ahk_class AutoHotkeyGUI") {
+            if keep.Has(h)
+                continue
+            try {
+                if (WinGetPID(h) != me)
+                    continue          ; 别的实例的边框，别动
+            } catch {
+                continue
+            }
+            seen[h] := true
+            if !this._OrphanSeen.Has(h)
+                continue              ; 首见：先记账，下一轮再处理
+            if WTM_Debug
+                WMLog("WTM border sweep - " h " (孤儿边框回收)")
+            try DllCall("User32\DestroyWindow", "Ptr", h)
+        }
+        this._OrphanSeen := seen
     }
 
     ; -- 平铺区域签名 / Signature of the tileable area --
@@ -6290,6 +6361,14 @@ class WTM {
                 continue
             if this.SoloHidden.Has(hwnd)
                 continue
+            ; 被系统最大化 / 最小化的窗口（含自动 solo 那个）位置本来就不是我们摆的，
+            ; 拿来比"漂移"会每轮都误判成 dirty，白白重铺一整屏
+            try {
+                if (WinGetMinMax(hwnd) != 0)
+                    continue
+            } catch {
+                continue
+            }
             if !this._Placed.Has(hwnd)
                 continue
             t := this._Placed[hwnd]
@@ -6329,9 +6408,12 @@ class WTM {
     static FocusDir(dir) {
         if !this.Active
             return
-        ; 全屏(solo)下先退出，否则方向键会去聚焦"被隐藏"的窗口（屏幕上什么都不会动）
-        if (this.SoloMon.Count > 0) {
-            this._LeaveSoloAndRestore()
+        ; 全屏(solo)下先退出，否则方向键会去聚焦"被隐藏"的窗口（屏幕上什么都不会动）。
+        ; 只退焦点窗口所在那块屏的 solo —— 多屏时别屏的全屏状态不该被这一下毁掉。
+        m0 := 1
+        try m0 := GetMonitorIndex(this.FocusHwnd)
+        if this.SoloMon.Has(m0) {
+            this._LeaveSoloRestoreMon(m0)
             this.AutoTile()
             this.RefreshBorder()
         }
@@ -6358,8 +6440,12 @@ class WTM {
     static MoveDir(dir) {
         if !this.Active
             return
-        if (this.SoloMon.Count > 0) {      ; 全屏(solo)模式下先退出该模式
-            this._LeaveSoloAndRestore()    ; 含还原最大化，否则会被慢检查立刻判回 solo
+        ; 全屏(solo)模式下先退出该模式。含还原最大化，否则会被慢检查立刻判回 solo；
+        ; 同样只退焦点窗口那块屏（多屏时别屏的全屏不该被这一下毁掉）。
+        m0 := 1
+        try m0 := GetMonitorIndex(this.FocusHwnd)
+        if this.SoloMon.Has(m0) {
+            this._LeaveSoloRestoreMon(m0)
             this.AutoTile()
         }
         this.RebuildOrder()
@@ -6688,15 +6774,6 @@ class WTM {
                 continue
             if this.SoloHidden.Has(hwnd)
                 continue
-            if (this.SoloMon.Count > 0) {        ; solo：只给被 solo 的窗口画边框
-                keep := false
-                for m, h in this.SoloMon {
-                    if (h = hwnd)
-                        keep := true
-                }
-                if !keep
-                    continue
-            }
             try {
                 if (WinGetMinMax(hwnd) = -1)
                     continue
@@ -6705,6 +6782,11 @@ class WTM {
             }
             m := 1
             try m := GetMonitorIndex(hwnd)
+            ; solo 只影响它自己那块屏，别的屏照常画边框。
+            ; （这里早先按全局 this.SoloMon.Count 判定 —— 屏 1 进 solo 会把屏 2
+            ;   所有窗口的边框一并抹掉，多屏下就是"另一块屏边框全没了"）
+            if (this.SoloMon.Has(m) && this.SoloMon[m] != hwnd)
+                continue
             if (this._FsMon.Has(m) && this._FsMon[m])
                 continue                          ; 真全屏：该屏不画边框
             want[hwnd] := true
@@ -6775,8 +6857,10 @@ class WTM {
     ; 全屏 / 单人模式 / Fullscreen & solo
     ; ==========================================================================
     ; 真全屏：窗口覆盖整块显示器（含 bar）→ 该屏暂停平铺 + 隐藏边框
-    ; 单人模式：窗口被最大化（Win+Up）→ 保持系统的最大化状态与 bar/边框，
-    ;           隐藏该屏其它窗口，只让它一个"参与平铺"；取消最大化即完全复原
+    ; 单人模式只有一条机制：把该屏其它窗口隐藏起来，只留一个 → 它自然铺满平铺区域。
+    ;   ① 自动：该屏有窗口被最大化（Win+Up）→ 位置交给系统，取消最大化即复原
+    ;   ② 手动：Alt+Shift+F → 窗口保持普通状态，由 WTM 铺满平铺区域
+    ; 两种都是"按屏"的，多屏互不影响。
     static _CheckFullscreen() {
         changed := false
         ; ① 真全屏状态
@@ -6793,15 +6877,17 @@ class WTM {
         ; ② 单人模式
         for m, _ in this._MonitorsOfOrder() {
             if this.SoloMon.Has(m) {
-                solo   := this.SoloMon[m]
-                manual := (this.SoloManual.Has(m) && this.SoloManual[m])
-                ok := false
+                solo := this.SoloMon[m]
+                auto := (this.SoloAuto.Has(m) && this.SoloAuto[m])
+                ok   := false
                 try {
-                    if manual
-                        ; 手动全屏：窗口不最大化，只要求它还在、还没被最小化、仍在平铺集合里
-                        ok := (WinExist(solo) && WinGetMinMax(solo) != -1 && this._OrderIndex(solo))
-                    else
+                    ; 手动全屏（WTMFull）的窗口是普通状态，只要求它还在、没被最小化、
+                    ; 还在平铺集合里；自动 solo 的判据就是"窗口被最大化"，用户
+                    ; Win+Down 取消最大化即视为退出全屏、复原其它窗口。
+                    if auto
                         ok := (WinExist(solo) && WinGetMinMax(solo) = 1 && this._OrderIndex(solo))
+                    else
+                        ok := (WinExist(solo) && WinGetMinMax(solo) != -1 && this._OrderIndex(solo))
                 }
                 if !ok {
                     this._ExitSolo(m)
@@ -6834,15 +6920,21 @@ class WTM {
     }
 
     ; -- 进入单人模式 / Enter solo mode on a monitor --
-    ; manual=true：手动全屏（WTMFull），窗口保持普通状态，由 WTM 自己铺满平铺区域；
-    ; manual=false：自动 solo，窗口是被系统最大化的，位置交给系统。
-    static _EnterSoloWith(monIdx, target, manual := false) {
+    ; 机制只有一条：把该屏其它窗口藏起来，只留 target。
+    ; 之后 _RePlace 收集该屏窗口时就只剩它一个 → 自动铺满平铺区域
+    ; （尊重 bar 与 WTM_Gap）；窗口恰好是被系统最大化的那种，则由 _RePlace 让位给系统。
+    ; auto=true 表示这个 solo 是"该屏有窗口被最大化"触发的，退出判据随之不同：
+    ; 取消最大化就该复原（否则用户 Win+Down 之后窗口还赖在全屏里）。
+    static _EnterSoloWith(monIdx, target, auto := false) {
         if (!target || !WinExist(target))
             return false
         if this.SoloHidden.Has(target)
             return false
-        this.SoloMon[monIdx]    := target
-        this.SoloManual[monIdx] := manual
+        this.SoloMon[monIdx] := target
+        if auto
+            this.SoloAuto[monIdx] := true
+        else if this.SoloAuto.Has(monIdx)
+            this.SoloAuto.Delete(monIdx)
         for hwnd in this.TileOrder {
             if (hwnd = target)
                 continue
@@ -6884,7 +6976,7 @@ class WTM {
         }
         if !target
             return false
-        return this._EnterSoloWith(monIdx, target, false)
+        return this._EnterSoloWith(monIdx, target, true)
     }
 
     ; -- 退出单人模式并复原隐藏窗口 / Leave solo mode, restore hidden windows --
@@ -6903,26 +6995,27 @@ class WTM {
         if onlyMon {
             if this.SoloMon.Has(onlyMon)
                 this.SoloMon.Delete(onlyMon)
-            if this.SoloManual.Has(onlyMon)
-                this.SoloManual.Delete(onlyMon)
+            if this.SoloAuto.Has(onlyMon)
+                this.SoloAuto.Delete(onlyMon)
         } else {
-            this.SoloMon    := Map()
-            this.SoloManual := Map()
+            this.SoloMon  := Map()
+            this.SoloAuto := Map()
         }
         this._Placed := Map()      ; 强制下一轮重新摆放
     }
 
-    ; -- 退出单人模式并还原窗口状态 / Leave solo and un-maximize --
-    ; 必须把"被最大化"的窗口还原：自动 solo 的判据就是"窗口处于最大化"，
-    ; 只调 _ExitSolo 的话下一轮慢检查会立刻又把它判成 solo，退出等于没退。
-    static _LeaveSoloAndRestore() {
-        for m, h in this.SoloMon.Clone() {
-            try {
-                if (WinExist(h) && WinGetMinMax(h) = 1)
-                    WinRestore(h)
-            }
+    ; -- 只退出某一块屏的 solo / Leave solo on one monitor --
+    ; 多屏下必须按屏退：屏 1 上按一下方向键，不能把屏 2 那个最大化的窗口
+    ; 顺手 WinRestore 掉（那等于毁掉别屏的全屏状态）。
+    static _LeaveSoloRestoreMon(m) {
+        if !this.SoloMon.Has(m)
+            return
+        try {
+            h := this.SoloMon[m]
+            if (WinExist(h) && WinGetMinMax(h) = 1)
+                WinRestore(h)
         }
-        this._ExitSolo()
+        this._ExitSolo(m)
     }
 
     ; -- 手动全屏（保留 bar 与边框）/ Manual fullscreen for the focused window --
@@ -6930,13 +7023,6 @@ class WTM {
     static ToggleFull() {
         if !this.Active
             return
-        if (this.SoloMon.Count > 0) {
-            this._LeaveSoloAndRestore()
-            this.AutoTile()
-            this.RefreshBorder()
-            ShowOSD("WTM Full: OFF")
-            return
-        }
         cur := this._OrderIndex(this.FocusHwnd) ? this.FocusHwnd : 0
         if !cur
             return
@@ -6944,7 +7030,17 @@ class WTM {
         try m := GetMonitorIndex(cur)
         if (m < 1)
             m := 1
-        if !this._EnterSoloWith(m, cur, true)
+        ; 只认"焦点窗口那块屏正处于 solo"这一种情况为"再按一次复原"。
+        ; 早先按全局 SoloMon.Count 判定：屏 2 自己在 solo 时，在屏 1 按这个键
+        ; 会跑去复原屏 2，反而进不了屏 1 的全屏。
+        if (this.SoloMon.Has(m) && this.SoloMon[m] = cur) {
+            this._LeaveSoloRestoreMon(m)
+            this.AutoTile()
+            this.RefreshBorder()
+            ShowOSD("WTM Full: OFF")
+            return
+        }
+        if !this._EnterSoloWith(m, cur)
             return
         this.AutoTile()
         this.RefreshBorder()
@@ -6957,8 +7053,12 @@ class WTM {
     static HandleDragDrop(hwnd) {
         if (!this.Active || !hwnd || !WinExist(hwnd))
             return
-        if (this.SoloMon.Count > 0)
-            this._ExitSolo()
+        ; 只退出被拖窗口所在那块屏的 solo（多屏时别屏的全屏保持不动）。
+        ; 这里不还原最大化：拖拽之后由重铺接管位置。
+        m0 := 1
+        try m0 := GetMonitorIndex(hwnd)
+        if this.SoloMon.Has(m0)
+            this._ExitSolo(m0)
         this.RebuildOrder()
         if !this._OrderIndex(hwnd)
             return
