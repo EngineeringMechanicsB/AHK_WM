@@ -140,6 +140,8 @@ global SlotTableCache := Map()
 ; WTM 专用间隙与动画时长（[Tiling] WTMGap / AnimationDuration）
 global WTM_Gap    := 10
 global WTM_AnimMs := 0
+; WTM 边框诊断日志开关（[Tiling] WTMDebug，默认 off）
+global WTM_Debug  := false
 
 ; ---- GUI rounding / GUI圆角 ----
 global GUI_Rounded     := "on"
@@ -2069,6 +2071,9 @@ WTMMoveRight=Alt+Shift+L
     WTM_Gap    := (_wtmGapRaw = "") ? Border_Gap : SafeInt(_wtmGapRaw, Border_Gap)
     ; 平铺动画时长 ms（0 = 关闭动画，瞬间到位）
     WTM_AnimMs := Max(0, SafeInt(IniRead(ConfigFile, "Tiling", "AnimationDuration", "0"), 0))
+    ; WTM 边框诊断日志（0=关）：只在"边框集合/焦点/颜色"发生变化时写一行，
+    ; 用来定位"边框不跟随 / 不消除 / 颜色不切换"。平时留 0，排查时设 1。
+    WTM_Debug  := BarShown(IniRead(ConfigFile, "Tiling", "WTMDebug", "off"))
     InvalidateSlotTables()
 
     Snap_Enable   := BarShown(IniRead(ConfigFile, "Snapping", "Enable", "on"))
@@ -2800,6 +2805,7 @@ UpdateExternalWidgets(slot := 0) {
 class BorderFrame {
     Gui   := ""
     Color := ""
+    Owner := 0   ; 已绑定的所有者窗口（绑过就不再重复设）
     LastW := -1, LastH := -1, LastT := -1, LastR := -1
     LastMode := ""
     LastPX := -99999, LastPY := -99999, LastPW := -1, LastPH := -1
@@ -2951,6 +2957,23 @@ class BorderFrame {
         DllCall("Gdi32\CombineRgn", "Ptr",outer, "Ptr",outer, "Ptr",inner, "Int",4)
         DllCall("Gdi32\DeleteObject", "Ptr", inner)
         try DllCall("User32\SetWindowRgn", "Ptr", this.Gui.Hwnd, "Ptr", outer, "Int", 1)
+    }
+
+    ; -- 绑定所有者 / Bind as an owned window of the target --
+    ; 把边框设成目标窗口的 owned window（GWLP_HWNDPARENT），由**系统**保证：
+    ;   ① 边框永远紧贴在自己窗口的正上方 —— 窗口被激活、被提到最前时，
+    ;      系统会把 owned window 一起带上去，不会出现"边框被自己窗口盖住"；
+    ;   ② 目标窗口隐藏 / 最小化时边框自动跟着隐藏；
+    ;   ③ 目标窗口销毁时边框自动被销毁。
+    ; 这样就不需要"每个 tick 把边框重插到目标正上方"那种 64Hz 层级抖动
+    ; （那种做法会让下层窗口不停重绘，表现就是边框闪、乱、颜色看起来不切换）。
+    BindOwner(owner) {
+        if !IsObject(this.Gui) || !this.Gui.Hwnd || !owner
+            return
+        if (this.Owner = owner)
+            return
+        this.Owner := owner
+        try DllCall("User32\SetWindowLongPtr", "Ptr", this.Gui.Hwnd, "Int", -8, "Ptr", owner)
     }
 
     ; -- 显示（不激活）/ Show without activating --
@@ -5706,12 +5729,34 @@ RestoreLayout(*) {
 ; ---- 共享边框绘制辅助（WTM / AllBorders 共用）----
 ; 获取窗口可视矩形 → 偏移 → 计算圆角 → 调用 Place
 _BorderPlaceFrame(borderMap, hwnd) {
-    if !GetWindowVisualRect(hwnd, &x, &y, &w, &h)
+    ; 键不存在就直接放弃：Map 取不存在的键会抛 "Item has no value"（已被这个坑咬过两次）
+    if !borderMap.Has(hwnd)
         return
-    o := Border_Offset
-    x -= o, y -= o, w += 2*o, h += 2*o
+    ; GetWindowVisualRect 取不到 DWM 扩展边框时，会退回 WinGetPos **并返回 false** ——
+    ; 此时 x/y/w/h 已经是有效值。原来这里 `if !... return`，等于把这类窗口
+    ; （无 DWM 边框的窗口，如部分终端）的边框永久钉在创建时的位置，
+    ; 表现就是"边框不跟随窗口"。改成只用返回值判断窗口是否还在。
+    try {
+        GetWindowVisualRect(hwnd, &x, &y, &w, &h)
+        if !WinExist(hwnd)
+            return
+    } catch {
+        return
+    }
+    ; 与 DragBorder.Update 用同一套算法（含 OffsetTop），
+    ; 这样 WTM 的边框与拖拽时显示的那圈边框是同一个视觉结果。
+    o  := Border_Offset
+    ot := Border_OffsetTop
+    x -= o, y -= (o + ot), w += 2*o, h += 2*o + ot
     rad := (Border_Rounded = "on") ? Border_Radius : 0
-    borderMap[hwnd].Place(x, y, w, h, Max(2, Border_Thickness), rad, Border_Opacity, Border_Mode, hwnd)
+    bf := borderMap[hwnd]
+    ; 关键：先绑所有者，再只用 HWND_TOP 摆一次位置。
+    ; 不再把 hwnd 当 hwndInsertAfter（那是每 tick 重插层级 = 抖动源头）。
+    ;   -1 (HWND_TOPMOST) 也不行：Offset=15 会让边框压住任务栏。
+    ;   0 (HWND_TOP) 只到"非置顶带最上面" → 盖住所有普通窗口，但让开
+    ;   bar / 任务栏这些真置顶窗口；随后由 owner 关系维持"贴着窗口上方"。
+    bf.BindOwner(hwnd)
+    bf.Place(x, y, w, h, Max(2, Border_Thickness), rad, Border_Opacity, Border_Mode, 0)
 }
 
 ; ---- Dynamic tiling mode / 动态平铺 ----
@@ -5741,6 +5786,9 @@ class WTM {
     static BorderMap   := Map()
     static BorderState := Map()
     static _Placed    := Map()      ; hwnd → 我们最后一次摆成的矩形（用于检测外部改动）
+    static _LastBSig  := ""         ; 诊断：上次记进日志的边框集合签名
+    static _LastBFocus := 0         ; 诊断：上次记进日志的焦点窗口
+    static _LastArea  := ""         ; 上次的平铺区域签名（bar 出现/消失会改它）
     static _LastWins  := ""         ; 轻量成员签名（只含 hwnd 集合）
     static _SlowAccum := 0          ; 慢速轮询累加（ms，按真实经过时间计）
     static _LastTick  := 0          ; 上次 tick 的 A_TickCount
@@ -5781,6 +5829,9 @@ class WTM {
         try this.FocusHwnd := WinGetID("A")
         this.RebuildOrder()
         this.SeedOrderByPosition()    ; 首次进入按屏幕位置定序（回答.md Q6）
+        ; 记下当前平铺区域，免得第一次慢检查把"首次"当成"bar 变了"而无谓重铺
+        this._LastArea := this._AreaSig()
+        this._LastBSig := "", this._LastBFocus := 0    ; 诊断签名清零
         this.AutoTile()
         this.RefreshBorder()
         this.LogSlotTables()          ; 把各屏槽位表写进日志，便于核对
@@ -6161,6 +6212,18 @@ class WTM {
 
     ; -- 慢速检查 / Slow path --
     static _SlowCheck() {
+        ; ① 平铺区域变了就重摆。典型场景：退出真全屏时 bar 还没重新出现，
+        ;    立刻平铺会按"没有 bar 的高度"铺，等 bar 冒出来就遮住窗口底边；
+        ;    区域签名一变这里就按正确高度重铺（不靠猜延时）。顺带也覆盖
+        ;    手动开关 bar、改分辨率、挪任务栏这些情况。
+        asig := this._AreaSig()
+        if (asig != this._LastArea) {
+            this._LastArea := asig
+            this.AutoTile()
+            this.RefreshBorder()
+            return
+        }
+        ; ② 窗口集合变了 → 重铺（新开窗口在这里被收编）
         sig := this._MemberSig()
         if (sig != this._LastWins) {
             this._LastWins := sig
@@ -6172,14 +6235,32 @@ class WTM {
         this._CheckDrift()
     }
 
+    ; -- 平铺区域签名 / Signature of the tileable area --
+    ; 用 MonitorGetWorkArea + BarReserve 的结果（与 GetTileArea 同源）做签名。
+    ; bar 是脚本自己画的 GUI，不是真正的 AppBar，Windows 的工作区不会因它改变，
+    ; 所以必须把 BarReserve 的结果算进来才察觉得到"bar 出现 / 消失"。
+    static _AreaSig() {
+        s := ""
+        loop MonitorGetCount() {
+            m := A_Index
+            MonitorGetWorkArea(m, &L, &T, &R, &B)
+            BarReserve(m, &L, &T, &R, &B)
+            s .= m ":" L "," T "," R "," B ";"
+        }
+        return s
+    }
+
     ; -- 快速检查 / Fast path --
     static _FastCheck() {
-        try {
-            fh := WinGetID("A")
-            if (fh && fh != this.FocusHwnd) {
-                this.FocusHwnd := fh
-            }
-        }
+        fh := 0
+        try fh := WinGetID("A")
+        ; 只认"参与平铺"的窗口。焦点若落在浮动窗口 / bar / OSD / 别的脚本窗口上，
+        ; 不要把焦点记号带过去 —— 记号跟着跑，边框亮点就会亮在错误的地方
+        ; （表现得像"颜色乱"）；反复触发还会让方向键失去起点。
+        if (fh && fh != this.FocusHwnd && this._OrderIndex(fh))
+            this.FocusHwnd := fh
+        else if (this.FocusHwnd && (!WinExist(this.FocusHwnd) || !this._OrderIndex(this.FocusHwnd)))
+            this.FocusHwnd := this.TileOrder.Length ? this.TileOrder[1] : 0
         this.RefreshBorder()
     }
 
@@ -6488,8 +6569,19 @@ class WTM {
 
     ; -- 确保边框存在 / Ensure a border frame exists --
     static EnsureBorder(hwnd) {
-        if this.BorderMap.Has(hwnd)
-            return
+        if this.BorderMap.Has(hwnd) {
+            ; 自愈：边框 GUI 可能已经被外部销毁（脚本重载、错绑 owner 后目标关窗、
+            ; 别的边框所有者清场）。这时 Map 里还留着条目，Place 会静默失败 ——
+            ; 表现就是"边框永久消失 / 不再跟随 / 关窗后不消失"。发现死 GUI 就重建。
+            bf := this.BorderMap[hwnd]
+            if (IsObject(bf.Gui) && bf.Gui.Hwnd && DllCall("User32\IsWindow", "Ptr", bf.Gui.Hwnd))
+                return
+            if WTM_Debug
+                WMLog("WTM border ! " hwnd " (边框 GUI 已死，重建)")
+            this.RemoveBorder(hwnd)
+        }
+        if WTM_Debug
+            WMLog("WTM border + " hwnd " (n=" this.BorderMap.Count + 1 ")")
         this.BorderMap[hwnd]   := BorderFrame(Border_UnfocusColor, Border_Opacity)
         this.BorderState[hwnd] := "unfocus"
     }
@@ -6498,6 +6590,8 @@ class WTM {
     static RemoveBorder(hwnd) {
         if !this.BorderMap.Has(hwnd)
             return
+        if WTM_Debug
+            WMLog("WTM border - " hwnd " (" (WinExist(hwnd) ? "窗口还在" : "窗口已销毁") ")")
         bf := this.BorderMap[hwnd]
         try {
             if IsObject(bf.Gui) && bf.Gui.Hwnd
@@ -6532,9 +6626,15 @@ class WTM {
     static _SetBorderColor(hwnd, state) {
         if !this.BorderMap.Has(hwnd)
             return
-        if (this.BorderState.Has(hwnd) && this.BorderState[hwnd] = state)
-            return
+        ; 不拿 BorderState 当"已设置过"的判据：那个缓存一旦和边框真实颜色脱钩
+        ; （比如边框被重建过），颜色就永久卡死不再切换 —— 正是"聚焦过的窗口
+        ; 一直是高亮边框、退回不了未聚焦色"的成因。这里直接交给 SetColor，
+        ; 它自己会在颜色相同时立刻返回，所以每次都调零成本。
         col := (state = "focus") ? Border_FocusColor : Border_UnfocusColor
+        if WTM_Debug {
+            if (!this.BorderState.Has(hwnd) || this.BorderState[hwnd] != state)
+                WMLog("WTM bordercolor " hwnd " -> " state)
+        }
         this.BorderMap[hwnd].SetColor(col)
         this.BorderState[hwnd] := state
     }
@@ -6548,6 +6648,11 @@ class WTM {
         want := Map()
         for hwnd in this.TileOrder {
             if !WinExist(hwnd)
+                continue
+            ; 不可见的窗口不该留边框：WinExist 对"隐藏窗口"仍为真，
+            ; 只查 WinExist 会让切桌面 / HideWin 之后的窗口继续挂着边框
+            ; —— 这就是"边框没消除"的一种来源。
+            if !DllCall("User32\IsWindowVisible", "Ptr", hwnd)
                 continue
             if (PinBorder.Map.Has(hwnd) || AlwaysVisible.Has(hwnd))
                 continue
@@ -6584,6 +6689,23 @@ class WTM {
             this.EnsureBorder(hwnd)
             this._SetBorderColor(hwnd, (hwnd = this.FocusHwnd) ? "focus" : "unfocus")
             _BorderPlaceFrame(this.BorderMap, hwnd)
+        }
+        ; ③ 诊断：只在"边框集合或焦点"变化时写一行（WTM_Debug=on 才开）
+        if WTM_Debug {
+            sig := ""
+            for hwnd, _ in this.BorderMap
+                sig .= hwnd ","
+            if (sig != this._LastBSig || this.FocusHwnd != this._LastBFocus) {
+                this._LastBSig   := sig
+                this._LastBFocus := this.FocusHwnd
+                WMLog("WTM border n=" this.BorderMap.Count " want=" want.Count
+                    " focus=" this.FocusHwnd " solo=" this.SoloMon.Count
+                    " fs=" this._FsMon.Count
+                    " | 其它边框: all=" AllBorders.Frames.Count
+                    " pin=" PinBorder.Map.Count
+                    " drag=" (IsObject(DragBorder.Frame) ? 1 : 0)
+                    " | sig=" sig)
+            }
         }
     }
 

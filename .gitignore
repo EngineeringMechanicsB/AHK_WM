@@ -10,3 +10,4 @@ tools/.stdout.txt
 tools/probe_*.out.txt
 tools/probe_*.stdout.txt
 tools/probe_*.stderr.txt
+tools/probe_wins.out.txt
