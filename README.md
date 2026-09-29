@@ -221,7 +221,6 @@ All configuration lives in `%USERPROFILE%\.config\AHK_WM\wm_config.ini`. Edit it
 
 ## 🔮 Roadmap
 
-- **WTM mode** — rebuilt on a fractional slot model (v2.11.0); still being field-tested
 - **Per-monitor desktops** — independent desktop switching per monitor
 - **Package managers** — Scoop, Chocolatey, winget distribution
 - **Window exclude rules** — current exclusion rules need improvement

@@ -160,6 +160,7 @@ Border **colors** live in `[Theme]`: `BorderDrag` (focused), `BorderUnfocus`
 | `TileAlwaysOnTop` | on/off | `off` | `on`, `off` | Include always-on-top windows when tiling. |
 | `WTMGap` | int px | same as `[Border] Gap` (default `10`) | any | **WTM-only** tiling gap, independent of `Gap`. Leaves room for the inter-window borders; empty = fall back to `[Border] Gap`. |
 | `AnimationDuration` | int ms | `0` | ≥0 | **WTM** move/swap animation duration. `0` = instant (no animation). `120`–`180` recommended. |
+| `WTMDebug` | on/off | `off` | `on`, `off` | Write border-diagnostic lines to the log (only when the border set, focus or colour changes). Turn it on temporarily to trace "border not following / not removed / colour stuck". |
 | `Rules` | spec | *(see template)* | `M,N,I,X,Y;…` | Custom layout rules, used by Smart Tile **and** WTM (user rules take priority). `M` = monitor (`*` = any), `N` = total window count the rule applies to, `I` = window index (1..N), `X`/`Y` = span expressions (`1` = full, `a/b`, `(a-c)/b`). A rule group is used only when complete (every `I` from 1..N present exactly once). |
 
 ## [Snapping]
@@ -341,6 +342,7 @@ modifiers only and are combined with digits `1–9`.
 | `WTMToggle` | *(empty; suggested `Alt+Shift+D`)* | Toggle WTM tiling mode. |
 | `WTMFocusLeft/Down/Up/Right` | `Alt+H/J/K/L` | WTM: focus in a direction. |
 | `WTMMoveLeft/Down/Up/Right` | `Alt+Shift+H/J/K/L` | WTM: swap / move in a direction (crosses monitors). |
+| `WTMFull` | `Alt+Shift+F` | Manual fullscreen inside WTM: bar and borders stay, only the focused window is shown on that monitor; press again to restore. |
 
 ---
 

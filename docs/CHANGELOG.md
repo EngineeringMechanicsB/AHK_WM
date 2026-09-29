@@ -1,6 +1,6 @@
 # Changelog
 
-### v2.11.0 (2026-09-29) — pending field test
+### v2.11.0 (2026-09-29)
 
 - 🆕 **WTM rebuilt on a fractional slot model** — WTM no longer computes layouts of its own: entering the mode calls the same entry point Smart Tile uses (`TileWindowsOnMonitor`), preferring `[Tiling] Rules` and falling back to the built-in algorithm. Each window's placement on each monitor is expressed as normalized fractional spans `{xlo,xhi,ylo,yhi,cx,cy,xfull,yfull}`, and every move/swap is pure math on that slot table — no pixel reads
 - 🆕 **Directional move/swap (Hyprland-style)** — `Alt+Shift+H/J/K/L` swaps the focused window with its neighbour in that direction: ① keep only slots strictly further along the primary axis ② smallest primary delta ③ tie → smallest secondary delta ④ still tied → the negative secondary delta (upper/left). A window spanning a full axis (`0..1`) cannot move along it and falls through to the cross-monitor branch
@@ -17,6 +17,11 @@
 - 🐛 **Hidden windows restored on reload/exit** — windows `SW_HIDE`n by solo mode are restored via an `OnExit` cleanup, so they can no longer stay invisible forever
 - 🧪 **Standalone pure-function test harness** — `tools/mk_testslots.sh` extracts `ParseAxis`/`SlotFromSpan`/`PickSlotFromTable` & co. verbatim from `wm.ahk` and runs them independently (36 assertions, including the full 4-direction table for the 7-window example)
 - 📚 **Docs corrected** — README's WTM hotkey `Ctrl+Alt+T` fixed to the actual default `Alt+Shift+D` (focus `Alt+H/J/K/L`, swap `Alt+Shift+H/J/K/L`); `[Border] Gap` documented as the legacy location of the WTM gap
+- 🐛 **Borders track animated windows frame by frame** — while a move/swap animation runs, every frame re-reads the target's real rect and redraws its border, so unfocused windows no longer lag behind the window they belong to
+- 🐛 **Orphan border frames are reclaimed** — border windows carry the `AHKWM_BORDER` title (never shown, used only as a marker); `WTM.SweepOrphanBorders` destroys any frame of this process that is absent from all border maps for two consecutive passes, so a leftover frame can no longer stay on screen
+- 🐛 **Solo / fullscreen handling is per monitor** — `Alt+Shift+F` and maximizing enter and exit only on the focused window's monitor; the other monitors keep their own layout, borders and solo state
+- 🆕 **`osd-keycast.ahk` example (Ch/En)** — bottom-left overlay listing the keys currently held; polls `GetKeyState(key,"P")`, re-sends only when the set changes, and uses `duration=0` + `tag=keycast` so exactly one overlay exists
+- 📚 **Example config refreshed** — `docs/Examples/example-configs/wm_config.ini` now matches the current key set (`WTMFull`, `WTMGap`, `AnimationDuration`, `WTMDebug`, `#`-prefixed colors); personal paths are genericized
 
 ### v2.10.2 (2026-07-31)
 

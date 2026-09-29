@@ -689,8 +689,6 @@ WMLog(msg, level := "INFO", comp := "Core") {
 ; ---- LogSessionExit / 会话退出记录 ----
 LogSessionExit(exitReason, exitCode) {
     global WM_LogFile
-    ; WTM 单人模式用 SW_HIDE 隐藏了同屏其它窗口，必须在这里复原，
-    ; 否则重载 / 退出后那些窗口会一直不可见（脚本状态丢失，无处可恢复）。
     try WTM.CleanupOnExit()
     if (WM_LogFile = "")
         return
@@ -2068,13 +2066,9 @@ WTMFull=Alt+Shift+F
     Tile_Gap         := Integer(CfgRead("Tiling", "Gap", "15", ["Layout","Gap"]))
     LayoutRules      := ParseLayoutRules(CfgRead("Tiling", "Rules", "", ["Layout","Rules"]))
     Tile_IncludeAlwaysOnTop := BarShown(IniRead(ConfigFile, "Tiling", "TileAlwaysOnTop", "off"))
-    ; WTM 专用间隙：未配置则回落到 [Border] Gap（与旧版行为一致）
     _wtmGapRaw := Trim(IniRead(ConfigFile, "Tiling", "WTMGap", ""))
     WTM_Gap    := (_wtmGapRaw = "") ? Border_Gap : SafeInt(_wtmGapRaw, Border_Gap)
-    ; 平铺动画时长 ms（0 = 关闭动画，瞬间到位）
     WTM_AnimMs := Max(0, SafeInt(IniRead(ConfigFile, "Tiling", "AnimationDuration", "0"), 0))
-    ; WTM 边框诊断日志（0=关）：只在"边框集合/焦点/颜色"发生变化时写一行，
-    ; 用来定位"边框不跟随 / 不消除 / 颜色不切换"。平时留 0，排查时设 1。
     WTM_Debug  := BarShown(IniRead(ConfigFile, "Tiling", "WTMDebug", "off"))
     InvalidateSlotTables()
 
@@ -2825,8 +2819,6 @@ class BorderFrame {
         g := Gui("-Caption +ToolWindow +E0x20 -DPIScale")
         g.BackColor := pc.first
         g.Show("NoActivate x-3000 y-3000 w10 h10")
-        ; 打标记：-Caption 窗口的标题不显示，只用于让 WTM.SweepOrphanBorders
-        ; 能把这批窗口认出来（漏删的边框全靠它兜底回收）
         try g.Title := "AHKWM_BORDER"
         try WinSetTransparent(opacity, g.Hwnd)
         this.Gui      := g
@@ -2967,13 +2959,6 @@ class BorderFrame {
     }
 
     ; -- 绑定所有者 / Bind as an owned window of the target --
-    ; 把边框设成目标窗口的 owned window（GWLP_HWNDPARENT），由**系统**保证：
-    ;   ① 边框永远紧贴在自己窗口的正上方 —— 窗口被激活、被提到最前时，
-    ;      系统会把 owned window 一起带上去，不会出现"边框被自己窗口盖住"；
-    ;   ② 目标窗口隐藏 / 最小化时边框自动跟着隐藏；
-    ;   ③ 目标窗口销毁时边框自动被销毁。
-    ; 这样就不需要"每个 tick 把边框重插到目标正上方"那种 64Hz 层级抖动
-    ; （那种做法会让下层窗口不停重绘，表现就是边框闪、乱、颜色看起来不切换）。
     BindOwner(owner) {
         if !IsObject(this.Gui) || !this.Gui.Hwnd || !owner
             return
@@ -4939,7 +4924,6 @@ ClearTileBound() {
 }
 
 ; ---- 计算某显示器的平铺区域 / Tiling area of a monitor ----
-; 与 TileWindowsOnMonitor 内部的几何计算保持一致（工作区 - Bar - 边缘间隙）
 GetTileArea(monIdx, gapBase, &X, &Y, &W, &H) {
     MonitorGetWorkArea(monIdx, &WL, &WT, &WR, &WB)
     BarReserve(monIdx, &WL, &WT, &WR, &WB)
@@ -4953,12 +4937,8 @@ GetTileArea(monIdx, gapBase, &X, &Y, &W, &H) {
 }
 
 ; ==============================================================================
-; 十四之前：槽位表 / Slot Table
+; 槽位表 / Slot table
 ; ==============================================================================
-; 槽位表把"第 i 个窗口应该在哪"表达为分数（相对显示器平铺区域），而不是像素：
-;     { xlo, xhi, ylo, yhi, cx, cy, xfull, yfull, src }
-; 来源优先级：[Tiling] Rules 用户规则（精确分数）> 内置算法（空跑收集后归一化）。
-; WTM 的移动/交换全部在这张表上做纯数学比较，不受 gap / DWM 阴影 / 像素取整影响。
 SlotFromSpan(xlo, xhi, ylo, yhi, src) {
     return { xlo: xlo, xhi: xhi, ylo: ylo, yhi: yhi
            , cx: (xlo + xhi) / 2, cy: (ylo + yhi) / 2
@@ -4968,7 +4948,6 @@ SlotFromSpan(xlo, xhi, ylo, yhi, src) {
 }
 
 ; ---- 空跑内置算法得到槽位表 / Dry-run the built-in algorithms ----
-; 在 (0,0,W,H) 上跑一遍，收集 EmitPlace 的输出再归一化；全程不碰任何窗口。
 BuildBuiltinSlotTable(n, W, H) {
     global TileSink, CurrentTileGap, TileBoundSet
     if (n < 1 || W <= 0 || H <= 0)
@@ -5023,11 +5002,6 @@ InvalidateSlotTables() {
 }
 
 ; ---- 槽位表上的方向选择（纯函数，可单独测试）/ Directional pick on the slot table ----
-; 返回目标槽位号（1 起），0 = 该方向没有可交换的槽位（交由跨屏分支处理）
-; 规则：
-;   ① 该轴跨度为满（0..1）→ 不可沿该轴移动
-;   ② 只取主轴方向严格更远的槽位（同轴同值的窗口被排除）
-;   ③ 主轴差最小 → ④ 副轴差最小 → ⑤ 仍并列取副轴差为负（偏上 / 偏左）
 PickSlotFromTable(table, i, dir) {
     n := table.Length
     if (i < 1 || i > n)
@@ -5095,7 +5069,6 @@ _GetTileMode(W, H) {
 
 ; ---- 显示器平铺唯一入口（TileSmart / WinSelect / WTM 共用）----
 ; ---- Canonical per-monitor tiling entry (shared by TileSmart / WinSelect / WTM) ----
-; gapBase:    基础间隙。TileSmart/WinSelect 传 Tile_Gap；WTM 传 WTM_Gap
 ;             （WTM 需要为边框留空间，与普通平铺间隙语义不同，故各自配置）。
 ; useDwmComp: 是否叠加 DWM 阴影补偿。TileSmart/WinSelect 为 true（使可视间距一致）；
 ;             WTM 为 false（其边框贴合 DWM 可视矩形，补偿反而造成双重间距）。
@@ -5173,7 +5146,6 @@ ComputeTileRect(x, y, w, h, &fx, &fy, &fw, &fh) {
 }
 
 ; ---- Move a window to an exact rect / 搬到精确矩形 ----
-; 已经在目标矩形上（且未最大化/最小化）则直接跳过，避免无意义的 WinRestore+WinMove 抖动
 MoveWinTo(hwnd, x, y, w, h) {
     try {
         mm := 0
@@ -5198,8 +5170,6 @@ PlaceWin(hwnd, x, y, w, h) {
 }
 
 ; ---- Tiling output stage / 平铺输出端 ----
-; 内置平铺算法统一经此出口。TileSink 为 0 时行为与旧版一致（直接搬窗口）；
-; WTM 临时把 TileSink 换成收集器，即可"只算不搬"地拿到布局矩形（槽位表 / 动画）。
 EmitPlace(hwnd, x, y, w, h) {
     global TileSink
     ComputeTileRect(x, y, w, h, &fx, &fy, &fw, &fh)
@@ -5602,7 +5572,6 @@ DragMoveHandler(*) {
         BorderFollowDrag(hwnd)
     }
     DragBorder.Destroy()
-    ; WTM 模式下：拖到哪个槽位就跟哪个槽位交换（Hyprland 风格），其余窗口不动
     if WTM.Active
         WTM.HandleDragDrop(hwnd)
     else
@@ -5736,13 +5705,8 @@ RestoreLayout(*) {
 ; ---- 共享边框绘制辅助（WTM / AllBorders 共用）----
 ; 获取窗口可视矩形 → 偏移 → 计算圆角 → 调用 Place
 _BorderPlaceFrame(borderMap, hwnd) {
-    ; 键不存在就直接放弃：Map 取不存在的键会抛 "Item has no value"（已被这个坑咬过两次）
     if !borderMap.Has(hwnd)
         return
-    ; GetWindowVisualRect 取不到 DWM 扩展边框时，会退回 WinGetPos **并返回 false** ——
-    ; 此时 x/y/w/h 已经是有效值。原来这里 `if !... return`，等于把这类窗口
-    ; （无 DWM 边框的窗口，如部分终端）的边框永久钉在创建时的位置，
-    ; 表现就是"边框不跟随窗口"。改成只用返回值判断窗口是否还在。
     try {
         GetWindowVisualRect(hwnd, &x, &y, &w, &h)
         if !WinExist(hwnd)
@@ -5750,32 +5714,17 @@ _BorderPlaceFrame(borderMap, hwnd) {
     } catch {
         return
     }
-    ; 与 DragBorder.Update 用同一套算法（含 OffsetTop），
-    ; 这样 WTM 的边框与拖拽时显示的那圈边框是同一个视觉结果。
     o  := Border_Offset
     ot := Border_OffsetTop
     x -= o, y -= (o + ot), w += 2*o, h += 2*o + ot
     rad := (Border_Rounded = "on") ? Border_Radius : 0
     bf := borderMap[hwnd]
-    ; 关键：先绑所有者，再只用 HWND_TOP 摆一次位置。
-    ; 不再把 hwnd 当 hwndInsertAfter（那是每 tick 重插层级 = 抖动源头）。
-    ;   -1 (HWND_TOPMOST) 也不行：Offset=15 会让边框压住任务栏。
-    ;   0 (HWND_TOP) 只到"非置顶带最上面" → 盖住所有普通窗口，但让开
-    ;   bar / 任务栏这些真置顶窗口；随后由 owner 关系维持"贴着窗口上方"。
     bf.BindOwner(hwnd)
     bf.Place(x, y, w, h, Max(2, Border_Thickness), rad, Border_Opacity, Border_Mode, 0)
 }
 
 ; ---- Dynamic tiling mode / 动态平铺 ----
 ; ---- 定时器回调的真实间隔 / Real elapsed ms for a timer callback ----
-; AHK 定时器分辨率约 15.6ms：配置的周期只是"期望值"（`RefreshMs=0` 会被钳到 1ms），
-; 直接按标称周期累加会让"每 200/250ms 检查一次"的档位慢十几倍。
-;
-; 这里刻意**不用 ByRef**：AHK v2 的 ByRef 形参要求调用处也写 &，传类静态属性
-; 这类非变量会当场抛 "Parameter #1 ... requires a variable reference"。
-; 踩过一次——`TickElapsed(this._LastTick, ...)` 让 WTM.Tick 的第一句就抛，
-; WM_OnError 吞掉后 Tick 整段不执行，定时器等于空转（日志里 3900 次重复异常）。
-; 改成纯函数：返回 {dt, now}，调用方自己把 now 存回 _LastTick。
 TickElapsed(prev, nominal) {
     now := A_TickCount
     dt := prev ? (now - prev) : 0
@@ -5832,22 +5781,16 @@ class WTM {
         this.SoloAuto    := Map()
         this.SoloHidden  := Map()
         this._StopAnim()
-        ; 进入时以当前活动窗口为焦点，避免沿用上次会话留下的过期 hwnd
-        ; （否则 RefreshBorder 会先把那个旧 hwnd 描成 focus 色，要等一轮轮询才纠正）
         this.FocusHwnd := 0
         try this.FocusHwnd := WinGetID("A")
         this.RebuildOrder()
         this.SeedOrderByPosition()    ; 首次进入按屏幕位置定序（回答.md Q6）
-        ; 进入模式时先把"被最大化"的窗口还原：用户对模式的预期是"进入即全部平铺"，
-        ; 不是"把同屏别的窗口全藏起来"。
-        ; 模式**内**用户手动最大化仍然会触发单人模式，不受这里影响。
         for hwnd in this.TileOrder {
             try {
                 if (WinGetMinMax(hwnd) = 1)
                     WinRestore(hwnd)
             }
         }
-        ; 记下当前平铺区域，免得第一次慢检查把"首次"当成"bar 变了"而无谓重铺
         this._LastArea := this._AreaSig()
         this._LastBSig := "", this._LastBFocus := 0    ; 诊断签名清零
         this.AutoTile()
@@ -5928,7 +5871,6 @@ class WTM {
             }
             alive[hwnd] := true
         }
-        ; solo 期间被隐藏的窗口虽然不可见，但依然占着槽位
         for hwnd, _ in this.SoloHidden {
             if WinExist(hwnd)
                 alive[hwnd] := true
@@ -5940,7 +5882,6 @@ class WTM {
                 alive.Delete(hwnd)
             }
         }
-        ; 新窗口插入到当前焦点之后（焦点不在列表中则追加到末尾）
         if (alive.Count > 0) {
             ins := 0
             if (this.FocusHwnd && WinExist(this.FocusHwnd)) {
@@ -5948,8 +5889,6 @@ class WTM {
                 if fi
                     ins := fi
             }
-            ; 焦点位置之后可能已有窗口消失，索引必须夹住：
-            ; InsertAt 的索引 > 长度+1 会抛 "Parameter #1 ... is invalid"
             ins := Min(ins, newOrder.Length)
             for hwnd, _ in alive {
                 if ins {
@@ -5964,11 +5903,6 @@ class WTM {
     }
 
     ; -- 首次进入时按屏幕位置播种顺序 / Seed the initial order by screen position --
-    ; 需求（回答.md Q6）：初次进入按窗口在屏幕上的位置定序。
-    ; 不用 Z 序：WinGetList 返回的是"最上层优先"，直接拿去当槽位顺序，
-    ; 结果就是哪个窗口恰好在最前面就占槽位 1，看起来完全随机。
-    ; 排序键：显示器 → 行的中线 y → 左边 x，即"从上到下、从左到右"。
-    ; 只在进入模式那一次跑；之后的顺序一律由槽位交换维护。
     static SeedOrderByPosition() {
         rows := []
         for hwnd in GetVisibleWindow() {
@@ -5987,7 +5921,6 @@ class WTM {
             try m := GetMonitorIndex(hwnd)
             rows.Push({hwnd: hwnd, m: m, cx: x + w / 2, cy: y + h / 2})
         }
-        ; 插入排序（窗口数是个位数，手写比 Array.Sort 回调少一层版本差异风险）
         Loop (rows.Length - 1) {
             i := A_Index + 1
             me := rows[i]
@@ -6007,7 +5940,6 @@ class WTM {
     }
 
     ; -- a 是否应排在 b 之后 / Whether a sorts after b --
-    ; 纯字典序（显示器 → cy → cx），不做容差：容差会让比较失去传递性。
     static _PosAfter(a, b) {
         if (a.m != b.m)
             return a.m > b.m
@@ -6040,13 +5972,9 @@ class WTM {
     ; -- 重算并摆放某显示器 / Re-place one monitor (no direct WinMove here) --
     static _RePlace(monIdx, wins := 0, animate := true) {
         global TileSink
-        ; 真全屏 → 整块屏交给系统，不参与平铺
         if (this._FsMon.Has(monIdx) && this._FsMon[monIdx])
             return
         if this.SoloMon.Has(monIdx) {
-            ; 自动 solo（窗口被系统最大化）：位置交给系统，脚本不插手。
-            ; 手动全屏不在这里特判 —— 它的机制就是"把非聚焦窗口藏起来"，
-            ; 下面的收集自然只剩那一个窗口，于是按普通单窗口铺满平铺区域。
             solo := this.SoloMon[monIdx]
             try {
                 if (WinExist(solo) && WinGetMinMax(solo) = 1)
@@ -6064,8 +5992,6 @@ class WTM {
                     wins.Push(hwnd)
             }
         }
-        ; 被 solo 藏起来的窗口不占槽位 —— 否则"单窗口"会被铺成 1/N 的几个格子之一，
-        ; 而不是铺满整片平铺区域（churn 也来自这些不可见窗口来回改槽位）
         if (this.SoloHidden.Count > 0) {
             vis := []
             for hwnd in wins {
@@ -6076,7 +6002,6 @@ class WTM {
         }
         if (wins.Length = 0)
             return
-        ; 借用唯一平铺入口算矩形，但把输出接到收集器上（不直接搬窗口）
         rects := []
         saved := TileSink
         TileSink := (hwnd, x, y, w, h) => rects.Push({hwnd: hwnd, x: x, y: y, w: w, h: h})
@@ -6094,9 +6019,6 @@ class WTM {
             if !WinExist(r.hwnd)
                 continue
             this._Placed[r.hwnd] := {x: r.x, y: r.y, w: r.w, h: r.h, mon: monIdx}
-            ; 最大化 / 最小化的窗口一律不碰：MoveWinTo 里的 WinRestore 会把它
-            ; 拉回普通状态，直接毁掉"自动 solo"（那一屏的判据就是窗口处于最大化）。
-            ; 手动全屏的窗口是普通状态，照常摆 —— 它本来就该被铺满。
             try {
                 if (WinGetMinMax(r.hwnd) != 0)
                     continue
@@ -6113,7 +6035,6 @@ class WTM {
     }
 
     ; -- 安全移除动画项 / Drop an animation entry if present --
-    ; Map.Delete 对不存在的键会抛 "Item has no value"，所以一律先判存在。
     static _AnimDrop(hwnd) {
         if this.Anim.Has(hwnd)
             this.Anim.Delete(hwnd)
@@ -6184,9 +6105,6 @@ class WTM {
             h := Round(Max(50, a.h0 + (a.h1 - a.h0) * e))
             try DllCall("SetWindowPos", "Ptr", hwnd, "Ptr", 0
                 , "Int", x, "Int", y, "Int", w, "Int", h, "UInt", 0x4 | 0x10)  ; NOZORDER|NOACTIVATE
-            ; 边框跟窗口同帧搬，别等下一轮 15ms 快速轮询 —— 那样动画途中
-            ; 未聚焦窗口的边框会明显滞后，看着就像"停在原位没动"
-            ; （拖拽边框之所以跟得紧，正是因为在拖拽处理里逐帧同步的）
             try this._DrawBorder(hwnd, this.FocusHwnd)
         }
     }
@@ -6229,8 +6147,6 @@ class WTM {
     }
 
     ; -- 定时器 / Periodic tick --
-    ; 快速档（每 Border_RefreshMs）：边框跟随 + 焦点颜色（Alt 按住也照跑，保证跟手）
-    ; 慢速档（约 250ms）：成员变化 / 外部漂移 / 全屏与 solo 判定
     static Tick() {
         global DesktopIsSwitching
         if !this.Active || DesktopIsSwitching
@@ -6253,10 +6169,6 @@ class WTM {
 
     ; -- 慢速检查 / Slow path --
     static _SlowCheck() {
-        ; ① 平铺区域变了就重摆。典型场景：退出真全屏时 bar 还没重新出现，
-        ;    立刻平铺会按"没有 bar 的高度"铺，等 bar 冒出来就遮住窗口底边；
-        ;    区域签名一变这里就按正确高度重铺（不靠猜延时）。顺带也覆盖
-        ;    手动开关 bar、改分辨率、挪任务栏这些情况。
         asig := this._AreaSig()
         if (asig != this._LastArea) {
             this._LastArea := asig
@@ -6264,7 +6176,6 @@ class WTM {
             this.RefreshBorder()
             return
         }
-        ; ② 窗口集合变了 → 重铺（新开窗口在这里被收编）
         sig := this._MemberSig()
         if (sig != this._LastWins) {
             this._LastWins := sig
@@ -6278,12 +6189,6 @@ class WTM {
     }
 
     ; -- 孤儿边框兜底回收 / Recycle leaked border windows --
-    ; BorderMap 只管它自己那批。真正漏出去的边框（销毁失败、登记前被打断、
-    ; 某个所有者清场时漏掉一个）不在任何 Map 里，RefreshBorder 永远看不见它
-    ; —— 表现就是"偶见边框未消除 / 边框卡住"。这里按窗口标题标记把本进程
-    ; 建的全部边框窗口枚举一遍，凡是不属于任何所有者的就回收。
-    ; 两轮确认（先记账、下一轮才销毁）是为了绕开"新建窗口 → 登记进 Map"之间
-    ; 那个瞬间：那一瞬间窗口存在但还没登记，单轮判定会把它误杀。
     static _OrphanSeen := Map()
     static SweepOrphanBorders() {
         keep := Map()
@@ -6321,9 +6226,6 @@ class WTM {
     }
 
     ; -- 平铺区域签名 / Signature of the tileable area --
-    ; 用 MonitorGetWorkArea + BarReserve 的结果（与 GetTileArea 同源）做签名。
-    ; bar 是脚本自己画的 GUI，不是真正的 AppBar，Windows 的工作区不会因它改变，
-    ; 所以必须把 BarReserve 的结果算进来才察觉得到"bar 出现 / 消失"。
     static _AreaSig() {
         s := ""
         loop MonitorGetCount() {
@@ -6339,9 +6241,6 @@ class WTM {
     static _FastCheck() {
         fh := 0
         try fh := WinGetID("A")
-        ; 只认"参与平铺"的窗口。焦点若落在浮动窗口 / bar / OSD / 别的脚本窗口上，
-        ; 不要把焦点记号带过去 —— 记号跟着跑，边框亮点就会亮在错误的地方
-        ; （表现得像"颜色乱"）；反复触发还会让方向键失去起点。
         if (fh && fh != this.FocusHwnd && this._OrderIndex(fh))
             this.FocusHwnd := fh
         else if (this.FocusHwnd && (!WinExist(this.FocusHwnd) || !this._OrderIndex(this.FocusHwnd)))
@@ -6361,8 +6260,6 @@ class WTM {
                 continue
             if this.SoloHidden.Has(hwnd)
                 continue
-            ; 被系统最大化 / 最小化的窗口（含自动 solo 那个）位置本来就不是我们摆的，
-            ; 拿来比"漂移"会每轮都误判成 dirty，白白重铺一整屏
             try {
                 if (WinGetMinMax(hwnd) != 0)
                     continue
@@ -6381,7 +6278,6 @@ class WTM {
                 m := 1
                 try m := GetMonitorIndex(hwnd)
                 dirty[m] := true
-                ; 被拖到别的显示器时，原显示器也要重铺，否则原处留下空洞
                 if (t.HasProp("mon") && t.mon && t.mon != m && t.mon >= 1 && t.mon <= MonitorGetCount())
                     dirty[t.mon] := true
             }
@@ -6408,8 +6304,6 @@ class WTM {
     static FocusDir(dir) {
         if !this.Active
             return
-        ; 全屏(solo)下先退出，否则方向键会去聚焦"被隐藏"的窗口（屏幕上什么都不会动）。
-        ; 只退焦点窗口所在那块屏的 solo —— 多屏时别屏的全屏状态不该被这一下毁掉。
         m0 := 1
         try m0 := GetMonitorIndex(this.FocusHwnd)
         if this.SoloMon.Has(m0) {
@@ -6420,8 +6314,6 @@ class WTM {
         this.RebuildOrder()
         if (this.TileOrder.Length = 0)
             return
-        ; 焦点窗口必须在平铺集合里（浮动窗口 / 已销毁的 hwnd 都不算），
-        ; 否则退回第一个槽位 —— 宁可从一个已知窗口起步，也不要让方向键彻底失效。
         cur := this._OrderIndex(this.FocusHwnd) ? this.FocusHwnd : this.TileOrder[1]
         target := this._PickNeighbor(cur, dir)
         if target {
@@ -6433,15 +6325,9 @@ class WTM {
     }
 
     ; -- 方向移动/交换 / Move or swap in a direction --
-    ; 目标选取完全基于槽位表（配置规则/内置算法的分数坐标），不读像素：
-    ;   ① 主轴方向上严格更远的槽位    ② 主轴差最小
-    ;   ③ 仍并列则副轴差最小          ④ 仍并列则取副轴差为负（偏上/偏左）
-    ; 该轴跨度为满（0..1）时不允许沿该轴移动，落到跨屏分支
     static MoveDir(dir) {
         if !this.Active
             return
-        ; 全屏(solo)模式下先退出该模式。含还原最大化，否则会被慢检查立刻判回 solo；
-        ; 同样只退焦点窗口那块屏（多屏时别屏的全屏不该被这一下毁掉）。
         m0 := 1
         try m0 := GetMonitorIndex(this.FocusHwnd)
         if this.SoloMon.Has(m0) {
@@ -6449,8 +6335,6 @@ class WTM {
             this.AutoTile()
         }
         this.RebuildOrder()
-        ; 只操作"参与平铺"的焦点窗口：焦点若落在浮动/被排除窗口上，
-        ; 就退回第一个槽位（而不是整条快捷键失效）。
         cur := this._OrderIndex(this.FocusHwnd) ? this.FocusHwnd : 0
         if (!cur && this.TileOrder.Length)
             cur := this.TileOrder[1]
@@ -6589,9 +6473,6 @@ class WTM {
             this.RemoveBorder(hwnd)
             PinBorder.Remove(hwnd)
         }
-        ; 关掉的很可能就是焦点窗口：置 0 后由下一次 Tick 重新取活动窗口。
-        ; 不置 0 的话 FocusHwnd 会一直是那个已销毁的 hwnd，
-        ; MoveDir / FocusDir 在 TileOrder 里找不到它 → Alt+Shift+HJKL 与 Alt+HJKL 双双变哑键。
         if (this.FocusHwnd = hwnd)
             this.FocusHwnd := 0
         this.OnWindowChanged()
@@ -6674,13 +6555,9 @@ class WTM {
     }
 
     ; -- 确保边框存在 / Ensure a border frame exists --
-    ; state 决定"新建时用什么颜色"：新窗口天生就是目标颜色，不依赖事后重绘。
     static EnsureBorder(hwnd, state := "unfocus") {
         col := (state = "focus") ? Border_FocusColor : Border_UnfocusColor
         if this.BorderMap.Has(hwnd) {
-            ; 自愈：边框 GUI 可能已经被外部销毁（脚本重载、错绑 owner 后目标关窗、
-            ; 别的边框所有者清场）。这时 Map 里还留着条目，Place 会静默失败 ——
-            ; 表现就是"边框永久消失 / 不再跟随 / 关窗后不消失"。发现死 GUI 就重建。
             bf := this.BorderMap[hwnd]
             if (IsObject(bf.Gui) && bf.Gui.Hwnd && DllCall("User32\IsWindow", "Ptr", bf.Gui.Hwnd))
                 return
@@ -6723,7 +6600,6 @@ class WTM {
         }
         this.BorderMap   := Map()
         this.BorderState := Map()
-        ; 一次性复核，只补一次（不再做多轮 Sleep 循环）
         for _, h in hwnds {
             if DllCall("User32\IsWindow", "Ptr", h)
                 try DllCall("User32\DestroyWindow", "Ptr", h)
@@ -6731,12 +6607,6 @@ class WTM {
     }
 
     ; -- 边框颜色切换 / Set a border's focus state color --
-    ; 不要用"改背景色 + WinRedraw"：边框窗口是 +E0x20(WS_EX_TRANSPARENT) 且
-    ; 经 WinSetTransparent 变成分层窗口，这个组合下重绘不保证发生，DWM 会一直
-    ; 复用旧的窗口表面 —— 正是"刚聚焦过的那个窗口边框一直停在聚焦色、
-    ; 退不回未聚焦色"的成因（改色和重绘都发生在脚本里，屏幕上却没变）。
-    ; 改成**换一个边框窗口**：新窗口在构造时就带目标颜色，不依赖任何重绘时机。
-    ; 只在焦点状态真的变化时发生（用户操作级），不是每 tick。
     static _SetBorderColor(hwnd, state) {
         if !this.BorderMap.Has(hwnd)
             return
@@ -6756,8 +6626,6 @@ class WTM {
     }
 
     ; -- 边框同步（增量 diff，绝不全毁全建）/ Incremental border sync --
-    ; 任何时刻：BorderMap 的键集合 == 应该有边框的窗口集合，不多不少。
-    ; 焦点变化只改颜色 + 重插 Z 序（BorderFrame.Place 自带几何缓存），因此不闪烁。
     static RefreshBorder() {
         if !this.Active
             return
@@ -6765,9 +6633,6 @@ class WTM {
         for hwnd in this.TileOrder {
             if !WinExist(hwnd)
                 continue
-            ; 不可见的窗口不该留边框：WinExist 对"隐藏窗口"仍为真，
-            ; 只查 WinExist 会让切桌面 / HideWin 之后的窗口继续挂着边框
-            ; —— 这就是"边框没消除"的一种来源。
             if !DllCall("User32\IsWindowVisible", "Ptr", hwnd)
                 continue
             if (PinBorder.Map.Has(hwnd) || AlwaysVisible.Has(hwnd))
@@ -6782,29 +6647,22 @@ class WTM {
             }
             m := 1
             try m := GetMonitorIndex(hwnd)
-            ; solo 只影响它自己那块屏，别的屏照常画边框。
-            ; （这里早先按全局 this.SoloMon.Count 判定 —— 屏 1 进 solo 会把屏 2
-            ;   所有窗口的边框一并抹掉，多屏下就是"另一块屏边框全没了"）
             if (this.SoloMon.Has(m) && this.SoloMon[m] != hwnd)
                 continue
             if (this._FsMon.Has(m) && this._FsMon[m])
                 continue                          ; 真全屏：该屏不画边框
             want[hwnd] := true
         }
-        ; ① 多余的 → 销毁（这里是唯一的"销毁多余边框"入口）
         for hwnd, _ in this.BorderMap.Clone() {
             if !want.Has(hwnd)
                 this.RemoveBorder(hwnd)
         }
-        ; ② 缺失的 → 创建；颜色 / 几何按需更新
-        ; 先算好状态再建：新建边框直接就是目标颜色，省掉一次改色/重建。
         for hwnd, _ in want {
             st := (hwnd = this.FocusHwnd) ? "focus" : "unfocus"
             this.EnsureBorder(hwnd, st)
             this._SetBorderColor(hwnd, st)
             _BorderPlaceFrame(this.BorderMap, hwnd)
         }
-        ; ③ 诊断：只在"边框集合或焦点"变化时写一行（WTM_Debug=on 才开）
         if WTM_Debug {
             sig := ""
             for hwnd, _ in this.BorderMap
@@ -6854,16 +6712,10 @@ class WTM {
     }
 
     ; ==========================================================================
-    ; 全屏 / 单人模式 / Fullscreen & solo
+    ; 全屏 / 单人模式 / Fullscreen & Solo
     ; ==========================================================================
-    ; 真全屏：窗口覆盖整块显示器（含 bar）→ 该屏暂停平铺 + 隐藏边框
-    ; 单人模式只有一条机制：把该屏其它窗口隐藏起来，只留一个 → 它自然铺满平铺区域。
-    ;   ① 自动：该屏有窗口被最大化（Win+Up）→ 位置交给系统，取消最大化即复原
-    ;   ② 手动：Alt+Shift+F → 窗口保持普通状态，由 WTM 铺满平铺区域
-    ; 两种都是"按屏"的，多屏互不影响。
     static _CheckFullscreen() {
         changed := false
-        ; ① 真全屏状态
         loop MonitorGetCount() {
             m := A_Index
             fs := false
@@ -6874,16 +6726,12 @@ class WTM {
                 changed := true
             }
         }
-        ; ② 单人模式
         for m, _ in this._MonitorsOfOrder() {
             if this.SoloMon.Has(m) {
                 solo := this.SoloMon[m]
                 auto := (this.SoloAuto.Has(m) && this.SoloAuto[m])
                 ok   := false
                 try {
-                    ; 手动全屏（WTMFull）的窗口是普通状态，只要求它还在、没被最小化、
-                    ; 还在平铺集合里；自动 solo 的判据就是"窗口被最大化"，用户
-                    ; Win+Down 取消最大化即视为退出全屏、复原其它窗口。
                     if auto
                         ok := (WinExist(solo) && WinGetMinMax(solo) = 1 && this._OrderIndex(solo))
                     else
@@ -6920,11 +6768,6 @@ class WTM {
     }
 
     ; -- 进入单人模式 / Enter solo mode on a monitor --
-    ; 机制只有一条：把该屏其它窗口藏起来，只留 target。
-    ; 之后 _RePlace 收集该屏窗口时就只剩它一个 → 自动铺满平铺区域
-    ; （尊重 bar 与 WTM_Gap）；窗口恰好是被系统最大化的那种，则由 _RePlace 让位给系统。
-    ; auto=true 表示这个 solo 是"该屏有窗口被最大化"触发的，退出判据随之不同：
-    ; 取消最大化就该复原（否则用户 Win+Down 之后窗口还赖在全屏里）。
     static _EnterSoloWith(monIdx, target, auto := false) {
         if (!target || !WinExist(target))
             return false
@@ -6945,7 +6788,6 @@ class WTM {
             if (m != monIdx)
                 continue
             try {
-                ; 用 SW_HIDE 而不是最小化：最小化会被槽位回收，隐藏不会
                 DllCall("ShowWindow", "Ptr", hwnd, "Int", 0)
                 this.SoloHidden[hwnd] := monIdx
             }
@@ -7005,8 +6847,6 @@ class WTM {
     }
 
     ; -- 只退出某一块屏的 solo / Leave solo on one monitor --
-    ; 多屏下必须按屏退：屏 1 上按一下方向键，不能把屏 2 那个最大化的窗口
-    ; 顺手 WinRestore 掉（那等于毁掉别屏的全屏状态）。
     static _LeaveSoloRestoreMon(m) {
         if !this.SoloMon.Has(m)
             return
@@ -7019,7 +6859,6 @@ class WTM {
     }
 
     ; -- 手动全屏（保留 bar 与边框）/ Manual fullscreen for the focused window --
-    ; 与 WTM 里"该屏只有一个窗口"完全一致：其它窗口隐藏，聚焦窗口铺满平铺区域。
     static ToggleFull() {
         if !this.Active
             return
@@ -7030,9 +6869,6 @@ class WTM {
         try m := GetMonitorIndex(cur)
         if (m < 1)
             m := 1
-        ; 只认"焦点窗口那块屏正处于 solo"这一种情况为"再按一次复原"。
-        ; 早先按全局 SoloMon.Count 判定：屏 2 自己在 solo 时，在屏 1 按这个键
-        ; 会跑去复原屏 2，反而进不了屏 1 的全屏。
         if (this.SoloMon.Has(m) && this.SoloMon[m] = cur) {
             this._LeaveSoloRestoreMon(m)
             this.AutoTile()
@@ -7048,13 +6884,11 @@ class WTM {
     }
 
     ; ==========================================================================
-    ; 拖拽交换 / Drag-and-drop swap (Hyprland-like)
+    ; 拖拽交换 / Drag-and-drop swap
     ; ==========================================================================
     static HandleDragDrop(hwnd) {
         if (!this.Active || !hwnd || !WinExist(hwnd))
             return
-        ; 只退出被拖窗口所在那块屏的 solo（多屏时别屏的全屏保持不动）。
-        ; 这里不还原最大化：拖拽之后由重铺接管位置。
         m0 := 1
         try m0 := GetMonitorIndex(hwnd)
         if this.SoloMon.Has(m0)
@@ -7087,7 +6921,6 @@ class WTM {
             this.RefreshBorder()
             return
         }
-        ; 落点最近的槽位中心
         best := 0, bestD := 1.0e18
         for j, t in table {
             sx := ax + t.cx * W, sy := ay + t.cy * H

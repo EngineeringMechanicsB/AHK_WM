@@ -225,7 +225,6 @@ WMBarPush(2, (200-550)/1920， "Take a sad song`nand make it better")  ; `n = �
 
 ## 🔮 路线图
 
-- **WTM 模式** — 已按分数槽位模型重写（v2.11.0），仍在实测中
 - **多显示器独立桌面** — 每显示器独立切换桌面
 - **包管理器** — Scoop、Chocolatey、winget 分发
 - **窗口排除规则** — 现阶段的窗口排除规则不完善
