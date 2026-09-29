@@ -5718,14 +5718,18 @@ _BorderPlaceFrame(borderMap, hwnd) {
 ; ---- 定时器回调的真实间隔 / Real elapsed ms for a timer callback ----
 ; AHK 定时器分辨率约 15.6ms：配置的周期只是"期望值"（`RefreshMs=0` 会被钳到 1ms），
 ; 直接按标称周期累加会让"每 200/250ms 检查一次"的档位慢十几倍。
-; 传入上次的 A_TickCount（引用，就地更新），返回真实经过的毫秒数。
-TickElapsed(&lastTick, nominal) {
+;
+; 这里刻意**不用 ByRef**：AHK v2 的 ByRef 形参要求调用处也写 &，传类静态属性
+; 这类非变量会当场抛 "Parameter #1 ... requires a variable reference"。
+; 踩过一次——`TickElapsed(this._LastTick, ...)` 让 WTM.Tick 的第一句就抛，
+; WM_OnError 吞掉后 Tick 整段不执行，定时器等于空转（日志里 3900 次重复异常）。
+; 改成纯函数：返回 {dt, now}，调用方自己把 now 存回 _LastTick。
+TickElapsed(prev, nominal) {
     now := A_TickCount
-    dt := lastTick ? (now - lastTick) : 0
-    lastTick := now
-    if (dt < 0 || dt > 1000)              ; 首次 / 计数回绕 / 长时间阻塞
+    dt := prev ? (now - prev) : 0
+    if (dt <= 0 || dt > 1000)             ; 首次 / 计数回绕 / 长时间阻塞
         dt := nominal
-    return dt
+    return {dt: dt, now: now}
 }
 
 class WTM {
@@ -6150,7 +6154,9 @@ class WTM {
 
     ; -- 距上次 tick 的真实毫秒数 / Real elapsed ms since the last tick --
     static _Elapsed() {
-        return TickElapsed(this._LastTick, Border_RefreshMs)
+        r := TickElapsed(this._LastTick, Border_RefreshMs)
+        this._LastTick := r.now
+        return r.dt
     }
 
     ; -- 慢速检查 / Slow path --
@@ -6231,7 +6237,9 @@ class WTM {
         this.RebuildOrder()
         if (this.TileOrder.Length = 0)
             return
-        cur := this.FocusHwnd ? this.FocusHwnd : this.TileOrder[1]
+        ; 焦点窗口必须在平铺集合里（浮动窗口 / 已销毁的 hwnd 都不算），
+        ; 否则退回第一个槽位 —— 宁可从一个已知窗口起步，也不要让方向键彻底失效。
+        cur := this._OrderIndex(this.FocusHwnd) ? this.FocusHwnd : this.TileOrder[1]
         target := this._PickNeighbor(cur, dir)
         if target {
             FocusWindowSafely(target)
@@ -6254,12 +6262,10 @@ class WTM {
             this.AutoTile()
         }
         this.RebuildOrder()
-        ; 只操作"参与平铺"的焦点窗口：焦点若落在浮动/被排除窗口上则不动作，
-        ; 否则会把不归 WTM 管的窗口搬到别的显示器去。
-        cur := 0
-        if (this.FocusHwnd && this._OrderIndex(this.FocusHwnd))
-            cur := this.FocusHwnd
-        else if (!this.FocusHwnd && this.TileOrder.Length)
+        ; 只操作"参与平铺"的焦点窗口：焦点若落在浮动/被排除窗口上，
+        ; 就退回第一个槽位（而不是整条快捷键失效）。
+        cur := this._OrderIndex(this.FocusHwnd) ? this.FocusHwnd : 0
+        if (!cur && this.TileOrder.Length)
             cur := this.TileOrder[1]
         if !cur
             return
@@ -6396,6 +6402,11 @@ class WTM {
             this.RemoveBorder(hwnd)
             PinBorder.Remove(hwnd)
         }
+        ; 关掉的很可能就是焦点窗口：置 0 后由下一次 Tick 重新取活动窗口。
+        ; 不置 0 的话 FocusHwnd 会一直是那个已销毁的 hwnd，
+        ; MoveDir / FocusDir 在 TileOrder 里找不到它 → Alt+Shift+HJKL 与 Alt+HJKL 双双变哑键。
+        if (this.FocusHwnd = hwnd)
+            this.FocusHwnd := 0
         this.OnWindowChanged()
     }
 
@@ -6906,7 +6917,9 @@ class AllBorders {
         global DesktopIsSwitching
         if !this.Active || WTM.Active || DesktopIsSwitching
             return
-        this._Accum += TickElapsed(this._LastTick, Border_RefreshMs)
+        r := TickElapsed(this._LastTick, Border_RefreshMs)
+        this._LastTick := r.now
+        this._Accum += r.dt
         if (this._Accum >= 200 || this._Wins.Length = 0) {
             this._Accum := 0
             this._Wins  := GetVisibleWindow()

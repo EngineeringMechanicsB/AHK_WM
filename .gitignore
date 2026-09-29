@@ -7,3 +7,6 @@ tools/test_slots.log.txt
 tools/test_slots.err.txt
 tools/.stderr.txt
 tools/.stdout.txt
+tools/probe_*.out.txt
+tools/probe_*.stdout.txt
+tools/probe_*.stderr.txt
