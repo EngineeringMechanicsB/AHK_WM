@@ -1,12 +1,12 @@
 <div align="center">
 
-# 🔲 AHK WM <sub>v2.10.2</sub>
+# 🔲 AHK WM <sub>v2.11.0</sub>
 
 <p>
   <img src="https://img.shields.io/badge/AutoHotkey-v2.0-cba6f7?style=flat-square" alt="AutoHotkey v2" />
   <img src="https://img.shields.io/badge/平台-Windows_7_~_11-b4befe?style=flat-square" alt="平台" />
   <img src="https://img.shields.io/badge/许可-MIT-f5c2e7?style=flat-square" alt="许可" />
-  <img src="https://img.shields.io/badge/版本-v2.10.2-cba6f7?style=flat-square" alt="版本" />
+  <img src="https://img.shields.io/badge/版本-v2.11.0-cba6f7?style=flat-square" alt="版本" />
 </p>
 
 <p>
@@ -111,7 +111,9 @@
 | 📦 移动窗口到桌面 | `Alt + Shift + 1 ~ 9` |
 | 🚀 移动并跟随 | `Ctrl + Alt + 1 ~ 9` |
 | 📊 开关状态栏 | `Ctrl + Alt + B` |
-| ⌨️ WTM 键盘平铺 | `Ctrl + Alt + T` |
+| ⌨️ WTM 模式（开关） | `Alt + Shift + D` |
+| ⌨️ WTM 移动焦点 | `Alt + H / J / K / L` |
+| ⌨️ WTM 交换窗口 | `Alt + Shift + H / J / K / L` |
 | 💾 保存布局 | `Alt + Shift + S` |
 | 🧲 收集所有窗口 | `Alt + Shift + G` |
 | 📌 窗口置顶 | `Alt + T` |
@@ -135,6 +137,7 @@
 | 🥧 **饼菜单** | 按住 `空格`，点右键出现径向菜单，朝不同方向移动鼠标释放后触发对应操作。 |
 | 📊 **状态栏** | 多显示器状态栏，支持渐变色、圆角、每个元素独立对齐。显示桌面标签、时间、日期、进度条、系统状态等自定义部件，甚至支持外部脚本调用。 |
 | 🖼️ **窗口边框** | 完全可自定义彩色窗口边框，支持渐变。 |
+| ⌨️ **WTM 模式** | Hyprland 风格键盘平铺。进入即按 `[Tiling] Rules`（无规则则内置算法）铺满每块屏；`Alt + H/J/K/L` 移动焦点，`Alt + Shift + H/J/K/L` 与同方向邻居交换槽位，拖拽窗口到落点也可交换。目标选取基于归一化分数槽位而非像素，只有参与交换的两个窗口会移动；边框增量 diff 同步（一窗一边框，不再整屏重建）；全屏/最大化窗口暂停该屏平铺；`[Tiling] AnimationDuration` 可开启移动动画。 |
 | 📐 **窗口吸附** | 拖拽窗口到屏幕边缘或其他窗口时自动吸附，可配置吸附距离和脱离距离。 |
 | 🎨 **主题** | 20+ 内置主题，一键导出当前主题为自定义配色。 |
 | ⏱️ **工作计时** | 可配置的工作时段，状态栏显示进度条。 |
@@ -222,7 +225,7 @@ WMBarPush(2, (200-550)/1920， "Take a sad song`nand make it better")  ; `n = �
 
 ## 🔮 路线图
 
-- **WTM 模式** — 现阶段的WTM模式问题非常多
+- **WTM 模式** — 已按分数槽位模型重写（v2.11.0），仍在实测中
 - **多显示器独立桌面** — 每显示器独立切换桌面
 - **包管理器** — Scoop、Chocolatey、winget 分发
 - **窗口排除规则** — 现阶段的窗口排除规则不完善

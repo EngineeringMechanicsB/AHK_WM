@@ -1,5 +1,23 @@
 # Changelog
 
+### v2.11.0 (2026-09-29) — pending field test
+
+- 🆕 **WTM rebuilt on a fractional slot model** — WTM no longer computes layouts of its own: entering the mode calls the same entry point Smart Tile uses (`TileWindowsOnMonitor`), preferring `[Tiling] Rules` and falling back to the built-in algorithm. Each window's placement on each monitor is expressed as normalized fractional spans `{xlo,xhi,ylo,yhi,cx,cy,xfull,yfull}`, and every move/swap is pure math on that slot table — no pixel reads
+- 🆕 **Directional move/swap (Hyprland-style)** — `Alt+Shift+H/J/K/L` swaps the focused window with its neighbour in that direction: ① keep only slots strictly further along the primary axis ② smallest primary delta ③ tie → smallest secondary delta ④ still tied → the negative secondary delta (upper/left). A window spanning a full axis (`0..1`) cannot move along it and falls through to the cross-monitor branch
+- 🆕 **Only two windows move** — a swap exchanges two entries in `TileOrder` and re-applies the slots; every other window's rect is untouched (no more "re-layout the whole monitor in a new order")
+- 🆕 **Drag-to-swap** — dropping a window near a slot's centre swaps it into that slot (works across monitors)
+- 🆕 **Fullscreen & maximized handling** — true fullscreen (covers the bar) suspends tiling on that monitor and hides its borders; maximizing enters "solo mode": bar and borders stay, the monitor's other windows are `SW_HIDE`n, and only that window takes part in tiling; un-maximizing restores everything
+- 🆕 **Incremental border diff-sync** — borders are no longer destroyed and rebuilt on every focus change: only surplus/missing ones are created or destroyed, geometry and colour update on demand, exactly one border per window, and `RefreshBorder` is the single "destroy surplus" entry point
+- 🆕 **Animated moves** — `[Tiling] AnimationDuration` (ms, `0` = off) drives an ease-out cubic animation (single 12 ms timer)
+- 🆕 **`[Tiling] WTMGap`** — WTM-only tiling gap, decoupled from `Gap` (falls back to `[Border] Gap`); WTM passes `useDwmComp=false` so borders hug the DWM visual rect
+- 🐛 **Fixed "rebuild all borders on focus change"** — the old code destroyed and recreated every border GUI whenever focus changed, which is what made borders stick, linger or duplicate
+- 🐛 **Two-rate polling with real elapsed time** — fast path (border follow + focus) every `Border_RefreshMs`, slow path (membership / external drift / fullscreen) about every 250 ms; accumulation now uses real `A_TickCount` deltas (the old nominal-period sum made the slow path many times slower when `RefreshMs=0` is clamped to 1 ms). `AllBorders` fixed the same way
+- 🐛 **Windows dragged to another monitor** — drift detection now also re-tiles the monitor the window came from, instead of leaving a hole there
+- 🐛 **Floating windows are no longer yanked** — `Alt+Shift+H/J/K/L` does nothing when the focused window is floating/excluded (the old code relocated it to the adjacent monitor)
+- 🐛 **Hidden windows restored on reload/exit** — windows `SW_HIDE`n by solo mode are restored via an `OnExit` cleanup, so they can no longer stay invisible forever
+- 🧪 **Standalone pure-function test harness** — `tools/mk_testslots.sh` extracts `ParseAxis`/`SlotFromSpan`/`PickSlotFromTable` & co. verbatim from `wm.ahk` and runs them independently (36 assertions, including the full 4-direction table for the 7-window example)
+- 📚 **Docs corrected** — README's WTM hotkey `Ctrl+Alt+T` fixed to the actual default `Alt+Shift+D` (focus `Alt+H/J/K/L`, swap `Alt+Shift+H/J/K/L`); `[Border] Gap` documented as the legacy location of the WTM gap
+
 ### v2.10.2 (2026-07-31)
 
 - 🐛 **PinBorder Z-order fix** — pin borders now stay in the topmost Z band so they render above the target window instead of being partially hidden behind it

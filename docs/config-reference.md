@@ -1,4 +1,4 @@
-# AHK_WM Configuration Reference (v2.10.2)
+# AHK_WM Configuration Reference (v2.11.0)
 
 Config file location: `%USERPROFILE%\.config\AHK_WM\wm_config.ini` (UTF-16 LE).
 The file is created with defaults on first run. After editing, reload the script
@@ -139,7 +139,7 @@ on a 0–100 scale that maps to 0–20 px.
 | `RoundedCorners` | on/off | `on` | `on`, `off` | Rounded border corners. |
 | `Radius` | int px | `10` | ≥0 | Border corner radius. |
 | `CornerMode` | string | `all` | — | **Reserved** — currently not applied to borders. |
-| `Gap` | int px | `10` | any | WTM tiling gap (space reserved between tiled windows for borders). |
+| `Gap` | int px | `10` | any | **Legacy** location of the WTM tiling gap (space reserved between tiled windows for borders). Superseded by `[Tiling] WTMGap`; still read as `WTMGap`'s fallback. |
 | `SizeStep` | int | `3` | ≥1 | **Reserved** — WTM resize step for a future resize hotkey. |
 | `PinMode` | string | `top` | `top`, `full` | Pin (always-on-top) indicator style. |
 | `PinThickness` | 0–100 | `35` | 0–100 → 0–20 px | Pin indicator thickness. |
@@ -156,8 +156,10 @@ Border **colors** live in `[Theme]`: `BorderDrag` (focused), `BorderUnfocus`
 
 | Key | Type | Default | Valid values | Description |
 |---|---|---|---|---|
-| `Gap` | int px | `15` | any (may be negative) | Gap between windows for Smart Tile and WinSelect tiling. |
+| `Gap` | int px | `15` | any (may be negative) | Gap between windows for Smart Tile and WinSelect tiling (**WTM uses `WTMGap`**). |
 | `TileAlwaysOnTop` | on/off | `off` | `on`, `off` | Include always-on-top windows when tiling. |
+| `WTMGap` | int px | same as `[Border] Gap` (default `10`) | any | **WTM-only** tiling gap, independent of `Gap`. Leaves room for the inter-window borders; empty = fall back to `[Border] Gap`. |
+| `AnimationDuration` | int ms | `0` | ≥0 | **WTM** move/swap animation duration. `0` = instant (no animation). `120`–`180` recommended. |
 | `Rules` | spec | *(see template)* | `M,N,I,X,Y;…` | Custom layout rules, used by Smart Tile **and** WTM (user rules take priority). `M` = monitor (`*` = any), `N` = total window count the rule applies to, `I` = window index (1..N), `X`/`Y` = span expressions (`1` = full, `a/b`, `(a-c)/b`). A rule group is used only when complete (every `I` from 1..N present exactly once). |
 
 ## [Snapping]

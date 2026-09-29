@@ -1,0 +1,6 @@
+# 测试台产物（每次重建）
+tools/test_slots.ahk
+tools/test_slots.out.txt
+tools/test_slots.stdout.txt
+tools/test_slots.stderr.txt
+tools/test_slots.log.txt

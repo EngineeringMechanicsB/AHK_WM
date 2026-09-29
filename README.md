@@ -1,12 +1,12 @@
 <div align="center">
 
-# 🔲 AHK WM <sub>v2.10.2</sub>
+# 🔲 AHK WM <sub>v2.11.0</sub>
 
 <p>
   <img src="https://img.shields.io/badge/AutoHotkey-v2.0-cba6f7?style=flat-square" alt="AutoHotkey v2" />
   <img src="https://img.shields.io/badge/platform-Windows_7_~_11-b4befe?style=flat-square" alt="Platform" />
   <img src="https://img.shields.io/badge/license-MIT-f5c2e7?style=flat-square" alt="License" />
-  <img src="https://img.shields.io/badge/release-v2.10.2-cba6f7?style=flat-square" alt="Release" />
+  <img src="https://img.shields.io/badge/release-v2.11.0-cba6f7?style=flat-square" alt="Release" />
 </p>
 
 <p>
@@ -108,7 +108,9 @@
 | 📦 Move window to desktop | `Alt + Shift + 1 ~ 9` |
 | 🚀 Move & follow to desktop | `Ctrl + Alt + 1 ~ 9` |
 | 📊 Toggle status bar | `Ctrl + Alt + B` |
-| ⌨️ WTM keyboard tiling | `Ctrl + Alt + T` |
+| ⌨️ WTM mode (toggle) | `Alt + Shift + D` |
+| ⌨️ WTM: move focus | `Alt + H / J / K / L` |
+| ⌨️ WTM: swap focused window | `Alt + Shift + H / J / K / L` |
 | 💾 Save layout | `Alt + Shift + S` |
 | 🧲 Gather all windows | `Alt + Shift + G` |
 | 📌 Toggle always-on-top | `Alt + T` |
@@ -132,7 +134,7 @@
 | 🥧 **Pie Menu** | Hold `Space`, then right-click: a radial menu appears. Move the mouse in a direction to trigger that action. |
 | 📊 **Status Bar** | Multi-monitor bar with gradient colors, rounded corners, and per-element alignment. Shows desktops, clock, date, progress, system stats, and custom widgets. |
 | 🖼️ **Window Borders** | Colored borders around active/inactive windows with live gradient support. Toggle with `Ctrl+Alt+B`. |
-| ⌨️ **WTM Mode** | Full keyboard window management: HJKL to move focus and swap windows, `Ctrl+HJKL` to resize, `Alt+HJKL` to snap. |
+| ⌨️ **WTM Mode** | Hyprland-like keyboard tiling. Entering the mode tiles every monitor with your `[Tiling] Rules` (or the built-in algorithm); `Alt + H/J/K/L` moves focus, `Alt + Shift + H/J/K/L` swaps the focused window with the neighbour in that direction, and dragging a window onto a slot swaps too. Targets come from normalized fractional slot coordinates rather than pixels, so only the two windows involved ever move. Borders are diff-synced (exactly one per window), a fullscreen or maximized window suspends tiling on its monitor, and `[Tiling] AnimationDuration` enables animated moves. |
 | 📐 **Window Snapping** | Drag windows to screen edges or other windows to snap. Configurable snap/release distances. |
 | 🎨 **Themes** | 20+ built-in themes (Nord, Dracula, Catppuccin, Gruvbox, Tokyo Night, Monokai…). Export any theme to custom in one click. |
 | ⏱️ **Work Timer** | Configurable work period with progress bar on the status bar. |
@@ -219,7 +221,7 @@ All configuration lives in `%USERPROFILE%\.config\AHK_WM\wm_config.ini`. Edit it
 
 ## 🔮 Roadmap
 
-- **WTM mode** — the current WTM has many rough edges
+- **WTM mode** — rebuilt on a fractional slot model (v2.11.0); still being field-tested
 - **Per-monitor desktops** — independent desktop switching per monitor
 - **Package managers** — Scoop, Chocolatey, winget distribution
 - **Window exclude rules** — current exclusion rules need improvement

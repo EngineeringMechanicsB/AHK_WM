@@ -49,7 +49,7 @@ Persistent
 ; 一、环境与全局指令 / 1. Environment & Global Directives
 ; ==============================================================================
 
-global WM_Version := "2.10.2"
+global WM_Version := "2.11.0"
 global FontName
 
 SetWorkingDir(A_ScriptDir)
@@ -133,6 +133,13 @@ global Excl_Processes  := []
 global Tile_IncludeAlwaysOnTop := true
 global TileBound_L := 0, TileBound_T := 0, TileBound_R := 0, TileBound_B := 0
 global TileBoundSet := false
+; 平铺输出端：0 = 直接搬窗口；非 0 时改为"只算不搬"（收集矩形，供槽位表/动画使用）
+global TileSink := 0
+; 槽位表缓存 (monIdx|n|WxH → 表)
+global SlotTableCache := Map()
+; WTM 专用间隙与动画时长（[Tiling] WTMGap / AnimationDuration）
+global WTM_Gap    := 10
+global WTM_AnimMs := 0
 
 ; ---- GUI rounding / GUI圆角 ----
 global GUI_Rounded     := "on"
@@ -680,6 +687,9 @@ WMLog(msg, level := "INFO", comp := "Core") {
 ; ---- LogSessionExit / 会话退出记录 ----
 LogSessionExit(exitReason, exitCode) {
     global WM_LogFile
+    ; WTM 单人模式用 SW_HIDE 隐藏了同屏其它窗口，必须在这里复原，
+    ; 否则重载 / 退出后那些窗口会一直不可见（脚本状态丢失，无处可恢复）。
+    try WTM.CleanupOnExit()
     if (WM_LogFile = "")
         return
     try {
@@ -955,7 +965,7 @@ ApplyCustomLayout(wins, X, Y, W, H, monIdx := 0) {
         ww := (r.x.hi - r.x.lo) * W
         wy := Y + r.y.lo * H
         wh := (r.y.hi - r.y.lo) * H
-        PlaceWin(hwnd, wx, wy, ww, wh)
+        EmitPlace(hwnd, wx, wy, ww, wh)
     }
     return true
 }
@@ -1750,8 +1760,13 @@ PinRounded=off
 PinRadius=0
 
 [Tiling]
-; WTM tiling gap (px, may be negative) / 平铺间隙
+; Smart-tile gap (px, may be negative) / 智能平铺间隙
 Gap=15
+; WTM mode gap (px, may be negative; empty = fall back to [Border] Gap)
+; WTM 模式间隙（留空则回落到 [Border] Gap，与旧版一致）
+WTMGap=
+; Move/resize animation duration in ms (0 = off, instant) / 平铺动画时长 ms（0 = 关闭）
+AnimationDuration=0
 ; Tile always-on-top windows / 置顶窗口参与平铺
 TileAlwaysOnTop=off
 ; Custom layout rules: M,N,I,X,Y;... (see README for full docs)
@@ -2049,6 +2064,12 @@ WTMMoveRight=Alt+Shift+L
     Tile_Gap         := Integer(CfgRead("Tiling", "Gap", "15", ["Layout","Gap"]))
     LayoutRules      := ParseLayoutRules(CfgRead("Tiling", "Rules", "", ["Layout","Rules"]))
     Tile_IncludeAlwaysOnTop := BarShown(IniRead(ConfigFile, "Tiling", "TileAlwaysOnTop", "off"))
+    ; WTM 专用间隙：未配置则回落到 [Border] Gap（与旧版行为一致）
+    _wtmGapRaw := Trim(IniRead(ConfigFile, "Tiling", "WTMGap", ""))
+    WTM_Gap    := (_wtmGapRaw = "") ? Border_Gap : SafeInt(_wtmGapRaw, Border_Gap)
+    ; 平铺动画时长 ms（0 = 关闭动画，瞬间到位）
+    WTM_AnimMs := Max(0, SafeInt(IniRead(ConfigFile, "Tiling", "AnimationDuration", "0"), 0))
+    InvalidateSlotTables()
 
     Snap_Enable   := BarShown(IniRead(ConfigFile, "Snapping", "Enable", "on"))
     Snap_Distance := Integer(IniRead(ConfigFile, "Snapping", "Distance", "12"))
@@ -4887,6 +4908,152 @@ ClearTileBound() {
     TileBoundSet := false
 }
 
+; ---- 计算某显示器的平铺区域 / Tiling area of a monitor ----
+; 与 TileWindowsOnMonitor 内部的几何计算保持一致（工作区 - Bar - 边缘间隙）
+GetTileArea(monIdx, gapBase, &X, &Y, &W, &H) {
+    MonitorGetWorkArea(monIdx, &WL, &WT, &WR, &WB)
+    BarReserve(monIdx, &WL, &WT, &WR, &WB)
+    W := WR - WL, H := WB - WT
+    edgeMargin := gapBase / 2
+    if (edgeMargin > 0) {
+        WL += edgeMargin, WT += edgeMargin
+        W -= edgeMargin * 2, H -= edgeMargin * 2
+    }
+    X := WL, Y := WT
+}
+
+; ==============================================================================
+; 十四之前：槽位表 / Slot Table
+; ==============================================================================
+; 槽位表把"第 i 个窗口应该在哪"表达为分数（相对显示器平铺区域），而不是像素：
+;     { xlo, xhi, ylo, yhi, cx, cy, xfull, yfull, src }
+; 来源优先级：[Tiling] Rules 用户规则（精确分数）> 内置算法（空跑收集后归一化）。
+; WTM 的移动/交换全部在这张表上做纯数学比较，不受 gap / DWM 阴影 / 像素取整影响。
+SlotFromSpan(xlo, xhi, ylo, yhi, src) {
+    return { xlo: xlo, xhi: xhi, ylo: ylo, yhi: yhi
+           , cx: (xlo + xhi) / 2, cy: (ylo + yhi) / 2
+           , xfull: (xlo <= 1.0e-9 && xhi >= 1 - 1.0e-9)
+           , yfull: (ylo <= 1.0e-9 && yhi >= 1 - 1.0e-9)
+           , src: src }
+}
+
+; ---- 空跑内置算法得到槽位表 / Dry-run the built-in algorithms ----
+; 在 (0,0,W,H) 上跑一遍，收集 EmitPlace 的输出再归一化；全程不碰任何窗口。
+BuildBuiltinSlotTable(n, W, H) {
+    global TileSink, CurrentTileGap, TileBoundSet
+    if (n < 1 || W <= 0 || H <= 0)
+        return []
+    rects := []
+    dummy := []
+    loop n
+        dummy.Push(A_Index)
+    savedSink := TileSink, savedGap := CurrentTileGap, savedBound := TileBoundSet
+    TileSink := (hwnd, x, y, w, h) => rects.Push({x: x, y: y, w: w, h: h})
+    CurrentTileGap := 0
+    TileBoundSet := false
+    try {
+        switch _GetTileMode(W, H) {
+            case "Vertical":  TileVertical(dummy, 0, 0, W, H)
+            case "Ultrawide": TileUltrawide(dummy, 0, 0, W, H)
+            default:          TileNormal(dummy, 0, 0, W, H)
+        }
+    } finally {
+        TileSink := savedSink
+        CurrentTileGap := savedGap
+        TileBoundSet := savedBound
+    }
+    table := []
+    for i, r in rects
+        table.Push(SlotFromSpan(r.x / W, (r.x + r.w) / W, r.y / H, (r.y + r.h) / H, "builtin"))
+    return table
+}
+
+; ---- 取槽位表（带缓存）/ Get slot table for (monitor, window count) ----
+GetSlotTable(monIdx, n, W, H) {
+    global SlotTableCache
+    key := monIdx . "|" . n . "|" . Round(W) . "x" . Round(H)
+    if SlotTableCache.Has(key)
+        return SlotTableCache[key]
+    rules := GetCustomLayout(monIdx, n)
+    table := []
+    if (rules != "") {
+        for i, r in rules
+            table.Push(SlotFromSpan(r.x.lo, r.x.hi, r.y.lo, r.y.hi, "custom"))
+    } else {
+        table := BuildBuiltinSlotTable(n, W, H)
+    }
+    SlotTableCache[key] := table
+    return table
+}
+
+; ---- 清空槽位表缓存（配置/规则变更时）/ Invalidate the cache ----
+InvalidateSlotTables() {
+    global SlotTableCache
+    SlotTableCache := Map()
+}
+
+; ---- 槽位表上的方向选择（纯函数，可单独测试）/ Directional pick on the slot table ----
+; 返回目标槽位号（1 起），0 = 该方向没有可交换的槽位（交由跨屏分支处理）
+; 规则：
+;   ① 该轴跨度为满（0..1）→ 不可沿该轴移动
+;   ② 只取主轴方向严格更远的槽位（同轴同值的窗口被排除）
+;   ③ 主轴差最小 → ④ 副轴差最小 → ⑤ 仍并列取副轴差为负（偏上 / 偏左）
+PickSlotFromTable(table, i, dir) {
+    n := table.Length
+    if (i < 1 || i > n)
+        return 0
+    cur := table[i]
+    horizontal := (dir = "L" || dir = "R")
+    if (horizontal ? cur.xfull : cur.yfull)
+        return 0
+    primary   := horizontal ? "cx" : "cy"
+    secondary := horizontal ? "cy" : "cx"
+    forward   := (dir = "R" || dir = "D")
+
+    cand := []
+    for j, t in table {
+        if (j = i)
+            continue
+        pj := t.%primary%, pi := cur.%primary%
+        if (forward ? (pj > pi) : (pj < pi))
+            cand.Push(j)
+    }
+    if (cand.Length = 0)
+        return 0
+
+    cand := NarrowByAxis(cand, table, cur, primary)
+    if (cand.Length = 1)
+        return cand[1]
+    cand := NarrowByAxis(cand, table, cur, secondary)
+    if (cand.Length = 1)
+        return cand[1]
+    pick := 0, best := 0
+    for j in cand {
+        d := table[j].%secondary% - cur.%secondary%
+        if (d < 0 && (!pick || d > best)) {
+            best := d
+            pick := j
+        }
+    }
+    return pick ? pick : cand[1]
+}
+
+; ---- 候选集按某轴差值最小收窄 / Narrow candidates by minimal axis delta ----
+NarrowByAxis(cand, table, cur, axis) {
+    best := 1.0e18
+    for j in cand {
+        d := Abs(table[j].%axis% - cur.%axis%)
+        if (d < best)
+            best := d
+    }
+    out := []
+    for j in cand {
+        if (Abs(table[j].%axis% - cur.%axis%) <= best + 1.0e-9)
+            out.Push(j)
+    }
+    return out
+}
+
 ; ---- 根据宽高比确定平铺模式 / Determine tile mode by aspect ratio ----
 _GetTileMode(W, H) {
     if (H > W)
@@ -4898,7 +5065,7 @@ _GetTileMode(W, H) {
 
 ; ---- 显示器平铺唯一入口（TileSmart / WinSelect / WTM 共用）----
 ; ---- Canonical per-monitor tiling entry (shared by TileSmart / WinSelect / WTM) ----
-; gapBase:    基础间隙。TileSmart/WinSelect 传 Tile_Gap；WTM 传 Border_Gap
+; gapBase:    基础间隙。TileSmart/WinSelect 传 Tile_Gap；WTM 传 WTM_Gap
 ;             （WTM 需要为边框留空间，与普通平铺间隙语义不同，故各自配置）。
 ; useDwmComp: 是否叠加 DWM 阴影补偿。TileSmart/WinSelect 为 true（使可视间距一致）；
 ;             WTM 为 false（其边框贴合 DWM 可视矩形，补偿反而造成双重间距）。
@@ -4952,8 +5119,8 @@ TileCurrentMonitor(*) {
     ShowOSD("Tile [" . mode . "] [Mon " . targetMon . "]: " . n)
 }
 
-; ---- Place one window with gap & bound clamp / 摆放窗口 ----
-PlaceWin(hwnd, x, y, w, h) {
+; ---- Apply gap & bound clamp, yield the final rect / 计算最终矩形 ----
+ComputeTileRect(x, y, w, h, &fx, &fy, &fw, &fh) {
     global CurrentTileGap, TileBound_L, TileBound_T, TileBound_R, TileBound_B, TileBoundSet
     if (CurrentTileGap != 0) {
         half := CurrentTileGap / 2
@@ -4971,10 +5138,46 @@ PlaceWin(hwnd, x, y, w, h) {
             y2 := TileBound_B
         w := x2 - x, h := y2 - y
     }
+    fx := Round(x), fy := Round(y)
+    fw := Round(Max(50, w)), fh := Round(Max(50, h))
+}
+
+; ---- Move a window to an exact rect / 搬到精确矩形 ----
+; 已经在目标矩形上（且未最大化/最小化）则直接跳过，避免无意义的 WinRestore+WinMove 抖动
+MoveWinTo(hwnd, x, y, w, h) {
     try {
+        mm := 0
+        try mm := WinGetMinMax(hwnd)
+        if (mm = 0) {
+            WinGetPos(&cx, &cy, &cw, &ch, hwnd)
+            if (cx = x && cy = y && cw = w && ch = h)
+                return false
+        }
         WinRestore(hwnd)
-        WinMove(Round(x), Round(y), Round(Max(50, w)), Round(Max(50, h)), hwnd)
+        WinMove(x, y, w, h, hwnd)
+        return true
+    } catch {
+        return false
     }
+}
+
+; ---- Place one window with gap & bound clamp / 摆放窗口 ----
+PlaceWin(hwnd, x, y, w, h) {
+    ComputeTileRect(x, y, w, h, &fx, &fy, &fw, &fh)
+    return MoveWinTo(hwnd, fx, fy, fw, fh)
+}
+
+; ---- Tiling output stage / 平铺输出端 ----
+; 内置平铺算法统一经此出口。TileSink 为 0 时行为与旧版一致（直接搬窗口）；
+; WTM 临时把 TileSink 换成收集器，即可"只算不搬"地拿到布局矩形（槽位表 / 动画）。
+EmitPlace(hwnd, x, y, w, h) {
+    global TileSink
+    ComputeTileRect(x, y, w, h, &fx, &fy, &fw, &fh)
+    if TileSink {
+        TileSink(hwnd, fx, fy, fw, fh)
+        return false
+    }
+    return MoveWinTo(hwnd, fx, fy, fw, fh)
 }
 
 ; ---- Grid tiling / 网格平铺 ----
@@ -4983,7 +5186,7 @@ TileGrid(wins, X, Y, W, H, isVertical := false) {
     if (n == 0)
         return
     if (n == 1) {
-        PlaceWin(wins[1], X, Y, W, H)
+        EmitPlace(wins[1], X, Y, W, H)
         return
     }
     if isVertical {
@@ -5008,7 +5211,7 @@ TileGrid(wins, X, Y, W, H, isVertical := false) {
             c := A_Index - 1
             if (idx > n)
                 break
-            PlaceWin(wins[idx], X + c * colW, Y + r * rowH, colW, rowH)
+            EmitPlace(wins[idx], X + c * colW, Y + r * rowH, colW, rowH)
             idx++
         }
     }
@@ -5019,17 +5222,17 @@ TileNormal(wins, WL, WT, W, H) {
     n := wins.Length
     switch n {
         case 3:
-            PlaceWin(wins[1], WL,        WT,        W/2, H)
-            PlaceWin(wins[2], WL + W/2,  WT,        W/2, H/2)
-            PlaceWin(wins[3], WL + W/2,  WT + H/2,  W/2, H/2)
+            EmitPlace(wins[1], WL,        WT,        W/2, H)
+            EmitPlace(wins[2], WL + W/2,  WT,        W/2, H/2)
+            EmitPlace(wins[3], WL + W/2,  WT + H/2,  W/2, H/2)
             return
         case 5:
             colW := W/3, halfH := H/2
-            PlaceWin(wins[1], WL + colW,    WT,         colW, H)
-            PlaceWin(wins[2], WL,           WT,         colW, halfH)
-            PlaceWin(wins[3], WL,           WT + halfH, colW, halfH)
-            PlaceWin(wins[4], WL + 2*colW,  WT,         colW, halfH)
-            PlaceWin(wins[5], WL + 2*colW,  WT + halfH, colW, halfH)
+            EmitPlace(wins[1], WL + colW,    WT,         colW, H)
+            EmitPlace(wins[2], WL,           WT,         colW, halfH)
+            EmitPlace(wins[3], WL,           WT + halfH, colW, halfH)
+            EmitPlace(wins[4], WL + 2*colW,  WT,         colW, halfH)
+            EmitPlace(wins[5], WL + 2*colW,  WT + halfH, colW, halfH)
             return
     }
     TileGrid(wins, WL, WT, W, H, false)
@@ -5041,7 +5244,7 @@ TileVertical(wins, X, Y, W, H) {
     if (n <= 3) {
         itemH := H / n
         for i, hwnd in wins
-            PlaceWin(hwnd, X, Y + (i-1)*itemH, W, itemH)
+            EmitPlace(hwnd, X, Y + (i-1)*itemH, W, itemH)
         return
     }
     TileGrid(wins, X, Y, W, H, true)
@@ -5052,18 +5255,18 @@ TileUltrawide(wins, X, Y, W, H) {
     n := wins.Length
     if (n == 1) {
         mainW := Min(W, H * 16/9)
-        PlaceWin(wins[1], X + (W - mainW)/2, Y, mainW, H)
+        EmitPlace(wins[1], X + (W - mainW)/2, Y, mainW, H)
         return
     }
     if (n == 2) {
-        PlaceWin(wins[1], X,       Y, W/2, H)
-        PlaceWin(wins[2], X + W/2, Y, W/2, H)
+        EmitPlace(wins[1], X,       Y, W/2, H)
+        EmitPlace(wins[2], X + W/2, Y, W/2, H)
         return
     }
     mainW := Min(H * 16/9, W * 0.5)
     sideW := (W - mainW) / 2
     mainX := X + sideW
-    PlaceWin(wins[1], mainX, Y, mainW, H)
+    EmitPlace(wins[1], mainX, Y, mainW, H)
     leftCount  := Floor((n-1) / 2)
     rightCount := (n-1) - leftCount
     if (leftCount > 0) {
@@ -5369,7 +5572,11 @@ DragMoveHandler(*) {
         BorderFollowDrag(hwnd)
     }
     DragBorder.Destroy()
-    WTM.OnWindowChanged()
+    ; WTM 模式下：拖到哪个槽位就跟哪个槽位交换（Hyprland 风格），其余窗口不动
+    if WTM.Active
+        WTM.HandleDragDrop(hwnd)
+    else
+        WTM.OnWindowChanged()
 }
 
 ; ---- Drag-resize handler / 拖拽缩放 ----
@@ -5508,19 +5715,38 @@ _BorderPlaceFrame(borderMap, hwnd) {
 }
 
 ; ---- Dynamic tiling mode / 动态平铺 ----
+; ---- 定时器回调的真实间隔 / Real elapsed ms for a timer callback ----
+; AHK 定时器分辨率约 15.6ms：配置的周期只是"期望值"（`RefreshMs=0` 会被钳到 1ms），
+; 直接按标称周期累加会让"每 200/250ms 检查一次"的档位慢十几倍。
+; 传入上次的 A_TickCount（引用，就地更新），返回真实经过的毫秒数。
+TickElapsed(&lastTick, nominal) {
+    now := A_TickCount
+    dt := lastTick ? (now - lastTick) : 0
+    lastTick := now
+    if (dt < 0 || dt > 1000)              ; 首次 / 计数回绕 / 长时间阻塞
+        dt := nominal
+    return dt
+}
+
 class WTM {
     static Active     := false
-    static TileOrder  := []
-    static DesktopOrders := Map()   ; 各虚拟桌面独立的平铺顺序 / per-desktop tile order
+    static TileOrder  := []         ; 索引 = 槽位号（同一显示器内按此顺序分配槽位）
+    static DesktopOrders := Map()   ; 各虚拟桌面独立的槽位顺序 / per-desktop slot order
     static Excluded   := Map()
     static FocusHwnd  := 0
     static BorderMap   := Map()
     static BorderState := Map()
-    static _LastSig   := ""
-    static _Accum     := 0
-    static _LastSigChange   := 0   ; 签名上次变化的时间戳，用于防抖
-    static _LastBorderSig   := ""  ; 边框签名：焦点+窗口列表变化时全毁全建
+    static _Placed    := Map()      ; hwnd → 我们最后一次摆成的矩形（用于检测外部改动）
+    static _LastWins  := ""         ; 轻量成员签名（只含 hwnd 集合）
+    static _SlowAccum := 0          ; 慢速轮询累加（ms，按真实经过时间计）
+    static _LastTick  := 0          ; 上次 tick 的 A_TickCount
+    static _FsMon     := Map()      ; 各显示器是否有"真全屏"窗口（慢速刷新）
+    static SoloMon    := Map()      ; monIdx → hwnd：最大化单人模式
+    static SoloHidden := Map()      ; solo 期间被隐藏的窗口（退出时复原）
+    static Anim       := Map()      ; hwnd → 动画状态
+    static AnimStarted := false
     static TickFn     := ObjBindMethod(WTM, "Tick")
+    static AnimTickFn := ObjBindMethod(WTM, "AnimTick")
 
     ; -- 模式切换 / Toggle the mode --
     static Toggle() {
@@ -5535,25 +5761,44 @@ class WTM {
         this.Active      := true
         this.Excluded    := Map()
         this.TileOrder   := []
+        this.DestroyAllBorders()      ; 先销毁旧边框（含遗留 GUI），再重置状态
         this.BorderMap   := Map()
         this.BorderState := Map()
-        this._LastSig    := ""
-        this._LastSigChange := 0
+        this._Placed     := Map()
+        this._LastWins   := ""
+        this._SlowAccum  := 0
+        this._FsMon      := Map()
+        this.SoloMon     := Map()
+        this.SoloHidden  := Map()
+        this._StopAnim()
         this.RebuildOrder()
         this.AutoTile()
         this.RefreshBorder()
+        this.LogSlotTables()          ; 把各屏槽位表写进日志，便于核对
         SetTimer(this.TickFn, Border_RefreshMs)
         AllBorders.Suspend()
         ShowOSD("WTM Mode: ON")
+    }
+
+    ; -- 退出/重载时的清理 / Cleanup on script exit or reload --
+    static CleanupOnExit() {
+        if (!this.Active && this.SoloHidden.Count = 0)
+            return
+        SetTimer(this.TickFn, 0)
+        this._StopAnim()
+        this._ExitSolo()
+        this.DestroyAllBorders()
     }
 
     ; -- 停用 / Deactivate --
     static Deactivate() {
         this.Active := false
         SetTimer(this.TickFn, 0)
+        this._StopAnim()
+        this._ExitSolo()
         this.DestroyAllBorders()
-        this._LastBorderSig := ""
-        this._LastSig := ""
+        this._LastWins := ""
+        this._Placed := Map()
         this.DesktopOrders := Map()
         AllBorders.Rebuild()
         ShowOSD("WTM Mode: OFF")
@@ -5569,13 +5814,15 @@ class WTM {
     static OnDesktopSwitched(target := 0) {
         if !this.Active
             return
-        this._LastBorderSig := ""   ; 强制下次 RefreshBorder 全毁全建
+        this._StopAnim()
+        this._ExitSolo()
         this.DestroyAllBorders()
         if (target && this.DesktopOrders.Has(target))
             this.TileOrder := this.DesktopOrders[target].Clone()
-        this.RebuildOrder()      ; 清理失效窗口、追加新窗口（保序）/ prune dead, append new
+        this._Placed   := Map()
+        this._LastWins := ""
+        this.RebuildOrder()      ; 清理失效窗口、追加新窗口（保序）/ prune dead
         this.AutoTile()          ; 按恢复的顺序重铺目标桌面 / re-apply the saved layout
-        this._LastSigChange := 0
         this.RefreshBorder()
     }
 
@@ -5587,7 +5834,7 @@ class WTM {
         this.RefreshBorder()
     }
 
-    ; -- 重建平铺顺序 / Rebuild the tile order --
+    ; -- 重建平铺顺序 / Rebuild the tile order (= slot order) --
     static RebuildOrder() {
         alive := Map()
         for hwnd in GetVisibleWindow() {
@@ -5603,6 +5850,11 @@ class WTM {
             }
             alive[hwnd] := true
         }
+        ; solo 期间被隐藏的窗口虽然不可见，但依然占着槽位
+        for hwnd, _ in this.SoloHidden {
+            if WinExist(hwnd)
+                alive[hwnd] := true
+        }
         newOrder := []
         for hwnd in this.TileOrder {
             if alive.Has(hwnd) && WinExist(hwnd) {
@@ -5610,16 +5862,33 @@ class WTM {
                 alive.Delete(hwnd)
             }
         }
-        for hwnd, _ in alive
-            newOrder.Push(hwnd)
+        ; 新窗口插入到当前焦点之后（焦点不在列表中则追加到末尾）
+        if (alive.Count > 0) {
+            ins := 0
+            if (this.FocusHwnd && WinExist(this.FocusHwnd)) {
+                fi := this._OrderIndex(this.FocusHwnd)
+                if fi
+                    ins := fi
+            }
+            for hwnd, _ in alive {
+                if ins {
+                    newOrder.InsertAt(ins + 1, hwnd)
+                    ins += 1
+                } else {
+                    newOrder.Push(hwnd)
+                }
+            }
+        }
         this.TileOrder := newOrder
     }
 
     ; -- 自动平铺 / Auto-tile all monitors --
     static AutoTile() {
         this.RebuildOrder()
-        if (this.TileOrder.Length = 0)
+        if (this.TileOrder.Length = 0) {
+            this._Placed := Map()
             return
+        }
         groups := Map()
         for hwnd in this.TileOrder {
             m := 1
@@ -5631,74 +5900,248 @@ class WTM {
             groups[m].Push(hwnd)
         }
         for m, wins in groups
-            this._TileMonitor(m, wins)
-        this._LastSig := this._Signature()
+            this._RePlace(m, wins)
     }
 
-    ; -- 单显示器平铺 / Tile one monitor --
-    static _TileMonitor(monIdx, wins) {
-        global Border_Gap
-        TileWindowsOnMonitor(wins, monIdx, Border_Gap, false)
+    ; -- 重算并摆放某显示器 / Re-place one monitor (no direct WinMove here) --
+    static _RePlace(monIdx, wins := 0, animate := true) {
+        global TileSink
+        ; 真全屏或单人(solo)模式下该显示器交给系统，不参与平铺
+        if this.SoloMon.Has(monIdx)
+            return
+        if (this._FsMon.Has(monIdx) && this._FsMon[monIdx])
+            return
+        if (wins = 0) {
+            wins := []
+            for hwnd in this.TileOrder {
+                if !WinExist(hwnd)
+                    continue
+                m := 1
+                try m := GetMonitorIndex(hwnd)
+                if (m = monIdx)
+                    wins.Push(hwnd)
+            }
+        }
+        if (wins.Length = 0)
+            return
+        ; 借用唯一平铺入口算矩形，但把输出接到收集器上（不直接搬窗口）
+        rects := []
+        saved := TileSink
+        TileSink := (hwnd, x, y, w, h) => rects.Push({hwnd: hwnd, x: x, y: y, w: w, h: h})
+        try {
+            TileWindowsOnMonitor(wins, monIdx, WTM_Gap, false)
+        } finally {
+            TileSink := saved
+        }
+        this._ApplyRects(rects, animate, monIdx)
     }
 
-    ; -- 成员+几何签名 / Membership & geometry signature --
-    static _Signature() {
+    ; -- 应用矩形（动画或直搬）/ Apply target rects --
+    static _ApplyRects(rects, animate, monIdx := 0) {
+        for r in rects {
+            if !WinExist(r.hwnd)
+                continue
+            this._Placed[r.hwnd] := {x: r.x, y: r.y, w: r.w, h: r.h, mon: monIdx}
+            ; solo 的窗口保持系统最大化状态，不要碰
+            keep := false
+            for m, h in this.SoloMon {
+                if (h = r.hwnd)
+                    keep := true
+            }
+            if keep
+                continue
+            if (animate && WTM_AnimMs > 0)
+                this._AnimMove(r.hwnd, r.x, r.y, r.w, r.h)
+            else {
+                this.Anim.Delete(r.hwnd)
+                MoveWinTo(r.hwnd, r.x, r.y, r.w, r.h)
+            }
+        }
+    }
+
+    ; -- 平铺动画 / Smooth move --
+    static _AnimMove(hwnd, tx, ty, tw, th) {
+        if (WTM_AnimMs <= 0) {
+            this.Anim.Delete(hwnd)
+            MoveWinTo(hwnd, tx, ty, tw, th)
+            return
+        }
+        try {
+            if (WinGetMinMax(hwnd) != 0) {   ; 最大化/最小化不做动画
+                this.Anim.Delete(hwnd)
+                MoveWinTo(hwnd, tx, ty, tw, th)
+                return
+            }
+            WinGetPos(&cx, &cy, &cw, &ch, hwnd)
+        } catch {
+            return
+        }
+        if (cx = tx && cy = ty && cw = tw && ch = th) {
+            this.Anim.Delete(hwnd)
+            return
+        }
+        this.Anim[hwnd] := {x0: cx, y0: cy, w0: cw, h0: ch
+                          , x1: tx, y1: ty, w1: tw, h1: th
+                          , t0: A_TickCount, dur: Max(30, WTM_AnimMs)}
+        if !this.AnimStarted {
+            this.AnimStarted := true
+            SetTimer(this.AnimTickFn, 12)
+        }
+    }
+
+    ; -- 动画步进 / Animation step (single timer for all windows) --
+    static AnimTick() {
+        if (this.Anim.Count = 0) {
+            SetTimer(this.AnimTickFn, 0)
+            this.AnimStarted := false
+            return
+        }
+        now := A_TickCount
+        for hwnd, a in this.Anim.Clone() {
+            if !WinExist(hwnd) {
+                this.Anim.Delete(hwnd)
+                continue
+            }
+            p := (now - a.t0) / a.dur
+            if (p >= 1) {
+                this.Anim.Delete(hwnd)
+                try MoveWinTo(hwnd, a.x1, a.y1, a.w1, a.h1)
+                continue
+            }
+            try {
+                if (WinGetMinMax(hwnd) != 0) {
+                    this.Anim.Delete(hwnd)
+                    continue
+                }
+            } catch {
+                this.Anim.Delete(hwnd)
+                continue
+            }
+            e := 1 - (1 - p) ** 3          ; ease-out cubic
+            x := Round(a.x0 + (a.x1 - a.x0) * e)
+            y := Round(a.y0 + (a.y1 - a.y0) * e)
+            w := Round(Max(50, a.w0 + (a.w1 - a.w0) * e))
+            h := Round(Max(50, a.h0 + (a.h1 - a.h0) * e))
+            try DllCall("SetWindowPos", "Ptr", hwnd, "Ptr", 0
+                , "Int", x, "Int", y, "Int", w, "Int", h, "UInt", 0x4 | 0x10)  ; NOZORDER|NOACTIVATE
+        }
+    }
+
+    ; -- 停止动画 / Stop all animations (leave windows where they are) --
+    static _StopAnim() {
+        SetTimer(this.AnimTickFn, 0)
+        this.AnimStarted := false
+        this.Anim := Map()
+    }
+
+    ; -- 轻量成员签名（只含 hwnd 集合，不含几何）/ Membership signature --
+    static _MemberSig() {
         arr := []
         for hwnd in GetVisibleWindow() {
             if this.Excluded.Has(hwnd)
                 continue
             if !IsTilableWindow(hwnd)
                 continue
-            try {
-                if (WinGetMinMax(hwnd) = -1)
-                    continue
-                WinGetPos(&sx, &sy, &sw, &sh, hwnd)
-            } catch {
-                continue
-            }
-            arr.Push((hwnd + 0) . ":" . (sx // 32) . "," . (sy // 32) . "," . (sw // 32) . "," . (sh // 32))
+            arr.Push(hwnd + 0)
+        }
+        for hwnd, _ in this.SoloHidden {
+            if WinExist(hwnd)
+                arr.Push(hwnd + 0)
         }
         n := arr.Length
         Loop n {
             i := A_Index
             Loop n - i {
                 j := A_Index
-                if (StrCompare(arr[j], arr[j+1]) > 0) {
+                if (arr[j] > arr[j+1]) {
                     t := arr[j], arr[j] := arr[j+1], arr[j+1] := t
                 }
             }
         }
         sig := ""
         for v in arr
-            sig .= v ";"
+            sig .= v ","
         return sig
     }
 
-    ; -- 定时刷新（Alt 按住期间推迟重排，避免组合键过程中误平铺）--
+    ; -- 定时器 / Periodic tick --
+    ; 快速档（每 Border_RefreshMs）：边框跟随 + 焦点颜色（Alt 按住也照跑，保证跟手）
+    ; 慢速档（约 250ms）：成员变化 / 外部漂移 / 全屏与 solo 判定
     static Tick() {
         global DesktopIsSwitching
         if !this.Active || DesktopIsSwitching
             return
-        if !GetKeyState("Alt", "P") {
-            sig := this._Signature()
-            if (sig != this._LastSig) {
-                this._LastSig := sig
-                this._LastSigChange := A_TickCount
-            }
-            if (this._LastSigChange && A_TickCount - this._LastSigChange >= 80) {
-                this._LastSigChange := 0
-                sig2 := this._Signature()
-                if (sig2 != this._LastSig)
-                    this._LastSig := sig2
-                this.AutoTile()
-            }
+        this._SlowAccum += this._Elapsed()
+        if (this._SlowAccum >= 250) {
+            this._SlowAccum := 0
+            this._SlowCheck()
+            return
         }
+        this._FastCheck()
+    }
+
+    ; -- 距上次 tick 的真实毫秒数 / Real elapsed ms since the last tick --
+    static _Elapsed() {
+        return TickElapsed(this._LastTick, Border_RefreshMs)
+    }
+
+    ; -- 慢速检查 / Slow path --
+    static _SlowCheck() {
+        sig := this._MemberSig()
+        if (sig != this._LastWins) {
+            this._LastWins := sig
+            this.AutoTile()
+            this.RefreshBorder()
+            return
+        }
+        this._CheckFullscreen()
+        this._CheckDrift()
+    }
+
+    ; -- 快速检查 / Fast path --
+    static _FastCheck() {
         try {
             fh := WinGetID("A")
             if (fh && fh != this.FocusHwnd) {
                 this.FocusHwnd := fh
             }
         }
+        this.RefreshBorder()
+    }
+
+    ; -- 外部漂移检测：不是我们摆的位置 → 拉回槽位 / Snap back on external moves --
+    static _CheckDrift() {
+        if GetKeyState("LButton", "P") || GetKeyState("RButton", "P")
+            return                     ; 拖拽/缩放进行中，交给拖拽处理器
+        dirty := Map()
+        for hwnd in this.TileOrder {
+            if !WinExist(hwnd)
+                continue
+            if this.Anim.Has(hwnd)
+                continue
+            if this.SoloHidden.Has(hwnd)
+                continue
+            if !this._Placed.Has(hwnd)
+                continue
+            t := this._Placed[hwnd]
+            try {
+                WinGetPos(&x, &y, &w, &h, hwnd)
+            } catch {
+                continue
+            }
+            if (Abs(x - t.x) > 2 || Abs(y - t.y) > 2 || Abs(w - t.w) > 2 || Abs(h - t.h) > 2) {
+                m := 1
+                try m := GetMonitorIndex(hwnd)
+                dirty[m] := true
+                ; 被拖到别的显示器时，原显示器也要重铺，否则原处留下空洞
+                if (t.HasProp("mon") && t.mon && t.mon != m && t.mon >= 1 && t.mon <= MonitorGetCount())
+                    dirty[t.mon] := true
+            }
+        }
+        if (dirty.Count = 0)
+            return
+        for m, _ in dirty
+            this._RePlace(m)
         this.RefreshBorder()
     }
 
@@ -5731,11 +6174,25 @@ class WTM {
     }
 
     ; -- 方向移动/交换 / Move or swap in a direction --
+    ; 目标选取完全基于槽位表（配置规则/内置算法的分数坐标），不读像素：
+    ;   ① 主轴方向上严格更远的槽位    ② 主轴差最小
+    ;   ③ 仍并列则副轴差最小          ④ 仍并列则取副轴差为负（偏上/偏左）
+    ; 该轴跨度为满（0..1）时不允许沿该轴移动，落到跨屏分支
     static MoveDir(dir) {
         if !this.Active
             return
+        if (this.SoloMon.Count > 0) {      ; 单人(最大化)模式下先退出该模式
+            this._ExitSolo()
+            this.AutoTile()
+        }
         this.RebuildOrder()
-        cur := this.FocusHwnd ? this.FocusHwnd : (this.TileOrder.Length ? this.TileOrder[1] : 0)
+        ; 只操作"参与平铺"的焦点窗口：焦点若落在浮动/被排除窗口上则不动作，
+        ; 否则会把不归 WTM 管的窗口搬到别的显示器去。
+        cur := 0
+        if (this.FocusHwnd && this._OrderIndex(this.FocusHwnd))
+            cur := this.FocusHwnd
+        else if (!this.FocusHwnd && this.TileOrder.Length)
+            cur := this.TileOrder[1]
         if !cur
             return
         curMon := 1
@@ -5750,7 +6207,8 @@ class WTM {
                 this.TileOrder[i1] := this.TileOrder[i2]
                 this.TileOrder[i2] := tmp
             }
-            this.AutoTile()
+            this._RePlace(curMon)          ; 只有这两个窗口的矩形变了，其余不动
+            this.FocusHwnd := cur
             this._MoveCursorToWindow(cur)
             this.RefreshBorder()
             return
@@ -5760,53 +6218,48 @@ class WTM {
         try adj := this._AdjacentMonitor(curMon, dir)
         if adj {
             this._MoveWindowToMonitor(cur, adj)
-            this.AutoTile()
+            this._RePlace(curMon)
+            this._RePlace(adj)
             this._MoveCursorToWindow(cur)
             this.RefreshBorder()
         }
     }
 
-    ; -- 同屏交换目标选取 / Pick the in-monitor swap target --
-    static _PickSwapTarget(hwnd, dir, monIdx) {
-        if !WinExist(hwnd)
-            return 0
-        try WinGetPos(&cx, &cy, &cw, &ch, hwnd)
-        catch
-            return 0
-        ccx := cx + cw/2, ccy := cy + ch/2
-        best := 0, bestDist := 1.0e18
+    ; -- 该显示器上的槽位顺序 / Slot-ordered windows of a monitor --
+    static _MonitorSlots(monIdx) {
+        wins := []
         for h in this.TileOrder {
-            if (h = hwnd)
+            if !WinExist(h)
                 continue
-            tm := 1
-            try tm := GetMonitorIndex(h)
-            if (tm != monIdx)
-                continue
-            try WinGetPos(&x, &y, &w, &h2, h)
-            catch
-                continue
-            tx := x + w/2, ty := y + h2/2
-            dx := tx - ccx, dy := ty - ccy
+            m := 1
+            try m := GetMonitorIndex(h)
+            if (m = monIdx)
+                wins.Push(h)
+        }
+        return wins
+    }
 
-            skip := false
-            if      (dir = "L" && dx >= 0)
-                skip := true
-            else if (dir = "R" && dx <= 0)
-                skip := true
-            else if (dir = "U" && dy >= 0)
-                skip := true
-            else if (dir = "D" && dy <= 0)
-                skip := true
-            if skip
-                continue
-
-            dist := dx*dx + dy*dy
-            if (dist < bestDist) {
-                bestDist := dist
-                best := h
+    ; -- 同屏交换目标选取（槽位表数学）/ Pick the swap target from the slot table --
+    static _PickSwapTarget(hwnd, dir, monIdx) {
+        wins := this._MonitorSlots(monIdx)
+        n := wins.Length
+        if (n < 2)
+            return 0
+        i := 0
+        for idx, h in wins {
+            if (h = hwnd) {
+                i := idx
+                break
             }
         }
-        return best
+        if !i
+            return 0
+        GetTileArea(monIdx, WTM_Gap, &ax, &ay, &W, &H)
+        table := GetSlotTable(monIdx, n, W, H)
+        if (table.Length < n)
+            return 0
+        j := PickSlotFromTable(table, i, dir)
+        return j ? wins[j] : 0
     }
 
     ; -- 跨屏移动 / Relocate a window onto another monitor --
@@ -5925,6 +6378,8 @@ class WTM {
         for h in this.TileOrder {
             if (h = hwnd)
                 continue
+            if this.SoloHidden.Has(h)
+                continue                   ; 单人模式隐藏的窗口不参与聚焦
             try WinGetPos(&x, &y, &w, &h2, h)
             catch
                 continue
@@ -5975,32 +6430,22 @@ class WTM {
             this.BorderState.Delete(hwnd)
     }
 
-    ; -- 移除全部边框 + 验证循环 / Destroy all + verify until clean --
+    ; -- 移除全部边框（只在退出模式/桌面切换/重载时调用）--
     static DestroyAllBorders() {
         hwnds := []
-        for hwnd, bf in this.BorderMap {
+        for hwnd, bf in this.BorderMap.Clone() {
             try {
                 if IsObject(bf.Gui) && bf.Gui.Hwnd
                     hwnds.Push(bf.Gui.Hwnd)
             }
+            try bf.Destroy()          ; 走 BorderFrame 自己的销毁（并清空对象引用）
         }
-        for hwnd in hwnds
-            try DllCall("User32\DestroyWindow", "Ptr", hwnd)
         this.BorderMap   := Map()
         this.BorderState := Map()
-
-        loop 20 {
-            survivors := []
-            for _, hwnd in hwnds {
-                if DllCall("User32\IsWindow", "Ptr", hwnd)
-                    survivors.Push(hwnd)
-            }
-            if (survivors.Length = 0)
-                break
-            for hwnd in survivors
-                try DllCall("User32\DestroyWindow", "Ptr", hwnd)
-            Sleep(2)
-            hwnds := survivors
+        ; 一次性复核，只补一次（不再做多轮 Sleep 循环）
+        for _, h in hwnds {
+            if DllCall("User32\IsWindow", "Ptr", h)
+                try DllCall("User32\DestroyWindow", "Ptr", h)
         }
     }
 
@@ -6015,40 +6460,52 @@ class WTM {
         this.BorderState[hwnd] := state
     }
 
-    ; -- 全部边框刷新 / Refresh all borders --
+    ; -- 边框同步（增量 diff，绝不全毁全建）/ Incremental border sync --
+    ; 任何时刻：BorderMap 的键集合 == 应该有边框的窗口集合，不多不少。
+    ; 焦点变化只改颜色 + 重插 Z 序（BorderFrame.Place 自带几何缓存），因此不闪烁。
     static RefreshBorder() {
         if !this.Active
             return
-        sig := (this.FocusHwnd ? this.FocusHwnd : 0) . "|"
-        for hwnd in this.TileOrder
-            sig .= hwnd . ","
-        sig .= ":" . this.TileOrder.Length
-        if (sig != this._LastBorderSig) {
-            this._LastBorderSig := sig
-            this.DestroyAllBorders()
-            for hwnd in this.TileOrder {
-                if !WinExist(hwnd)
-                    continue
-                if (PinBorder.Map.Has(hwnd) || AlwaysVisible.Has(hwnd))
-                    continue
-                try {
-                    if (WinGetMinMax(hwnd) = -1)
-                        continue
-                } catch {
-                    continue
-                }
-                this.EnsureBorder(hwnd)
-                this._SetBorderColor(hwnd, hwnd = this.FocusHwnd ? "focus" : "unfocus")
-                _BorderPlaceFrame(this.BorderMap, hwnd)
-            }
-            return
-        }
-        for hwnd, _ in this.BorderMap.Clone() {
+        want := Map()
+        for hwnd in this.TileOrder {
             if !WinExist(hwnd)
+                continue
+            if (PinBorder.Map.Has(hwnd) || AlwaysVisible.Has(hwnd))
+                continue
+            if this.SoloHidden.Has(hwnd)
+                continue
+            if (this.SoloMon.Count > 0) {        ; solo：只给被 solo 的窗口画边框
+                keep := false
+                for m, h in this.SoloMon {
+                    if (h = hwnd)
+                        keep := true
+                }
+                if !keep
+                    continue
+            }
+            try {
+                if (WinGetMinMax(hwnd) = -1)
+                    continue
+            } catch {
+                continue
+            }
+            m := 1
+            try m := GetMonitorIndex(hwnd)
+            if (this._FsMon.Has(m) && this._FsMon[m])
+                continue                          ; 真全屏：该屏不画边框
+            want[hwnd] := true
+        }
+        ; ① 多余的 → 销毁（这里是唯一的"销毁多余边框"入口）
+        for hwnd, _ in this.BorderMap.Clone() {
+            if !want.Has(hwnd)
                 this.RemoveBorder(hwnd)
         }
-        for hwnd in this.TileOrder
-            this._DrawBorder(hwnd, this.FocusHwnd)
+        ; ② 缺失的 → 创建；颜色 / 几何按需更新
+        for hwnd, _ in want {
+            this.EnsureBorder(hwnd)
+            this._SetBorderColor(hwnd, (hwnd = this.FocusHwnd) ? "focus" : "unfocus")
+            _BorderPlaceFrame(this.BorderMap, hwnd)
+        }
     }
 
     ; -- 单窗口边框绘制 / Draw one window's border --
@@ -6079,6 +6536,205 @@ class WTM {
             return
         this._DrawBorder(hwnd, this.FocusHwnd)
     }
+
+    ; ==========================================================================
+    ; 全屏 / 单人模式 / Fullscreen & solo
+    ; ==========================================================================
+    ; 真全屏：窗口覆盖整块显示器（含 bar）→ 该屏暂停平铺 + 隐藏边框
+    ; 单人模式：窗口被最大化（Win+Up）→ 保持系统的最大化状态与 bar/边框，
+    ;           隐藏该屏其它窗口，只让它一个"参与平铺"；取消最大化即完全复原
+    static _CheckFullscreen() {
+        changed := false
+        ; ① 真全屏状态
+        loop MonitorGetCount() {
+            m := A_Index
+            fs := false
+            try fs := HasFullscreenWindow(m)
+            old := this._FsMon.Has(m) ? this._FsMon[m] : false
+            if (fs != old) {
+                this._FsMon[m] := fs
+                changed := true
+            }
+        }
+        ; ② 单人模式
+        for m, _ in this._MonitorsOfOrder() {
+            if this.SoloMon.Has(m) {
+                solo := this.SoloMon[m]
+                ok := false
+                try ok := (WinExist(solo) && WinGetMinMax(solo) = 1 && this._OrderIndex(solo))
+                if !ok {
+                    this._ExitSolo(m)
+                    changed := true
+                }
+                continue
+            }
+            if (this._FsMon.Has(m) && this._FsMon[m])
+                continue
+            if this._EnterSoloOn(m)
+                changed := true
+        }
+        if changed {
+            this.AutoTile()
+            this.RefreshBorder()
+        }
+    }
+
+    ; -- TileOrder 里出现过的显示器 / Monitors present in the slot order --
+    static _MonitorsOfOrder() {
+        out := Map()
+        for hwnd in this.TileOrder {
+            m := 1
+            try m := GetMonitorIndex(hwnd)
+            if (m < 1)
+                m := 1
+            out[m] := true
+        }
+        return out
+    }
+
+    ; -- 进入单人模式 / Enter solo mode on a monitor --
+    static _EnterSoloOn(monIdx) {
+        target := 0
+        for hwnd in this.TileOrder {
+            if !WinExist(hwnd)
+                continue
+            if (this.SoloHidden.Has(hwnd) || this.Excluded.Has(hwnd))
+                continue
+            m := 1
+            try m := GetMonitorIndex(hwnd)
+            if (m != monIdx)
+                continue
+            try {
+                if (WinGetMinMax(hwnd) = 1) {
+                    target := hwnd
+                    break
+                }
+            } catch {
+                continue
+            }
+        }
+        if !target
+            return false
+        this.SoloMon[monIdx] := target
+        for hwnd in this.TileOrder {
+            if (hwnd = target)
+                continue
+            if this.SoloHidden.Has(hwnd)
+                continue
+            m := 1
+            try m := GetMonitorIndex(hwnd)
+            if (m != monIdx)
+                continue
+            try {
+                ; 用 SW_HIDE 而不是最小化：最小化会被槽位回收，隐藏不会
+                DllCall("ShowWindow", "Ptr", hwnd, "Int", 0)
+                this.SoloHidden[hwnd] := monIdx
+            }
+        }
+        return true
+    }
+
+    ; -- 退出单人模式并复原隐藏窗口 / Leave solo mode, restore hidden windows --
+    static _ExitSolo(onlyMon := 0) {
+        if (this.SoloHidden.Count > 0) {
+            for hwnd, m in this.SoloHidden.Clone() {
+                if (onlyMon && m != onlyMon)
+                    continue
+                try {
+                    if WinExist(hwnd)
+                        DllCall("ShowWindow", "Ptr", hwnd, "Int", 8)   ; SW_SHOWNA
+                }
+                this.SoloHidden.Delete(hwnd)
+            }
+        }
+        if onlyMon {
+            if this.SoloMon.Has(onlyMon)
+                this.SoloMon.Delete(onlyMon)
+        } else {
+            this.SoloMon := Map()
+        }
+        this._Placed := Map()      ; 强制下一轮重新摆放
+    }
+
+    ; ==========================================================================
+    ; 拖拽交换 / Drag-and-drop swap (Hyprland-like)
+    ; ==========================================================================
+    static HandleDragDrop(hwnd) {
+        if (!this.Active || !hwnd || !WinExist(hwnd))
+            return
+        if (this.SoloMon.Count > 0)
+            this._ExitSolo()
+        this.RebuildOrder()
+        if !this._OrderIndex(hwnd)
+            return
+        try {
+            if !GetWindowVisualRect(hwnd, &cx, &cy, &cw, &ch)
+                WinGetPos(&cx, &cy, &cw, &ch, hwnd)
+        } catch {
+            return
+        }
+        px := cx + cw/2, py := cy + ch/2
+        dropMon := GetMonitorIndexAtPoint(px, py)
+        if (dropMon < 1)
+            dropMon := 1
+        wins := this._MonitorSlots(dropMon)
+        n := wins.Length
+        if (n < 1) {
+            this.AutoTile()
+            this.RefreshBorder()
+            return
+        }
+        GetTileArea(dropMon, WTM_Gap, &ax, &ay, &W, &H)
+        table := GetSlotTable(dropMon, n, W, H)
+        if (table.Length < n) {
+            this._Placed := Map()
+            this.AutoTile()
+            this.RefreshBorder()
+            return
+        }
+        ; 落点最近的槽位中心
+        best := 0, bestD := 1.0e18
+        for j, t in table {
+            sx := ax + t.cx * W, sy := ay + t.cy * H
+            d := (sx - px) ** 2 + (sy - py) ** 2
+            if (d < bestD) {
+                bestD := d
+                best := j
+            }
+        }
+        if (best >= 1 && best <= wins.Length)
+            this._SwapSlots(hwnd, wins[best])
+        this._Placed := Map()
+        this.AutoTile()
+        this.RefreshBorder()
+    }
+
+    ; -- 交换两个窗口的槽位（跨屏时为对调，不改变其他窗口）/ Swap slots --
+    static _SwapSlots(a, b) {
+        ia := this._OrderIndex(a)
+        ib := this._OrderIndex(b)
+        if (!ia || !ib || ia = ib)
+            return
+        tmp := this.TileOrder[ia]
+        this.TileOrder[ia] := this.TileOrder[ib]
+        this.TileOrder[ib] := tmp
+    }
+
+    ; -- 记录各屏槽位表到日志（调试用）/ Log slot tables (debug) --
+    static LogSlotTables() {
+        for m, _ in this._MonitorsOfOrder() {
+            wins := this._MonitorSlots(m)
+            n := wins.Length
+            if (n < 1)
+                continue
+            GetTileArea(m, WTM_Gap, &ax, &ay, &W, &H)
+            table := GetSlotTable(m, n, W, H)
+            line := "WTM slots mon" . m . " n" . n . " src" . (table.Length ? table[1].src : "-") . " |"
+            for i, t in table
+                line .= Format(" {:.3f}/{:.3f}", t.cx, t.cy)
+            WMLog(line)
+        }
+    }
 }
 
 ; ==============================================================================
@@ -6092,6 +6748,7 @@ class AllBorders {
     static State   := Map()
     static _Wins   := []
     static _Accum  := 0
+    static _LastTick := 0
     static TimerFn := ObjBindMethod(AllBorders, "Tick")
 
     ; -- 模式切换 / Toggle --
@@ -6181,7 +6838,7 @@ class AllBorders {
         global DesktopIsSwitching
         if !this.Active || WTM.Active || DesktopIsSwitching
             return
-        this._Accum += Border_RefreshMs
+        this._Accum += TickElapsed(this._LastTick, Border_RefreshMs)
         if (this._Accum >= 200 || this._Wins.Length = 0) {
             this._Accum := 0
             this._Wins  := GetVisibleWindow()
