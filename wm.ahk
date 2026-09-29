@@ -5771,7 +5771,12 @@ class WTM {
         this.SoloMon     := Map()
         this.SoloHidden  := Map()
         this._StopAnim()
+        ; 进入时以当前活动窗口为焦点，避免沿用上次会话留下的过期 hwnd
+        ; （否则 RefreshBorder 会先把那个旧 hwnd 描成 focus 色，要等一轮轮询才纠正）
+        this.FocusHwnd := 0
+        try this.FocusHwnd := WinGetID("A")
         this.RebuildOrder()
+        this.SeedOrderByPosition()    ; 首次进入按屏幕位置定序（回答.md Q6）
         this.AutoTile()
         this.RefreshBorder()
         this.LogSlotTables()          ; 把各屏槽位表写进日志，便于核对
@@ -5883,6 +5888,59 @@ class WTM {
             }
         }
         this.TileOrder := newOrder
+    }
+
+    ; -- 首次进入时按屏幕位置播种顺序 / Seed the initial order by screen position --
+    ; 需求（回答.md Q6）：初次进入按窗口在屏幕上的位置定序。
+    ; 不用 Z 序：WinGetList 返回的是"最上层优先"，直接拿去当槽位顺序，
+    ; 结果就是哪个窗口恰好在最前面就占槽位 1，看起来完全随机。
+    ; 排序键：显示器 → 行的中线 y → 左边 x，即"从上到下、从左到右"。
+    ; 只在进入模式那一次跑；之后的顺序一律由槽位交换维护。
+    static SeedOrderByPosition() {
+        rows := []
+        for hwnd in GetVisibleWindow() {
+            if this.Excluded.Has(hwnd)
+                continue
+            if !IsTilableWindow(hwnd)
+                continue
+            try {
+                if (WinGetMinMax(hwnd) = -1)
+                    continue
+                WinGetPos(&x, &y, &w, &h, hwnd)
+            } catch {
+                continue
+            }
+            m := 1
+            try m := GetMonitorIndex(hwnd)
+            rows.Push({hwnd: hwnd, m: m, cx: x + w / 2, cy: y + h / 2})
+        }
+        ; 插入排序（窗口数是个位数，手写比 Array.Sort 回调少一层版本差异风险）
+        Loop (rows.Length - 1) {
+            i := A_Index + 1
+            me := rows[i]
+            j := i - 1
+            while (j >= 1) {
+                if !this._PosAfter(rows[j], me)
+                    break
+                rows[j + 1] := rows[j]
+                j -= 1
+            }
+            rows[j + 1] := me
+        }
+        order := []
+        for r in rows
+            order.Push(r.hwnd)
+        this.TileOrder := order
+    }
+
+    ; -- a 是否应排在 b 之后 / Whether a sorts after b --
+    ; 纯字典序（显示器 → cy → cx），不做容差：容差会让比较失去传递性。
+    static _PosAfter(a, b) {
+        if (a.m != b.m)
+            return a.m > b.m
+        if (a.cy != b.cy)
+            return a.cy > b.cy
+        return a.cx > b.cx
     }
 
     ; -- 自动平铺 / Auto-tile all monitors --
