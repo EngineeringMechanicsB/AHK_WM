@@ -13,8 +13,14 @@ try FileDelete(OUT)
 Log(s) => FileAppend(s "`n", OUT, "UTF-8")
 
 ; 未捕获异常必须留下痕迹并给出非零退出码（否则测试会静默通过）
+; 注意：处理函数自己绝不能再抛出，否则 AHK 会弹错误对话框。
+; （踩过一次：把 stdout 重定向到 OUT 同一路径导致文件被占用，
+;   FileAppend 抛 error 32，对话框就弹出来了。）
 ErrHandler(err, mode) {
-    FileAppend("UNCAUGHT: " err.Message " @ " err.File ":" err.Line "`n", OUT, "UTF-8")
+    msg := "UNCAUGHT: " err.Message " @ " err.File ":" err.Line "`n"
+    try FileAppend(msg, OUT, "UTF-8")
+    catch
+        try FileAppend(msg, A_ScriptDir "\test_slots.err.txt", "UTF-8")
     ExitApp(3)
 }
 OnError(ErrHandler)
