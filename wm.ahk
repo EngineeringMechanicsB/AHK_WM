@@ -1394,6 +1394,7 @@ RegisterAllHotkeys() {
     RegHotkey("WinSelect", (*) => WinSelect.Start())
 
     RegHotkey("WTMToggle",     (*) => WTM.Toggle())
+    RegHotkey("WTMFull",       (*) => WTM.ToggleFull())
     RegHotkey("WTMFocusLeft",  (*) => WTM.FocusDir("L"))
     RegHotkey("WTMFocusDown",  (*) => WTM.FocusDir("D"))
     RegHotkey("WTMFocusUp",    (*) => WTM.FocusDir("U"))
@@ -1967,6 +1968,7 @@ WTMMoveLeft=Alt+Shift+H
 WTMMoveDown=Alt+Shift+J
 WTMMoveUp=Alt+Shift+K
 WTMMoveRight=Alt+Shift+L
+WTMFull=Alt+Shift+F
     )"
 
     if !FileExist(ConfigFile) {
@@ -2214,7 +2216,7 @@ WTMMoveRight=Alt+Shift+L
                "LaunchTerminal","EditFile","PowerMenu","ClipboardHistory",
                "DragMove","DragResize","PieMenuTrigger","WinSelect",
                "WTMToggle","WTMFocusLeft","WTMFocusDown","WTMFocusUp","WTMFocusRight",
-               "WTMMoveLeft","WTMMoveDown","WTMMoveUp","WTMMoveRight"]
+               "WTMMoveLeft","WTMMoveDown","WTMMoveUp","WTMMoveRight","WTMFull"]
     hkDefaults := Map(
         "Help","Alt+/","Exit","Alt+F12","Reload","Alt+R",
         "DesktopSwitchPrefix","Alt","DesktopMovePrefix","Alt+Shift","DesktopMoveSwitchPrefix","Ctrl+Alt",
@@ -2230,7 +2232,8 @@ WTMMoveRight=Alt+Shift+L
         "WTMToggle","Alt+Shift+D",
         "WTMFocusLeft","Alt+H","WTMFocusDown","Alt+J","WTMFocusUp","Alt+K","WTMFocusRight","Alt+L",
         "WTMMoveLeft","Alt+Shift+H","WTMMoveDown","Alt+Shift+J",
-        "WTMMoveUp","Alt+Shift+K","WTMMoveRight","Alt+Shift+L"
+        "WTMMoveUp","Alt+Shift+K","WTMMoveRight","Alt+Shift+L",
+        "WTMFull","Alt+Shift+F"
     )
     for k in hkKeys {
         raw := IniRead(ConfigFile, "Hotkeys", k, hkDefaults[k])
@@ -2390,6 +2393,7 @@ ShowHelpGui(*) {
         [PrefP("WTMToggle"),                  "Toggle WTM Tiling Mode"],
         [PrefP("WTMFocusLeft") . " / J / K / L",      "WTM Focus (H/J/K/L)"],
         [PrefP("WTMMoveLeft")  . " / J / K / L",      "WTM Move/Swap (Shift+HJKL)"],
+        [PrefP("WTMFull"),                    "WTM Fullscreen (keep bar+border)"],
         [PrefP("WinSelect"),                  "Window Select Mode"],
         [PrefP("ToggleAllBorders"),           "Toggle All Window Borders"],
         [PrefP("DragMove"),                   "Drag Move Window"],
@@ -5793,7 +5797,8 @@ class WTM {
     static _SlowAccum := 0          ; 慢速轮询累加（ms，按真实经过时间计）
     static _LastTick  := 0          ; 上次 tick 的 A_TickCount
     static _FsMon     := Map()      ; 各显示器是否有"真全屏"窗口（慢速刷新）
-    static SoloMon    := Map()      ; monIdx → hwnd：最大化单人模式
+    static SoloMon    := Map()      ; monIdx → hwnd：单人模式（该屏只留这一个窗口）
+    static SoloManual := Map()      ; monIdx → true：手动全屏（WTMFull），窗口不最大化
     static SoloHidden := Map()      ; solo 期间被隐藏的窗口（退出时复原）
     static Anim       := Map()      ; hwnd → 动画状态
     static AnimStarted := false
@@ -5821,6 +5826,7 @@ class WTM {
         this._SlowAccum  := 0
         this._FsMon      := Map()
         this.SoloMon     := Map()
+        this.SoloManual  := Map()
         this.SoloHidden  := Map()
         this._StopAnim()
         ; 进入时以当前活动窗口为焦点，避免沿用上次会话留下的过期 hwnd
@@ -6022,11 +6028,19 @@ class WTM {
     ; -- 重算并摆放某显示器 / Re-place one monitor (no direct WinMove here) --
     static _RePlace(monIdx, wins := 0, animate := true) {
         global TileSink
-        ; 真全屏或单人(solo)模式下该显示器交给系统，不参与平铺
-        if this.SoloMon.Has(monIdx)
-            return
+        ; 真全屏 → 整块屏交给系统，不参与平铺
         if (this._FsMon.Has(monIdx) && this._FsMon[monIdx])
             return
+        if this.SoloMon.Has(monIdx) {
+            if (this.SoloManual.Has(monIdx) && this.SoloManual[monIdx]) {
+                ; 手动全屏：窗口没被最大化，就把"只有它一个窗口"的布局铺满整屏
+                ; （照样尊重 bar 与 WTM_Gap），视觉上就是"只开一个窗口进的 WTM"
+                wins := [this.SoloMon[monIdx]]
+            } else {
+                ; 自动 solo：窗口已被系统最大化，位置交给系统，脚本不插手
+                return
+            }
+        }
         if (wins = 0) {
             wins := []
             for hwnd in this.TileOrder {
@@ -6315,6 +6329,12 @@ class WTM {
     static FocusDir(dir) {
         if !this.Active
             return
+        ; 全屏(solo)下先退出，否则方向键会去聚焦"被隐藏"的窗口（屏幕上什么都不会动）
+        if (this.SoloMon.Count > 0) {
+            this._LeaveSoloAndRestore()
+            this.AutoTile()
+            this.RefreshBorder()
+        }
         this.RebuildOrder()
         if (this.TileOrder.Length = 0)
             return
@@ -6338,8 +6358,8 @@ class WTM {
     static MoveDir(dir) {
         if !this.Active
             return
-        if (this.SoloMon.Count > 0) {      ; 单人(最大化)模式下先退出该模式
-            this._ExitSolo()
+        if (this.SoloMon.Count > 0) {      ; 全屏(solo)模式下先退出该模式
+            this._LeaveSoloAndRestore()    ; 含还原最大化，否则会被慢检查立刻判回 solo
             this.AutoTile()
         }
         this.RebuildOrder()
@@ -6568,7 +6588,9 @@ class WTM {
     }
 
     ; -- 确保边框存在 / Ensure a border frame exists --
-    static EnsureBorder(hwnd) {
+    ; state 决定"新建时用什么颜色"：新窗口天生就是目标颜色，不依赖事后重绘。
+    static EnsureBorder(hwnd, state := "unfocus") {
+        col := (state = "focus") ? Border_FocusColor : Border_UnfocusColor
         if this.BorderMap.Has(hwnd) {
             ; 自愈：边框 GUI 可能已经被外部销毁（脚本重载、错绑 owner 后目标关窗、
             ; 别的边框所有者清场）。这时 Map 里还留着条目，Place 会静默失败 ——
@@ -6581,9 +6603,9 @@ class WTM {
             this.RemoveBorder(hwnd)
         }
         if WTM_Debug
-            WMLog("WTM border + " hwnd " (n=" this.BorderMap.Count + 1 ")")
-        this.BorderMap[hwnd]   := BorderFrame(Border_UnfocusColor, Border_Opacity)
-        this.BorderState[hwnd] := "unfocus"
+            WMLog("WTM border + " hwnd " " state " (n=" this.BorderMap.Count + 1 ")")
+        this.BorderMap[hwnd]   := BorderFrame(col, Border_Opacity)
+        this.BorderState[hwnd] := state
     }
 
     ; -- 移除边框 / Remove a border frame --
@@ -6623,20 +6645,28 @@ class WTM {
     }
 
     ; -- 边框颜色切换 / Set a border's focus state color --
+    ; 不要用"改背景色 + WinRedraw"：边框窗口是 +E0x20(WS_EX_TRANSPARENT) 且
+    ; 经 WinSetTransparent 变成分层窗口，这个组合下重绘不保证发生，DWM 会一直
+    ; 复用旧的窗口表面 —— 正是"刚聚焦过的那个窗口边框一直停在聚焦色、
+    ; 退不回未聚焦色"的成因（改色和重绘都发生在脚本里，屏幕上却没变）。
+    ; 改成**换一个边框窗口**：新窗口在构造时就带目标颜色，不依赖任何重绘时机。
+    ; 只在焦点状态真的变化时发生（用户操作级），不是每 tick。
     static _SetBorderColor(hwnd, state) {
         if !this.BorderMap.Has(hwnd)
             return
-        ; 不拿 BorderState 当"已设置过"的判据：那个缓存一旦和边框真实颜色脱钩
-        ; （比如边框被重建过），颜色就永久卡死不再切换 —— 正是"聚焦过的窗口
-        ; 一直是高亮边框、退回不了未聚焦色"的成因。这里直接交给 SetColor，
-        ; 它自己会在颜色相同时立刻返回，所以每次都调零成本。
+        if (this.BorderState.Has(hwnd) && this.BorderState[hwnd] = state)
+            return
         col := (state = "focus") ? Border_FocusColor : Border_UnfocusColor
-        if WTM_Debug {
-            if (!this.BorderState.Has(hwnd) || this.BorderState[hwnd] != state)
-                WMLog("WTM bordercolor " hwnd " -> " state)
+        bf  := this.BorderMap[hwnd]
+        if (bf.Color = col) {                 ; 颜色本来就对，只补状态记录
+            this.BorderState[hwnd] := state
+            return
         }
-        this.BorderMap[hwnd].SetColor(col)
+        if WTM_Debug
+            WMLog("WTM bordercolor " hwnd " -> " state " (换边框)")
+        this.BorderMap[hwnd]   := BorderFrame(col, Border_Opacity)
         this.BorderState[hwnd] := state
+        try bf.Destroy()                      ; 旧窗口最后销毁（不留残影）
     }
 
     ; -- 边框同步（增量 diff，绝不全毁全建）/ Incremental border sync --
@@ -6685,9 +6715,11 @@ class WTM {
                 this.RemoveBorder(hwnd)
         }
         ; ② 缺失的 → 创建；颜色 / 几何按需更新
+        ; 先算好状态再建：新建边框直接就是目标颜色，省掉一次改色/重建。
         for hwnd, _ in want {
-            this.EnsureBorder(hwnd)
-            this._SetBorderColor(hwnd, (hwnd = this.FocusHwnd) ? "focus" : "unfocus")
+            st := (hwnd = this.FocusHwnd) ? "focus" : "unfocus"
+            this.EnsureBorder(hwnd, st)
+            this._SetBorderColor(hwnd, st)
             _BorderPlaceFrame(this.BorderMap, hwnd)
         }
         ; ③ 诊断：只在"边框集合或焦点"变化时写一行（WTM_Debug=on 才开）
@@ -6726,8 +6758,9 @@ class WTM {
         } catch {
             return
         }
-        this.EnsureBorder(hwnd)
-        this._SetBorderColor(hwnd, hwnd = focusH ? "focus" : "unfocus")
+        st := hwnd = focusH ? "focus" : "unfocus"
+        this.EnsureBorder(hwnd, st)
+        this._SetBorderColor(hwnd, st)
         _BorderPlaceFrame(this.BorderMap, hwnd)
     }
 
@@ -6760,9 +6793,16 @@ class WTM {
         ; ② 单人模式
         for m, _ in this._MonitorsOfOrder() {
             if this.SoloMon.Has(m) {
-                solo := this.SoloMon[m]
+                solo   := this.SoloMon[m]
+                manual := (this.SoloManual.Has(m) && this.SoloManual[m])
                 ok := false
-                try ok := (WinExist(solo) && WinGetMinMax(solo) = 1 && this._OrderIndex(solo))
+                try {
+                    if manual
+                        ; 手动全屏：窗口不最大化，只要求它还在、还没被最小化、仍在平铺集合里
+                        ok := (WinExist(solo) && WinGetMinMax(solo) != -1 && this._OrderIndex(solo))
+                    else
+                        ok := (WinExist(solo) && WinGetMinMax(solo) = 1 && this._OrderIndex(solo))
+                }
                 if !ok {
                     this._ExitSolo(m)
                     changed := true
@@ -6794,6 +6834,34 @@ class WTM {
     }
 
     ; -- 进入单人模式 / Enter solo mode on a monitor --
+    ; manual=true：手动全屏（WTMFull），窗口保持普通状态，由 WTM 自己铺满平铺区域；
+    ; manual=false：自动 solo，窗口是被系统最大化的，位置交给系统。
+    static _EnterSoloWith(monIdx, target, manual := false) {
+        if (!target || !WinExist(target))
+            return false
+        if this.SoloHidden.Has(target)
+            return false
+        this.SoloMon[monIdx]    := target
+        this.SoloManual[monIdx] := manual
+        for hwnd in this.TileOrder {
+            if (hwnd = target)
+                continue
+            if this.SoloHidden.Has(hwnd)
+                continue
+            m := 1
+            try m := GetMonitorIndex(hwnd)
+            if (m != monIdx)
+                continue
+            try {
+                ; 用 SW_HIDE 而不是最小化：最小化会被槽位回收，隐藏不会
+                DllCall("ShowWindow", "Ptr", hwnd, "Int", 0)
+                this.SoloHidden[hwnd] := monIdx
+            }
+        }
+        return true
+    }
+
+    ; -- 自动 solo：该屏上有被最大化的窗口 -- / Auto solo: a maximized window on that monitor --
     static _EnterSoloOn(monIdx) {
         target := 0
         for hwnd in this.TileOrder {
@@ -6816,23 +6884,7 @@ class WTM {
         }
         if !target
             return false
-        this.SoloMon[monIdx] := target
-        for hwnd in this.TileOrder {
-            if (hwnd = target)
-                continue
-            if this.SoloHidden.Has(hwnd)
-                continue
-            m := 1
-            try m := GetMonitorIndex(hwnd)
-            if (m != monIdx)
-                continue
-            try {
-                ; 用 SW_HIDE 而不是最小化：最小化会被槽位回收，隐藏不会
-                DllCall("ShowWindow", "Ptr", hwnd, "Int", 0)
-                this.SoloHidden[hwnd] := monIdx
-            }
-        }
-        return true
+        return this._EnterSoloWith(monIdx, target, false)
     }
 
     ; -- 退出单人模式并复原隐藏窗口 / Leave solo mode, restore hidden windows --
@@ -6851,10 +6903,52 @@ class WTM {
         if onlyMon {
             if this.SoloMon.Has(onlyMon)
                 this.SoloMon.Delete(onlyMon)
+            if this.SoloManual.Has(onlyMon)
+                this.SoloManual.Delete(onlyMon)
         } else {
-            this.SoloMon := Map()
+            this.SoloMon    := Map()
+            this.SoloManual := Map()
         }
         this._Placed := Map()      ; 强制下一轮重新摆放
+    }
+
+    ; -- 退出单人模式并还原窗口状态 / Leave solo and un-maximize --
+    ; 必须把"被最大化"的窗口还原：自动 solo 的判据就是"窗口处于最大化"，
+    ; 只调 _ExitSolo 的话下一轮慢检查会立刻又把它判成 solo，退出等于没退。
+    static _LeaveSoloAndRestore() {
+        for m, h in this.SoloMon.Clone() {
+            try {
+                if (WinExist(h) && WinGetMinMax(h) = 1)
+                    WinRestore(h)
+            }
+        }
+        this._ExitSolo()
+    }
+
+    ; -- 手动全屏（保留 bar 与边框）/ Manual fullscreen for the focused window --
+    ; 与 WTM 里"该屏只有一个窗口"完全一致：其它窗口隐藏，聚焦窗口铺满平铺区域。
+    static ToggleFull() {
+        if !this.Active
+            return
+        if (this.SoloMon.Count > 0) {
+            this._LeaveSoloAndRestore()
+            this.AutoTile()
+            this.RefreshBorder()
+            ShowOSD("WTM Full: OFF")
+            return
+        }
+        cur := this._OrderIndex(this.FocusHwnd) ? this.FocusHwnd : 0
+        if !cur
+            return
+        m := 1
+        try m := GetMonitorIndex(cur)
+        if (m < 1)
+            m := 1
+        if !this._EnterSoloWith(m, cur, true)
+            return
+        this.AutoTile()
+        this.RefreshBorder()
+        ShowOSD("WTM Full: ON")        ; 不挪鼠标：全屏是布局操作，不该顺手把光标拽走
     }
 
     ; ==========================================================================
