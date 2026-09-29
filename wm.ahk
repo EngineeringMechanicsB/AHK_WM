@@ -5870,6 +5870,9 @@ class WTM {
                 if fi
                     ins := fi
             }
+            ; 焦点位置之后可能已有窗口消失，索引必须夹住：
+            ; InsertAt 的索引 > 长度+1 会抛 "Parameter #1 ... is invalid"
+            ins := Min(ins, newOrder.Length)
             for hwnd, _ in alive {
                 if ins {
                     newOrder.InsertAt(ins + 1, hwnd)
@@ -5953,22 +5956,29 @@ class WTM {
             if (animate && WTM_AnimMs > 0)
                 this._AnimMove(r.hwnd, r.x, r.y, r.w, r.h)
             else {
-                this.Anim.Delete(r.hwnd)
+                this._AnimDrop(r.hwnd)
                 MoveWinTo(r.hwnd, r.x, r.y, r.w, r.h)
             }
         }
     }
 
+    ; -- 安全移除动画项 / Drop an animation entry if present --
+    ; Map.Delete 对不存在的键会抛 "Item has no value"，所以一律先判存在。
+    static _AnimDrop(hwnd) {
+        if this.Anim.Has(hwnd)
+            this.Anim.Delete(hwnd)
+    }
+
     ; -- 平铺动画 / Smooth move --
     static _AnimMove(hwnd, tx, ty, tw, th) {
         if (WTM_AnimMs <= 0) {
-            this.Anim.Delete(hwnd)
+            this._AnimDrop(hwnd)
             MoveWinTo(hwnd, tx, ty, tw, th)
             return
         }
         try {
             if (WinGetMinMax(hwnd) != 0) {   ; 最大化/最小化不做动画
-                this.Anim.Delete(hwnd)
+                this._AnimDrop(hwnd)
                 MoveWinTo(hwnd, tx, ty, tw, th)
                 return
             }
@@ -5977,7 +5987,7 @@ class WTM {
             return
         }
         if (cx = tx && cy = ty && cw = tw && ch = th) {
-            this.Anim.Delete(hwnd)
+            this._AnimDrop(hwnd)
             return
         }
         this.Anim[hwnd] := {x0: cx, y0: cy, w0: cw, h0: ch
@@ -5999,22 +6009,22 @@ class WTM {
         now := A_TickCount
         for hwnd, a in this.Anim.Clone() {
             if !WinExist(hwnd) {
-                this.Anim.Delete(hwnd)
+                this._AnimDrop(hwnd)
                 continue
             }
             p := (now - a.t0) / a.dur
             if (p >= 1) {
-                this.Anim.Delete(hwnd)
+                this._AnimDrop(hwnd)
                 try MoveWinTo(hwnd, a.x1, a.y1, a.w1, a.h1)
                 continue
             }
             try {
                 if (WinGetMinMax(hwnd) != 0) {
-                    this.Anim.Delete(hwnd)
+                    this._AnimDrop(hwnd)
                     continue
                 }
             } catch {
-                this.Anim.Delete(hwnd)
+                this._AnimDrop(hwnd)
                 continue
             }
             e := 1 - (1 - p) ** 3          ; ease-out cubic
