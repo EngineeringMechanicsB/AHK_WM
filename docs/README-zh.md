@@ -34,6 +34,7 @@
 - [📸 截图](#-截图)
 - [📦 安装](#-安装)
 - [🚀 快速上手](#-快速上手)
+- [⌨️ WTM 模式](#️-wtm-模式)
 - [🧰 详细功能](#-详细功能)
 - [🔌 外部接口](#-外部接口)
 - [⚙️ 配置](#️-配置)
@@ -123,6 +124,19 @@
 
 <p align="center">
   <img src="images/sep-drag.svg" alt="" width="85%">
+</p>
+
+---
+
+## ⌨️ WTM 模式
+
+WTM 是键盘驱动的平铺模式，用法参考 Hyprland。`Alt + Shift + D` 一次性把每块屏都铺好，布局走你的 `[Tiling] Rules`（那块屏没写规则就用内置算法）。`Alt + H/J/K/L` 移动焦点，`Alt + Shift + H/J/K/L` 把焦点窗口和该方向的邻居对调，窗口拖到别的槽位上也能交换。
+
+窗口位置存的是归一化分数坐标而不是像素矩形，所以一次交换只动相关的那两个窗口，屏幕上其它窗口不会跟着跳。`Alt + Shift + F` 保留状态栏和边框、只留焦点窗口；真全屏或被最大化的窗口只暂停那一块屏的平铺。`[Tiling] WTMGap` 管 WTM 专用间隙，`[Tiling] AnimationDuration` 打开移动动画。
+
+<!-- 这里放 GIF：把下面的 src 换成你自己的 gif 路径即可 -->
+<p align="center">
+  <img src="images/wtm-mode.gif" alt="WTM 模式" width="85%">
 </p>
 
 ---

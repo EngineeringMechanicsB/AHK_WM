@@ -5,7 +5,7 @@ Persistent
 ; OSD 示例 — 按键显示（屏幕左下角显示当前按下的键）
 ; ==============================================================================
 ;
-; 【功能】像教程视频那样，在屏幕角落实时显示当前按下的所有按键，松开即消失。
+; 【功能】像教程视频那样，在屏幕角落实时显示当前按下的所有按键，松开后停留一会儿再消失。
 ;
 ; 【前提】1. wm.ahk 正在运行  2. 本脚本保持运行
 ;
@@ -13,10 +13,12 @@ Persistent
 ;   每 30ms 用 GetKeyState(键名, "P") 轮询一遍键表，拼出"Ctrl + Alt + A"这样的文字；
 ;   只有内容变化时才发 OSD，避免无意义刷新。浮层用 duration=0 + tag=keycast，
 ;   所以永远只存在一个实例（同 tag 的新 OSD 会替换旧的）。
-;   没有按键时发送一个移到屏幕外的空浮层 —— 等价于"隐藏"，不会留下残影。
+;   全部松开后不立即消失，而是重发一次带 HOLD_MS 时长的同内容浮层，到点由 wm.ahk 自己销毁；
+;   这段停留期内再按键就直接替换，所以连续操作不会一闪一闪。
 ;
 ; 【自定义】
 ;   POLL_MS       轮询间隔（ms）。越小越跟手，越大越省 CPU
+;   HOLD_MS       松开后浮层停留多久（ms）。觉得消失太快就加大
 ;   OVERLAY_POS   浮层位置，px 或百分比。默认左下角
 ;   OVERLAY_STYLE 外观选项：字体/颜色/不透明度/圆角等
 ;   想改显示哪些键，直接改下面的 MODS 和 KEYS 两张表
@@ -26,6 +28,7 @@ Persistent
 
 ; ---- 可调参数 ----
 global POLL_MS       := 30
+global HOLD_MS       := 1200
 global OVERLAY_POS   := "x=16%,y=88%"
 global OVERLAY_STYLE := "fs=22,op=92,rd=on,rr=10,tag=keycast"
 
@@ -61,10 +64,12 @@ global KEYS := Map(
 global HIDE_OPTS := "x=-4000,y=-4000,fs=8,op=1,rd=on,rr=10,tag=keycast"
 
 ; ---- 主循环 ----
-global LAST_TEXT := " "   ; 初值 = 空状态，启动时不发任何 OSD
+global LAST_TEXT  := ""      ; 当前浮层内容，"" = 屏幕上什么都没有
+global LAST_FIXED := false   ; 当前浮层是不是"按住期间"的常驻状态
 
 Tick() {
-    global MOD_ORDER, MODS, KEYS, LAST_TEXT, OVERLAY_POS, OVERLAY_STYLE, HIDE_OPTS
+    global MOD_ORDER, MODS, KEYS, LAST_TEXT, LAST_FIXED
+    global HOLD_MS, OVERLAY_POS, OVERLAY_STYLE
 
     parts := []
     for name in MOD_ORDER {
@@ -81,10 +86,11 @@ Tick() {
     }
 
     if (parts.Length = 0) {
-        if (LAST_TEXT = " ")
+        ; 全部松开：把常驻浮层换成"HOLD_MS 后自动消失"，只做这一次
+        if (LAST_TEXT = "" || !LAST_FIXED)
             return
-        if AHK_WM_OSD(" ", 0, HIDE_OPTS)
-            LAST_TEXT := " "
+        if AHK_WM_OSD(LAST_TEXT, HOLD_MS, OVERLAY_POS "," OVERLAY_STYLE)
+            LAST_FIXED := false
         return
     }
 
@@ -92,10 +98,12 @@ Tick() {
     for p in parts
         text .= (text = "" ? "" : " + ") . p
 
-    if (text = LAST_TEXT)
+    if (text = LAST_TEXT && LAST_FIXED)
         return
-    if AHK_WM_OSD(text, 0, OVERLAY_POS "," OVERLAY_STYLE)
-        LAST_TEXT := text
+    if AHK_WM_OSD(text, 0, OVERLAY_POS "," OVERLAY_STYLE) {
+        LAST_TEXT  := text
+        LAST_FIXED := true
+    }
 }
 
 ; ---- 退出前先收掉浮层（duration=0 的 OSD 不会自己消失）----

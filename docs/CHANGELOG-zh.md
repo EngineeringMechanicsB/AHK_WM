@@ -2,95 +2,95 @@
 
 ### v2.11.0 (2026-09-29)
 
-- 🆕 **WTM 改为分数槽位模型** — WTM 不再自己算布局：进入模式即调用与智能平铺同一个入口 `TileWindowsOnMonitor`（优先 `[Tiling] Rules` 自定义规则，否则内置算法）。每个窗口在每块屏幕上的位置表达为归一化分数跨度 `{xlo,xhi,ylo,yhi,cx,cy,xfull,yfull}`，移动/交换全部在这张"槽位表"上做纯数学比较，不读像素
-- 🆕 **方向移动/交换（Hyprland 风格）** — `Alt+Shift+H/J/K/L` 把焦点窗口换到该方向的邻居：① 只取主轴严格更远的槽位 ② 主轴差最小 ③ 并列则副轴差最小 ④ 仍并列取副轴差为负（偏上/偏左）；跨度在 0..1 满轴的窗口不能沿该轴移动，落到跨屏分支
-- 🆕 **只动两个窗口** — 交换只对调 `TileOrder` 里的两个槽位再按槽位重铺，其余窗口矩形完全不变（不再是"整屏按新顺序重排"）
-- 🆕 **拖拽交换** — 拖拽窗口到某槽位中心附近时与该槽位交换（跨显示器亦可）
-- 🆕 **全屏/最大化处理** — 真全屏（覆盖 bar）暂停该屏平铺并隐藏其边框；最大化进入"单人模式"：保留 bar 与边框、`SW_HIDE` 同屏其它窗口，只让该窗口参与平铺，取消最大化即完全复原
-- 🆕 **边框增量 diff 同步** — 边框不再"焦点一变就全销毁重建"：只有多余/缺失的才创建或销毁，几何与颜色按需更新，一个窗口恒对应一个边框；`RefreshBorder` 是唯一的"销毁多余边框"入口
-- 🆕 **移动动画** — `[Tiling] AnimationDuration`（毫秒，`0` = 关闭）控制移动/交换的缓动动画（ease-out cubic，单定时器 12ms 步进）
-- 🆕 **`[Tiling] WTMGap`** — WTM 专用平铺间隙，与 `Gap` 解耦（缺省沿用 `[Border] Gap`）；WTM 传 `useDwmComp=false`，边框贴合 DWM 可视矩形
-- 🐛 **修掉"焦点一变就重建边框"** — 旧实现每次焦点变化销毁并重建全部边框 GUI，是"边框卡住/不消失/重复绘制"的直接原因
-- 🐛 **轮询改为两速 + 真实时间累加** — 快速档（边框跟随 + 焦点）每 `Border_RefreshMs`，慢速档（成员变化 / 外部漂移 / 全屏判定）约 250ms；累加改用 `A_TickCount` 真实间隔（原先按标称周期累加，`RefreshMs=0` 被钳到 1ms 时慢速档会慢十几倍）。`AllBorders` 同步修正
-- 🐛 **窗口被拖到别的显示器** — 漂移检测现在同时重铺"原显示器"，不再在原处留下空洞
-- 🐛 **浮动窗口不再被搬走** — `Alt+Shift+H/J/K/L` 的焦点落在浮动/被排除窗口上时不再动作（旧实现会把它搬到相邻显示器）
-- 🐛 **重载/退出复原隐藏窗口** — 单人模式 `SW_HIDE` 的窗口在脚本重载时会被复原（`OnExit` 清理），避免窗口永久不可见
-- 🧪 **新增纯函数测试台** — `tools/mk_testslots.sh` 从 `wm.ahk` 原样抽取 `ParseAxis`/`SlotFromSpan`/`PickSlotFromTable` 等，独立运行验证方向选择（36 项断言，含 7 窗口样例的四方向完整表）
-- 📚 **文档修正** — README 里 WTM 快捷键由 `Ctrl+Alt+T` 更正为默认 `Alt+Shift+D`（焦点 `Alt+H/J/K/L`、交换 `Alt+Shift+H/J/K/L`）；`[Border] Gap` 说明标注为 WTM 间隙的旧位置
-- 🐛 **边框逐帧跟随动画窗口** — 移动/交换动画进行时，每一帧都重读目标窗口的真实矩形并重绘其边框，未聚焦窗口不再滞后于所属窗口
-- 🐛 **孤儿边框回收** — 边框窗口带 `AHKWM_BORDER` 标题（永不显示，仅作标记）；`WTM.SweepOrphanBorders` 会把本进程内连续两轮都不在任何边框表里的窗口销毁，遗留边框不再长期挂在屏幕上
-- 🐛 **单人模式/全屏改为按显示器处理** — `Alt+Shift+F` 与最大化的进入和退出只作用于焦点窗口所在的那块屏，其它屏的布局、边框与单人状态不受影响
-- 🆕 **`osd-keycast.ahk` 示例（中英各一份）** — 屏幕左下角显示当前按下的按键；轮询 `GetKeyState(键名,"P")`，只在按键集合变化时重发，用 `duration=0` + `tag=keycast` 保证同时只存在一个浮层；`Ctrl+Alt+F12` 退出并清除浮层（它的 `OnExit` 回调不返回任何值——返回非零会让 AHK v2 退不掉）
-- 📚 **示例配置刷新** — `docs/Examples/example-configs/wm_config.ini` 更新到当前键集（`WTMFull`、`WTMGap`、`AnimationDuration`、`WTMDebug`、带 `#` 的颜色），并把个人路径替换为通用路径
+- **WTM 改为分数槽位模型** — WTM 不再自己算布局：进入模式即调用与智能平铺同一个入口 `TileWindowsOnMonitor`（优先 `[Tiling] Rules` 自定义规则，否则内置算法）。每个窗口在每块屏幕上的位置表达为归一化分数跨度 `{xlo,xhi,ylo,yhi,cx,cy,xfull,yfull}`，移动/交换全部在这张"槽位表"上做纯数学比较，不读像素
+- **方向移动/交换（Hyprland 风格）** — `Alt+Shift+H/J/K/L` 把焦点窗口换到该方向的邻居：① 只取主轴严格更远的槽位 ② 主轴差最小 ③ 并列则副轴差最小 ④ 仍并列取副轴差为负（偏上/偏左）；跨度在 0..1 满轴的窗口不能沿该轴移动，落到跨屏分支
+- **只动两个窗口** — 交换只对调 `TileOrder` 里的两个槽位再按槽位重铺，其余窗口矩形完全不变（不再是"整屏按新顺序重排"）
+- **拖拽交换** — 拖拽窗口到某槽位中心附近时与该槽位交换（跨显示器亦可）
+- **全屏/最大化处理** — 真全屏（覆盖 bar）暂停该屏平铺并隐藏其边框；最大化进入"单人模式"：保留 bar 与边框、`SW_HIDE` 同屏其它窗口，只让该窗口参与平铺，取消最大化即完全复原
+- **边框增量 diff 同步** — 边框不再"焦点一变就全销毁重建"：只有多余/缺失的才创建或销毁，几何与颜色按需更新，一个窗口恒对应一个边框；`RefreshBorder` 是唯一的"销毁多余边框"入口
+- **移动动画** — `[Tiling] AnimationDuration`（毫秒，`0` = 关闭）控制移动/交换的缓动动画（ease-out cubic，单定时器 12ms 步进）
+- **`[Tiling] WTMGap`** — WTM 专用平铺间隙，与 `Gap` 解耦（缺省沿用 `[Border] Gap`）；WTM 传 `useDwmComp=false`，边框贴合 DWM 可视矩形
+- **修掉"焦点一变就重建边框"** — 旧实现每次焦点变化销毁并重建全部边框 GUI，是"边框卡住/不消失/重复绘制"的直接原因
+- **轮询改为两速 + 真实时间累加** — 快速档（边框跟随 + 焦点）每 `Border_RefreshMs`，慢速档（成员变化 / 外部漂移 / 全屏判定）约 250ms；累加改用 `A_TickCount` 真实间隔（原先按标称周期累加，`RefreshMs=0` 被钳到 1ms 时慢速档会慢十几倍）。`AllBorders` 同步修正
+- **窗口被拖到别的显示器** — 漂移检测现在同时重铺"原显示器"，不再在原处留下空洞
+- **浮动窗口不再被搬走** — `Alt+Shift+H/J/K/L` 的焦点落在浮动/被排除窗口上时不再动作（旧实现会把它搬到相邻显示器）
+- **重载/退出复原隐藏窗口** — 单人模式 `SW_HIDE` 的窗口在脚本重载时会被复原（`OnExit` 清理），避免窗口永久不可见
+- **新增纯函数测试台** — `tools/mk_testslots.sh` 从 `wm.ahk` 原样抽取 `ParseAxis`/`SlotFromSpan`/`PickSlotFromTable` 等，独立运行验证方向选择（36 项断言，含 7 窗口样例的四方向完整表）
+- **文档修正** — README 里 WTM 快捷键由 `Ctrl+Alt+T` 更正为默认 `Alt+Shift+D`（焦点 `Alt+H/J/K/L`、交换 `Alt+Shift+H/J/K/L`）；`[Border] Gap` 说明标注为 WTM 间隙的旧位置
+- **边框逐帧跟随动画窗口** — 移动/交换动画进行时，每一帧都重读目标窗口的真实矩形并重绘其边框，未聚焦窗口不再滞后于所属窗口
+- **孤儿边框回收** — 边框窗口带 `AHKWM_BORDER` 标题（永不显示，仅作标记）；`WTM.SweepOrphanBorders` 会把本进程内连续两轮都不在任何边框表里的窗口销毁，遗留边框不再长期挂在屏幕上
+- **单人模式/全屏改为按显示器处理** — `Alt+Shift+F` 与最大化的进入和退出只作用于焦点窗口所在的那块屏，其它屏的布局、边框与单人状态不受影响
+- **`osd-keycast.ahk` 示例（中英各一份）** — 屏幕左下角显示当前按下的按键；轮询 `GetKeyState(键名,"P")`，只在按键集合变化时重发，用 `duration=0` + `tag=keycast` 保证同时只存在一个浮层；`Ctrl+Alt+F12` 退出并清除浮层（它的 `OnExit` 回调不返回任何值——返回非零会让 AHK v2 退不掉）
+- **示例配置刷新** — `docs/Examples/example-configs/wm_config.ini` 更新到当前键集（`WTMFull`、`WTMGap`、`AnimationDuration`、`WTMDebug`、带 `#` 的颜色），并把个人路径替换为通用路径
 
 ### v2.10.2 (2026-07-31)
 
-- 🐛 **PinBorder Z 序修复** — 置顶边框现在保持在置顶 Z 层，始终渲染在目标窗口上方，不再被窗口遮挡成一条细线
-- 🐛 **TogglePin 取消置顶清理** — 取消置顶现在将窗口从所有其他虚拟桌面移除，仅保留在当前桌面；同时正确设置/清除目标窗口的 `AlwaysOnTop` 属性
+- **PinBorder Z 序修复** — 置顶边框现在保持在置顶 Z 层，始终渲染在目标窗口上方，不再被窗口遮挡成一条细线
+- **TogglePin 取消置顶清理** — 取消置顶现在将窗口从所有其他虚拟桌面移除，仅保留在当前桌面；同时正确设置/清除目标窗口的 `AlwaysOnTop` 属性
 
 ### v2.10.1 (2026-07-29)
 
-- 🆕 **壁纸取色生成主题** — 通过屏幕采样提取桌面壁纸主色调，自动生成完整主题配色；托盘菜单 `Theme > Generate from Wallpaper` 触发；生成的主题存储在独立 `wallpaper_theme.ini` 文件，不动用户 `[Theme]` 配置；通过 `Theme > wallpaper (from image)` 随时切回
-- 🎨 **智能配色分配** — 最暗色 → Background、最亮色 → Text、出现最多 → Active、最鲜艳 → BorderPin、色相匹配 → PM 按钮；所有颜色自动去重
-- 🔴 **扫描进度指示** — 实时红色生长条显示采样位置；条在采样行下方渲染，不污染取色
-- 🖥️ **采样环境处理** — 自动隐藏状态栏、最小化所有窗口、隐藏桌面图标和任务栏；采样完成后全部恢复
-- 🔗 **颜色值 `#` 前缀** — 配置文件中所有十六进制颜色值统一使用 `#RRGGBB` 标准格式；读取时自动兼容剥离 `#`
-- 🔗 **TaskTimes 颜色支持** — `TaskTimes` 配置项支持颜色后缀（如 `1_1200_1300,#ff0000,#00ff00`）
+- **壁纸取色生成主题** — 通过屏幕采样提取桌面壁纸主色调，自动生成完整主题配色；托盘菜单 `Theme > Generate from Wallpaper` 触发；生成的主题存储在独立 `wallpaper_theme.ini` 文件，不动用户 `[Theme]` 配置；通过 `Theme > wallpaper (from image)` 随时切回
+- **智能配色分配** — 最暗色 → Background、最亮色 → Text、出现最多 → Active、最鲜艳 → BorderPin、色相匹配 → PM 按钮；所有颜色自动去重
+- **扫描进度指示** — 实时红色生长条显示采样位置；条在采样行下方渲染，不污染取色
+- **采样环境处理** — 自动隐藏状态栏、最小化所有窗口、隐藏桌面图标和任务栏；采样完成后全部恢复
+- **颜色值 `#` 前缀** — 配置文件中所有十六进制颜色值统一使用 `#RRGGBB` 标准格式；读取时自动兼容剥离 `#`
+- **TaskTimes 颜色支持** — `TaskTimes` 配置项支持颜色后缀（如 `1_1200_1300,#ff0000,#00ff00`）
 
 ### v2.10.0 (2026-07-17)
 
-- 🆕 **OSD 逐次调用自定义** — 外部脚本可通过附加 `键=值` 键值对在每次调用时覆盖全部视觉设置（字体大小、不透明度、位置、颜色、宽度、圆角、字体名）；所有键可选，未指定则回退 `[GUI]` 配置默认值
-- 🆕 **OSD tag 与实例隔离** — `tag=` 键使同标签 OSD 互相替换（不堆积）；外部 OSD 运行在独立实例池，与 wm.ahk 内部 OSD 互不干扰
-- 🆕 **Bar 逐元素 `fs=` 和 `wrap=` 属性** — Layout 元素可独立设置字体大小（`fs=14`）和行数（`wrap=2`）；bar 自动增高以容纳换行内容
-- 📚 **双语示例套件** — 新增 `docs/Examples/OSDExamples/`（5 个脚本）和 `docs/Examples/BarExamples/`（3 个脚本），每种均有 `En/` 和 `Ch/` 双语版本，注释详尽含完整参数文档
-- 📚 **新示例包括**：tag 替换式歌词播放器、定时通知守护进程、文本文件分页器、双槽位 bar 歌词模拟、多行诗词展示
-- 🆕 **osd-timed-notify：`_*/N[xC]` 间隔后缀** — 天/周/单次循环可附加间隔后缀（如 `1200_*/30` = 12点起每30分钟，`1400_*/20x3` = 14点起每20分钟共3次）；只在基准时间之后触发，午夜重置
-- 🛡️ **所有示例 OSD 辅助函数改用 `SendMessageTimeoutW`** — 2s 超时 + `SMTO_ABORTIFHUNG` 防止 wm.ahk 忙时线程阻塞；数据写入独立 `Buffer` 替代局部变量 `StrPtr`
-- 🐛 **从所有示例脚本中移除 `Esc::ExitApp`** — Esc 被太多应用使用；所有示例现通过托盘菜单退出
-- 🧹 **移除** `[WorkTime] NotificationRule` — 定时通知改为独立脚本（`osd-timed-notify.ahk`），保持 wm.ahk 精简
+- **OSD 逐次调用自定义** — 外部脚本可通过附加 `键=值` 键值对在每次调用时覆盖全部视觉设置（字体大小、不透明度、位置、颜色、宽度、圆角、字体名）；所有键可选，未指定则回退 `[GUI]` 配置默认值
+- **OSD tag 与实例隔离** — `tag=` 键使同标签 OSD 互相替换（不堆积）；外部 OSD 运行在独立实例池，与 wm.ahk 内部 OSD 互不干扰
+- **Bar 逐元素 `fs=` 和 `wrap=` 属性** — Layout 元素可独立设置字体大小（`fs=14`）和行数（`wrap=2`）；bar 自动增高以容纳换行内容
+- **双语示例套件** — 新增 `docs/Examples/OSDExamples/`（5 个脚本）和 `docs/Examples/BarExamples/`（3 个脚本），每种均有 `En/` 和 `Ch/` 双语版本，注释详尽含完整参数文档
+- **新示例包括**：tag 替换式歌词播放器、定时通知守护进程、文本文件分页器、双槽位 bar 歌词模拟、多行诗词展示
+- **osd-timed-notify：`_*/N[xC]` 间隔后缀** — 天/周/单次循环可附加间隔后缀（如 `1200_*/30` = 12点起每30分钟，`1400_*/20x3` = 14点起每20分钟共3次）；只在基准时间之后触发，午夜重置
+- **所有示例 OSD 辅助函数改用 `SendMessageTimeoutW`** — 2s 超时 + `SMTO_ABORTIFHUNG` 防止 wm.ahk 忙时线程阻塞；数据写入独立 `Buffer` 替代局部变量 `StrPtr`
+- **从所有示例脚本中移除 `Esc::ExitApp`** — Esc 被太多应用使用；所有示例现通过托盘菜单退出
+- **移除** `[WorkTime] NotificationRule` — 定时通知改为独立脚本（`osd-timed-notify.ahk`），保持 wm.ahk 精简
 
 ### v2.9.0 (2026-07-15)
 
-- 🆕 **Bar 外部部件** — `[Bar] Layout` 的 `external_N` 槽位，外部脚本通过 `WM_COPYDATA` 推送文本；`bar-examples/` 和 `osd-examples/` 含中英文示例
-- 🆕 **配置键迁移** — 旧 `snake_case` 自动更名为 `PascalCase`；`CfgRead` 带回退链
-- 🆕 **UTF-8 配置修复** — `SanitizeConfigEncoding` 检测并修复损坏的配置文件
-- 🐛 **配置编码修复** — 所有写入使用 UTF-16（AHK 原生 INI 格式），彻底解决中文/符号乱码
-- 🐛 **WTM 聚焦颜色** — 边框在聚焦/非聚焦间正确切换；`RefreshBorder` 全毁全建 + HWND 验证循环
-- 🐛 **WTM MoveDir 修复** — 上下方向改用欧氏距离（与 FocusDir 一致），不再出现按上却左移
-- 🐛 **移动窗口到桌面** — `DesktopFocus[target]` 自动设置，窗口插入 Z 序顶端
-- 🐛 **Bar 残影修复** — `BarInstance.Destroy()` 正确释放桌面控件 HBITMAP
-- 🐛 **字体一致性** — PowerMenu 和 PieMenu 现在遵循 `FontName` 配置
-- ⚡ **WTM 响应提升** — 签名每 10ms 检查（原 150ms），稳定延迟降至 80ms
-- 🧹 **日志系统重写** — 毫秒时间戳、去重、轮转、启动/退出横幅、`OnExit` 处理
-- 🧹 **自检删除** — 由结构化日志取代
+- **Bar 外部部件** — `[Bar] Layout` 的 `external_N` 槽位，外部脚本通过 `WM_COPYDATA` 推送文本；`bar-examples/` 和 `osd-examples/` 含中英文示例
+- **配置键迁移** — 旧 `snake_case` 自动更名为 `PascalCase`；`CfgRead` 带回退链
+- **UTF-8 配置修复** — `SanitizeConfigEncoding` 检测并修复损坏的配置文件
+- **配置编码修复** — 所有写入使用 UTF-16（AHK 原生 INI 格式），彻底解决中文/符号乱码
+- **WTM 聚焦颜色** — 边框在聚焦/非聚焦间正确切换；`RefreshBorder` 全毁全建 + HWND 验证循环
+- **WTM MoveDir 修复** — 上下方向改用欧氏距离（与 FocusDir 一致），不再出现按上却左移
+- **移动窗口到桌面** — `DesktopFocus[target]` 自动设置，窗口插入 Z 序顶端
+- **Bar 残影修复** — `BarInstance.Destroy()` 正确释放桌面控件 HBITMAP
+- **字体一致性** — PowerMenu 和 PieMenu 现在遵循 `FontName` 配置
+- **WTM 响应提升** — 签名每 10ms 检查（原 150ms），稳定延迟降至 80ms
+- **日志系统重写** — 毫秒时间戳、去重、轮转、启动/退出横幅、`OnExit` 处理
+- **自检删除** — 由结构化日志取代
 
 ### v2.8.5 (2026-07-10)
 
-- 🐛 **修复 GDI 句柄泄漏** — `CreateGradient()` 中 1x1 种子位图每次泄漏，边框拖拽可达 100 次/秒
-- 🐛 **修复快速切换桌面竞态** — `DesktopIsSwitching` 标志护卫 `SwitchDesktop`
-- ⚡ **Bar 系统轮询优化** — WiFi 和 Disk 信息添加 30 秒缓存
-- 🆕 **OSD 外部接口** — `WM_COPYDATA` 接收器，其他脚本可调用弹出 OSD
-- 🧹 **重复代码提取** — 共享函数抽取
-- 🎨 **平铺边缘间隙修复** — `Gap=0` 时窗口紧贴屏幕边缘
+- **修复 GDI 句柄泄漏** — `CreateGradient()` 中 1x1 种子位图每次泄漏，边框拖拽可达 100 次/秒
+- **修复快速切换桌面竞态** — `DesktopIsSwitching` 标志护卫 `SwitchDesktop`
+- **Bar 系统轮询优化** — WiFi 和 Disk 信息添加 30 秒缓存
+- **OSD 外部接口** — `WM_COPYDATA` 接收器，其他脚本可调用弹出 OSD
+- **重复代码提取** — 共享函数抽取
+- **平铺边缘间隙修复** — `Gap=0` 时窗口紧贴屏幕边缘
 
 ### v2.8.4 (2026-07-01)
 
-- 🐛 **修复剪贴板** — `RecordClipboard()` 缺少 `FileAppend`
-- 🐛 **修复 Bar 圆角白边** — `RoundWindowEx` 先禁用 DWM 非客户区渲染
-- 🐛 **修复 ShowWin** — `SW_SHOWNA(8)` → `SW_RESTORE(9)`
-- 🆕 **Span 对齐** — `+`/`-` 符号控制标签组偏移和文字对齐
-- 🧹 **GDI 泄漏** — 任务标记位图追踪释放
-- ⚡ **剪贴板防抖** — 200ms 过滤
+- **修复剪贴板** — `RecordClipboard()` 缺少 `FileAppend`
+- **修复 Bar 圆角白边** — `RoundWindowEx` 先禁用 DWM 非客户区渲染
+- **修复 ShowWin** — `SW_SHOWNA(8)` → `SW_RESTORE(9)`
+- **Span 对齐** — `+`/`-` 符号控制标签组偏移和文字对齐
+- **GDI 泄漏** — 任务标记位图追踪释放
+- **剪贴板防抖** — 200ms 过滤
 
 ### v2.8.0 (2026-06-29)
 
-- 🌈 **渐变色** — bar 元素、边框、PowerMenu 支持渐变背景和渐变文字
-- 🔲 **Bar 圆角** — 每个元素独立的 `on|off` 开关
-- 🎨 **Bar 布局重写** — 新 `N,element,span,colors,bg|tx,on|off` 格式
-- 🔧 **边框渐变** — `BorderDrag`/`BorderPin`/`BorderUnfocus` 支持逗号分隔渐变
-- ⚙️ **全屏暂停** — `[General] PauseOnFullscreen=on`
+- **渐变色** — bar 元素、边框、PowerMenu 支持渐变背景和渐变文字
+- **Bar 圆角** — 每个元素独立的 `on|off` 开关
+- **Bar 布局重写** — 新 `N,element,span,colors,bg|tx,on|off` 格式
+- **边框渐变** — `BorderDrag`/`BorderPin`/`BorderUnfocus` 支持逗号分隔渐变
+- **全屏暂停** — `[General] PauseOnFullscreen=on`
 
 ### v2.6.4 (2026-06-18)
 
-- 🆕 **配置完整性检查** — 自动检测缺失键并补默认值
-- 🐛 **Pin 边框圆角** — 现在读取配置
+- **配置完整性检查** — 自动检测缺失键并补默认值
+- **Pin 边框圆角** — 现在读取配置

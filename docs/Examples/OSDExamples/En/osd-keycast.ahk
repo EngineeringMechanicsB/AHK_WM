@@ -7,7 +7,7 @@ Persistent
 ;
 ; [What this does]
 ;   Shows every key you are holding right now, like the key overlay in tutorial
-;   videos. Keys appear as you press them and disappear when you release them.
+;   videos. Keys appear as you press them and linger for a moment after you let go.
 ;
 ; [Prerequisites]
 ;   1. AHK_WM (wm.ahk) must be running
@@ -19,11 +19,14 @@ Persistent
 ;   changes, so there is no pointless redraw.
 ;   The overlay uses duration=0 plus tag=keycast, so exactly one instance exists
 ;   at a time (a new OSD with the same tag replaces the old one).
-;   When nothing is pressed it sends a blank overlay moved off-screen — the
-;   equivalent of "hidden", with no leftover artifact.
+;   When every key is released the overlay is not removed immediately: the same
+;   text is re-sent once with a HOLD_MS timeout, and wm.ahk destroys it when that
+;   expires.  Pressing another key during the hold replaces it right away, so
+;   continuous typing does not flicker.
 ;
 ; [Customization]
 ;   POLL_MS       Poll interval in ms.  Smaller = snappier, larger = lighter
+;   HOLD_MS       How long the overlay lingers after release, in ms
 ;   OVERLAY_POS   Overlay position in px or %.  Default bottom-left
 ;   OVERLAY_STYLE Visual options: font, color, opacity, radius, ...
 ;   To change which keys are watched, edit the MODS and KEYS tables below
@@ -33,6 +36,7 @@ Persistent
 
 ; ---- Tunables ----
 global POLL_MS       := 30
+global HOLD_MS       := 1200
 global OVERLAY_POS   := "x=16%,y=88%"
 global OVERLAY_STYLE := "fs=22,op=92,rd=on,rr=10,tag=keycast"
 
@@ -68,10 +72,12 @@ global KEYS := Map(
 global HIDE_OPTS := "x=-4000,y=-4000,fs=8,op=1,rd=on,rr=10,tag=keycast"
 
 ; ---- Main loop ----
-global LAST_TEXT := " "   ; initial value = empty state, nothing sent at startup
+global LAST_TEXT  := ""      ; what the overlay currently shows, "" = nothing on screen
+global LAST_FIXED := false   ; whether that overlay is in the "keys held" persistent state
 
 Tick() {
-    global MOD_ORDER, MODS, KEYS, LAST_TEXT, OVERLAY_POS, OVERLAY_STYLE, HIDE_OPTS
+    global MOD_ORDER, MODS, KEYS, LAST_TEXT, LAST_FIXED
+    global HOLD_MS, OVERLAY_POS, OVERLAY_STYLE
 
     parts := []
     for name in MOD_ORDER {
@@ -88,10 +94,11 @@ Tick() {
     }
 
     if (parts.Length = 0) {
-        if (LAST_TEXT = " ")
+        ; Everything released: swap the persistent overlay for one that expires in HOLD_MS (once)
+        if (LAST_TEXT = "" || !LAST_FIXED)
             return
-        if AHK_WM_OSD(" ", 0, HIDE_OPTS)
-            LAST_TEXT := " "
+        if AHK_WM_OSD(LAST_TEXT, HOLD_MS, OVERLAY_POS "," OVERLAY_STYLE)
+            LAST_FIXED := false
         return
     }
 
@@ -99,10 +106,12 @@ Tick() {
     for p in parts
         text .= (text = "" ? "" : " + ") . p
 
-    if (text = LAST_TEXT)
+    if (text = LAST_TEXT && LAST_FIXED)
         return
-    if AHK_WM_OSD(text, 0, OVERLAY_POS "," OVERLAY_STYLE)
-        LAST_TEXT := text
+    if AHK_WM_OSD(text, 0, OVERLAY_POS "," OVERLAY_STYLE) {
+        LAST_TEXT  := text
+        LAST_FIXED := true
+    }
 }
 
 ; ---- Remove the overlay before exiting (a duration=0 OSD never disappears by itself) ----

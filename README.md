@@ -33,6 +33,7 @@
 - [📸 Screenshots](#-screenshots)
 - [📦 Installation](#-installation)
 - [🚀 Quick Start](#-quick-start)
+- [⌨️ WTM Mode](#️-wtm-mode)
 - [🧰 Detailed Features](#-detailed-features)
 - [🔌 External Interfaces](#-external-interfaces)
 - [⚙️ Configuration](#️-configuration)
@@ -120,6 +121,19 @@
 
 <p align="center">
   <img src="docs/images/sep-drag.svg" alt="" width="85%">
+</p>
+
+---
+
+## ⌨️ WTM Mode
+
+WTM is a keyboard-driven tiling mode in the spirit of Hyprland. `Alt + Shift + D` tiles every monitor at once using your `[Tiling] Rules` (a monitor without rules falls back to the built-in algorithm). `Alt + H/J/K/L` moves focus, `Alt + Shift + H/J/K/L` swaps the focused window with its neighbour in that direction, and dropping a window onto another slot swaps it there as well.
+
+Placements are kept as normalized fractional slot coordinates rather than pixel rectangles, so a swap only ever touches the two windows involved — nothing else on screen jumps. `Alt + Shift + F` keeps the bar and borders and leaves only the focused window visible; a fullscreen or maximized window suspends tiling on its own monitor only. `[Tiling] WTMGap` sets the WTM-only gap and `[Tiling] AnimationDuration` turns on the animated moves.
+
+<!-- Insert your GIF here: replace the src below with your own gif path -->
+<p align="center">
+  <img src="docs/images/wtm-mode.gif" alt="WTM Mode" width="85%">
 </p>
 
 ---
