@@ -133,7 +133,7 @@ global Excl_Processes  := []
 global Tile_IncludeAlwaysOnTop := true
 global TileBound_L := 0, TileBound_T := 0, TileBound_R := 0, TileBound_B := 0
 global TileBoundSet := false
-; 平铺输出端：0 = 直接搬窗口；非 0 时改为"只算不搬"（收集矩形，供槽位表/动画使用）
+; 平铺输出端：0 = 直接搬窗口；非 0 = 只算不搬 / tile output sink (0 = move for real)
 global TileSink := 0
 ; 槽位表缓存 (monIdx|n|WxH → 表)
 global SlotTableCache := Map()
@@ -142,6 +142,11 @@ global WTM_Gap    := 10
 global WTM_AnimMs := 0
 ; WTM 边框诊断日志开关（[Tiling] WTMDebug，默认 off）
 global WTM_Debug  := false
+; WTM 缩放步长（[Tiling] ResizeStep，像素；每条边移动一半）
+global WTM_ResizeStep := 20
+; WTM 缩放产生的布局覆盖（monIdx → n → 规则数组）/ WTM-only layout override
+global WTM_ResizeRules    := Map()
+global WTM_LayoutOverride := false
 
 ; ---- GUI rounding / GUI圆角 ----
 global GUI_Rounded     := "on"
@@ -940,10 +945,13 @@ ParseLayoutRules(str) {
 }
 
 ; ---- GetCustomLayout / 布局查询 ----
+; 先 WTM 会话内的覆盖，再配置文件 [Tiling] Rules / session override first, then config
 GetCustomLayout(monIdx, n) {
-    global LayoutRules
+    global LayoutRules, WTM_ResizeRules, WTM_LayoutOverride
     if (n < 1)
         return ""
+    if (WTM_LayoutOverride && WTM_ResizeRules.Has(monIdx) && WTM_ResizeRules[monIdx].Has(n))
+        return WTM_ResizeRules[monIdx][n]
     if (LayoutRules.Has(monIdx) && LayoutRules[monIdx].Has(n))
         return LayoutRules[monIdx][n]
     if (LayoutRules.Has("*") && LayoutRules["*"].Has(n))
@@ -1401,6 +1409,10 @@ RegisterAllHotkeys() {
     RegHotkey("WTMMoveDown",   (*) => WTM.MoveDir("D"))
     RegHotkey("WTMMoveUp",     (*) => WTM.MoveDir("U"))
     RegHotkey("WTMMoveRight",  (*) => WTM.MoveDir("R"))
+    RegHotkey("WTMShrinkWidth",  (*) => WTM.Resize("X", false))
+    RegHotkey("WTMGrowWidth",    (*) => WTM.Resize("X", true))
+    RegHotkey("WTMGrowHeight",   (*) => WTM.Resize("Y", true))
+    RegHotkey("WTMShrinkHeight", (*) => WTM.Resize("Y", false))
 }
 
 ; ---- PieMenuExecute / 饼菜单 ----
@@ -1768,6 +1780,8 @@ Gap=15
 WTMGap=
 ; Move/resize animation duration in ms (0 = off, instant) / 平铺动画时长 ms（0 = 关闭）
 AnimationDuration=0
+; WTM resize step in px, each edge moves half of it / WTM 缩放步长 px（每条边走一半）
+ResizeStep=20
 ; Tile always-on-top windows / 置顶窗口参与平铺
 TileAlwaysOnTop=off
 ; Custom layout rules: M,N,I,X,Y;... (see README for full docs)
@@ -1967,6 +1981,10 @@ WTMMoveDown=Alt+Shift+J
 WTMMoveUp=Alt+Shift+K
 WTMMoveRight=Alt+Shift+L
 WTMFull=Alt+Shift+F
+WTMShrinkWidth=Ctrl+Alt+H
+WTMGrowWidth=Ctrl+Alt+L
+WTMGrowHeight=Ctrl+Alt+J
+WTMShrinkHeight=Ctrl+Alt+K
     )"
 
     if !FileExist(ConfigFile) {
@@ -2070,6 +2088,7 @@ WTMFull=Alt+Shift+F
     WTM_Gap    := (_wtmGapRaw = "") ? Border_Gap : SafeInt(_wtmGapRaw, Border_Gap)
     WTM_AnimMs := Max(0, SafeInt(IniRead(ConfigFile, "Tiling", "AnimationDuration", "0"), 0))
     WTM_Debug  := BarShown(IniRead(ConfigFile, "Tiling", "WTMDebug", "off"))
+    WTM_ResizeStep := Max(1, SafeInt(IniRead(ConfigFile, "Tiling", "ResizeStep", "20"), 20))
     InvalidateSlotTables()
 
     Snap_Enable   := BarShown(IniRead(ConfigFile, "Snapping", "Enable", "on"))
@@ -2210,7 +2229,8 @@ WTMFull=Alt+Shift+F
                "LaunchTerminal","EditFile","PowerMenu","ClipboardHistory",
                "DragMove","DragResize","PieMenuTrigger","WinSelect",
                "WTMToggle","WTMFocusLeft","WTMFocusDown","WTMFocusUp","WTMFocusRight",
-               "WTMMoveLeft","WTMMoveDown","WTMMoveUp","WTMMoveRight","WTMFull"]
+               "WTMMoveLeft","WTMMoveDown","WTMMoveUp","WTMMoveRight","WTMFull",
+               "WTMShrinkWidth","WTMGrowWidth","WTMGrowHeight","WTMShrinkHeight"]
     hkDefaults := Map(
         "Help","Alt+/","Exit","Alt+F12","Reload","Alt+R",
         "DesktopSwitchPrefix","Alt","DesktopMovePrefix","Alt+Shift","DesktopMoveSwitchPrefix","Ctrl+Alt",
@@ -2227,7 +2247,9 @@ WTMFull=Alt+Shift+F
         "WTMFocusLeft","Alt+H","WTMFocusDown","Alt+J","WTMFocusUp","Alt+K","WTMFocusRight","Alt+L",
         "WTMMoveLeft","Alt+Shift+H","WTMMoveDown","Alt+Shift+J",
         "WTMMoveUp","Alt+Shift+K","WTMMoveRight","Alt+Shift+L",
-        "WTMFull","Alt+Shift+F"
+        "WTMFull","Alt+Shift+F",
+        "WTMShrinkWidth","Ctrl+Alt+H","WTMGrowWidth","Ctrl+Alt+L",
+        "WTMGrowHeight","Ctrl+Alt+J","WTMShrinkHeight","Ctrl+Alt+K"
     )
     for k in hkKeys {
         raw := IniRead(ConfigFile, "Hotkeys", k, hkDefaults[k])
@@ -2388,6 +2410,8 @@ ShowHelpGui(*) {
         [PrefP("WTMFocusLeft") . " / J / K / L",      "WTM Focus (H/J/K/L)"],
         [PrefP("WTMMoveLeft")  . " / J / K / L",      "WTM Move/Swap (Shift+HJKL)"],
         [PrefP("WTMFull"),                    "WTM Fullscreen (keep bar+border)"],
+        [PrefP("WTMShrinkWidth") . " / " . PrefP("WTMGrowWidth"), "WTM Resize Width (H/L)"],
+        [PrefP("WTMGrowHeight") . " / " . PrefP("WTMShrinkHeight"), "WTM Resize Height (J/K)"],
         [PrefP("WinSelect"),                  "Window Select Mode"],
         [PrefP("ToggleAllBorders"),           "Toggle All Window Borders"],
         [PrefP("DragMove"),                   "Drag Move Window"],
@@ -4947,6 +4971,121 @@ SlotFromSpan(xlo, xhi, ylo, yhi, src) {
            , src: src }
 }
 
+; ---- 归一化坐标落在哪个槽位（0 = 不在任何槽位里）/ Which slot contains a point ----
+SlotIndexAtPoint(table, nx, ny) {
+    eps := 1.0e-9
+    for k, t in table {
+        if (nx < t.xlo - eps || nx > t.xhi + eps)
+            continue
+        if (ny < t.ylo - eps || ny > t.yhi + eps)
+            continue
+        return k
+    }
+    return 0
+}
+
+; ---- 一组矩形的外框（只统计可认领的）/ Bounding box of measured rects ----
+RectBBox(recs, &x0, &y0, &bw, &bh) {
+    found := false
+    for r in recs {
+        if (r.HasProp("claim") && !r.claim)
+            continue
+        if !found {
+            x0 := r.x, y0 := r.y, x1 := r.x + r.w, y1 := r.y + r.h, found := true
+            continue
+        }
+        x0 := Min(x0, r.x), y0 := Min(y0, r.y)
+        x1 := Max(x1, r.x + r.w), y1 := Max(y1, r.y + r.h)
+    }
+    if !found                            ; 一个可认领的都没有：拿第一个矩形兜底
+        x0 := recs[1].x, y0 := recs[1].y, bw := Max(1, recs[1].w), bh := Max(1, recs[1].h)
+    else
+        bw := Max(1, x1 - x0), bh := Max(1, y1 - y0)
+}
+
+; ---- 行带排序（返回新数组）/ Sort rects into rows, then by x ----
+SortRowsByX(recs) {
+    n := recs.Length
+    out := []
+    for r in recs
+        out.Push(r)
+    if (n < 2)
+        return out
+    Loop (n - 1) {                       ; 先按中心 y 升序（插入排序）
+        i := A_Index + 1
+        me := out[i]
+        my := me.y + me.h / 2
+        j := i - 1
+        while (j >= 1 && (out[j].y + out[j].h / 2) > my) {
+            out[j + 1] := out[j]
+            j -= 1
+        }
+        out[j + 1] := me
+    }
+    s := 1
+    Loop n {
+        i := A_Index
+        if (i < n) {
+            a := out[s], b := out[i + 1]
+            if (b.y + b.h / 2 - (a.y + a.h / 2) <= 0.4 * Min(a.h, b.h))
+                continue
+        }
+        Loop (i - s) {                   ; 行带 [s, i] 内按中心 x 升序
+            k := s + A_Index
+            me := out[k]
+            mx := me.x + me.w / 2
+            j := k - 1
+            while (j >= s && (out[j].x + out[j].w / 2) > mx) {
+                out[j + 1] := out[j]
+                j -= 1
+            }
+            out[j + 1] := me
+        }
+        s := i + 1
+    }
+    return out
+}
+
+; ---- 把实测矩形认回槽位 / Map measured rects onto slots ----
+; 返回 槽位号 → recs 下标（0 = 空）；filled = 认不出原位、只能兜底的窗口数
+SlotAssign(recs, table, x0, y0, bw, bh, &filled) {
+    n := recs.Length
+    out := [], free := []
+    loop n {
+        out.Push(0)
+        free.Push(true)
+    }
+    rest := []
+    for i, r in recs {
+        k := 0
+        if !(r.HasProp("claim") && !r.claim)        ; 最大化的窗口不算认领证据 / maximized is no claim
+            k := SlotIndexAtPoint(table, (r.x + r.w / 2 - x0) / bw, (r.y + r.h / 2 - y0) / bh)
+        if !k || out[k] {                ; 不在槽位里 / 槽位已被占
+            rest.Push({x: r.x, y: r.y, w: r.w, h: r.h, idx: i})
+            continue
+        }
+        out[k] := i, free[k] := false
+    }
+    filled := rest.Length
+    if (filled = 0)
+        return out
+    for r in SortRowsByX(rest) {          ; 兜底：按行带顺序取最近的空槽位
+        nx := (r.x + r.w / 2 - x0) / bw, ny := (r.y + r.h / 2 - y0) / bh
+        best := 0, bestD := 0
+        for k, t in table {
+            if !free[k]
+                continue
+            d := Sqrt((nx - t.cx) ** 2 + (ny - t.cy) ** 2)
+            if (!best || d < bestD)
+                best := k, bestD := d
+        }
+        if !best
+            break
+        out[best] := r.idx, free[best] := false
+    }
+    return out
+}
+
 ; ---- 空跑内置算法得到槽位表 / Dry-run the built-in algorithms ----
 BuildBuiltinSlotTable(n, W, H) {
     global TileSink, CurrentTileGap, TileBoundSet
@@ -5001,7 +5140,9 @@ InvalidateSlotTables() {
     SlotTableCache := Map()
 }
 
-; ---- 槽位表上的方向选择（纯函数，可单独测试）/ Directional pick on the slot table ----
+; ---- 槽位表上的方向选择 / Directional pick on the slot table ----
+; 三步漏斗：① 垂直轴同一条带 ② 移动轴完全越过自己 ③ 移动轴中心距离最小
+; Three-step funnel: same band → fully past → nearest on the movement axis
 PickSlotFromTable(table, i, dir) {
     n := table.Length
     if (i < 1 || i > n)
@@ -5010,27 +5151,61 @@ PickSlotFromTable(table, i, dir) {
     horizontal := (dir = "L" || dir = "R")
     if (horizontal ? cur.xfull : cur.yfull)
         return 0
-    primary   := horizontal ? "cx" : "cy"
-    secondary := horizontal ? "cy" : "cx"
+    primary   := horizontal ? "cx" : "cy"      ; 移动轴
+    secondary := horizontal ? "cy" : "cx"      ; 垂直轴
     forward   := (dir = "R" || dir = "D")
 
-    cand := []
-    for j, t in table {
-        if (j = i)
-            continue
-        pj := t.%primary%, pi := cur.%primary%
-        if (forward ? (pj > pi) : (pj < pi))
-            cand.Push(j)
+    all := []
+    for j, _ in table {
+        if (j != i)
+            all.Push(j)
     }
-    if (cand.Length = 0)
+    if (all.Length = 0)
         return 0
 
+    ; -- 第一步：垂直轴同一条带（区间距离最小）/ Step 1: same band on the cross axis --
+    cand := NarrowByBand(all, table, cur, horizontal)
+
+    ; -- 第二步：移动轴上完全越过自己 / Step 2: entirely past on the movement axis --
+    myLo := horizontal ? cur.xlo : cur.ylo     ; 反向边界（左/上）
+    myHi := horizontal ? cur.xhi : cur.yhi     ; 正向边界（右/下）
+
+    past := []
+    for j in cand {
+        t := table[j]
+        loJ := horizontal ? t.xlo : t.ylo
+        hiJ := horizontal ? t.xhi : t.yhi
+        if (forward ? (loJ >= myHi - 1.0e-9) : (hiJ <= myLo + 1.0e-9))
+            past.Push(j)
+    }
+    if (past.Length = 0) {
+        ; 兜底：这条带里没有该方向的窗口 → 先按方向筛，再在该方向的窗口里取最小带距
+        for j in all {
+            t := table[j]
+            loJ := horizontal ? t.xlo : t.ylo
+            hiJ := horizontal ? t.xhi : t.yhi
+            if (forward ? (loJ >= myHi - 1.0e-9) : (hiJ <= myLo + 1.0e-9))
+                past.Push(j)
+        }
+        if (past.Length = 0)
+            return 0
+        past := NarrowByBand(past, table, cur, horizontal)
+    }
+    cand := past
+    if (cand.Length = 1)
+        return cand[1]
+
+    ; -- 第三步：移动轴距离最小 / Step 3: smallest delta on the movement axis --
     cand := NarrowByAxis(cand, table, cur, primary)
     if (cand.Length = 1)
         return cand[1]
+
+    ; -- 仍并列：垂直轴中心距离最小 / then: smallest cross-axis centre delta --
     cand := NarrowByAxis(cand, table, cur, secondary)
     if (cand.Length = 1)
         return cand[1]
+
+    ; -- 最后：取副轴差为负（偏上/偏左）/ finally: negative cross-axis delta --
     pick := 0, best := 0
     for j in cand {
         d := table[j].%secondary% - cur.%secondary%
@@ -5040,6 +5215,32 @@ PickSlotFromTable(table, i, dir) {
         }
     }
     return pick ? pick : cand[1]
+}
+
+; ---- 候选集按"垂直轴同一条带"收窄 / Narrow by the cross-axis band ----
+; 先要区间真重叠，都没有才比区间距离 / real overlap first, proximity as fallback
+NarrowByBand(cand, table, cur, horizontal) {
+    loKey := horizontal ? "ylo" : "xlo"
+    hiKey := horizontal ? "yhi" : "xhi"
+    cLo := cur.%loKey%, cHi := cur.%hiKey%
+    out := []
+    for j in cand {
+        if (Min(cHi, table[j].%hiKey%) - Max(cLo, table[j].%loKey%) > 1.0e-9)
+            out.Push(j)
+    }
+    if (out.Length)
+        return out
+    best := 1.0e18
+    for j in cand {
+        gap := Max(0, Max(cLo - table[j].%hiKey%, table[j].%loKey% - cHi))
+        if (gap < best)
+            best := gap
+    }
+    for j in cand {
+        if (Max(0, Max(cLo - table[j].%hiKey%, table[j].%loKey% - cHi)) <= best + 1.0e-9)
+            out.Push(j)
+    }
+    return out
 }
 
 ; ---- 候选集按某轴差值最小收窄 / Narrow candidates by minimal axis delta ----
@@ -5056,6 +5257,132 @@ NarrowByAxis(cand, table, cur, axis) {
             out.Push(j)
     }
     return out
+}
+
+; ---- 缩放跨度（纯函数，单轴；无变化返回 0）/ Resize spans on one axis ----
+; 整条线平移：同坐标的边一起走；spans[j] = {lo,hi}；grow=true 外扩 / false 内收
+ResizeSpans(spans, i, grow, delta, minSpan) {
+    n := spans.Length
+    if (i < 1 || i > n)
+        return 0
+    me := spans[i]
+    if (me.hi - me.lo <= minSpan + 1.0e-9 && !grow)
+        return 0
+
+    eps := 1.0e-9
+    loSame := [], loGiver := []                 ; 与左/上边重合：同样左边界 / 被它切掉右边的
+    hiSame := [], hiGiver := []                 ; 与右/下边重合：同样右边界 / 被它切掉左边的
+    for j, s in spans {
+        if (j = i)
+            continue
+        if (Abs(s.lo - me.lo) <= eps)
+            loSame.Push(j)
+        if (Abs(s.hi - me.lo) <= eps)
+            loGiver.Push(j)
+        if (Abs(s.hi - me.hi) <= eps)
+            hiSame.Push(j)
+        if (Abs(s.lo - me.hi) <= eps)
+            hiGiver.Push(j)
+    }
+
+    newLo := me.lo, newHi := me.hi
+
+    ; -- 反向边界（左/上）--
+    if grow {
+        tgt := Max(me.lo - delta, 0.0)
+        for j in loGiver                           ; 它们的右边被切掉 → 不能压过最小
+            tgt := Max(tgt, spans[j].lo + minSpan)
+        if (tgt < me.lo - eps)
+            newLo := tgt
+    } else if (loGiver.Length) {                   ; 线上有人接手才缩，否则不动（不留空洞）
+        tgt := me.lo + delta
+        for j in loSame                            ; 它们也跟着右移 → 同样会缩小
+            tgt := Min(tgt, spans[j].hi - minSpan)
+        tgt := Min(tgt, me.hi - minSpan)
+        if (tgt > me.lo + eps)
+            newLo := tgt
+    }
+
+    ; -- 正向边界（右/下）--
+    if grow {
+        tgt := Min(me.hi + delta, 1.0)
+        for j in hiGiver                            ; 它们的左边被切掉 → 不能压过最小
+            tgt := Min(tgt, spans[j].hi - minSpan)
+        if (tgt > me.hi + eps)
+            newHi := tgt
+    } else if (hiGiver.Length) {                    ; 同理：没人接手就不缩
+        tgt := me.hi - delta
+        for j in hiSame                             ; 它们也跟着左移 → 同样会缩小
+            tgt := Max(tgt, spans[j].lo + minSpan)
+        tgt := Max(tgt, newLo + minSpan)
+        if (tgt < me.hi - eps)
+            newHi := tgt
+    }
+
+    if (Abs(newLo - me.lo) <= eps && Abs(newHi - me.hi) <= eps)
+        return 0
+
+    out := []
+    for j, s in spans {
+        lo := s.lo, hi := s.hi
+        if (j = i) {
+            lo := newLo, hi := newHi
+        } else {
+            if (Abs(s.hi - me.lo) <= eps)
+                hi := newLo
+            if (Abs(s.lo - me.lo) <= eps)
+                lo := newLo
+            if (Abs(s.lo - me.hi) <= eps)
+                lo := newHi
+            if (Abs(s.hi - me.hi) <= eps)
+                hi := newHi
+        }
+        out.Push({lo: lo, hi: hi})
+    }
+    return out
+}
+
+; ---- 量化到像素栅格（纯函数）/ Quantise spans to the pixel grid ----
+QuantizeSpans(spans, D) {
+    out := []
+    for s in spans {
+        lo := Max(0.0, Min(1.0, Round(s.lo * D) / D))
+        hi := Max(0.0, Min(1.0, Round(s.hi * D) / D))
+        if (hi - lo < 1.0 / D)
+            hi := Min(1.0, lo + 1.0 / D)
+        out.Push({lo: lo, hi: hi})
+    }
+    return out
+}
+
+; ---- 规则数组 → 配置字符串（可粘回 [Tiling] Rules）/ Rules to a config string ----
+RuleStringFor(rules, W, H) {
+    out := ""
+    n := rules.Length
+    for i, r in rules {
+        out .= (i > 1 ? ";" : "") . n . "," . i . "," . LayoutAxisToken(r.x.lo, r.x.hi, W) . "," . LayoutAxisToken(r.y.lo, r.y.hi, H)
+    }
+    return out . ";"
+}
+
+; ---- 单个轴 → 配置记号 / One axis to a config token ----
+LayoutAxisToken(lo, hi, D) {
+    if (D <= 0)
+        D := 1
+    if (lo <= 1.0e-9 && hi >= 1.0 - 1.0e-9)
+        return "1"
+    b := Round(hi * D)
+    if (lo <= 1.0e-9) {
+        if (b < 1)
+            b := 1
+        return b . "/" . D
+    }
+    a := Round(lo * D) + 1
+    if (b < a)
+        b := a
+    if (b > D)
+        b := D
+    return "(" . a . "-" . b . ")/" . D
 }
 
 ; ---- 根据宽高比确定平铺模式 / Determine tile mode by aspect ratio ----
@@ -5141,8 +5468,9 @@ ComputeTileRect(x, y, w, h, &fx, &fy, &fw, &fh) {
             y2 := TileBound_B
         w := x2 - x, h := y2 - y
     }
+    ; 按边界坐标取整：相邻格子共享的边界必落在同一像素 / round shared edges, not (pos,size)
     fx := Round(x), fy := Round(y)
-    fw := Round(Max(50, w)), fh := Round(Max(50, h))
+    fw := Max(50, Round(x + w) - fx), fh := Max(50, Round(y + h) - fy)
 }
 
 ; ---- Move a window to an exact rect / 搬到精确矩形 ----
@@ -5767,6 +6095,10 @@ class WTM {
 
     ; -- 启用 / Activate --
     static Activate() {
+        global WTM_ResizeRules, WTM_LayoutOverride
+        WTM_LayoutOverride := true          ; 本次会话内的缩放覆盖开始生效
+        WTM_ResizeRules    := Map()
+        InvalidateSlotTables()
         this.Active      := true
         this.Excluded    := Map()
         this.TileOrder   := []
@@ -5813,6 +6145,7 @@ class WTM {
 
     ; -- 停用 / Deactivate --
     static Deactivate() {
+        global WTM_ResizeRules, WTM_LayoutOverride
         this.Active := false
         SetTimer(this.TickFn, 0)
         this._StopAnim()
@@ -5821,6 +6154,10 @@ class WTM {
         this._LastWins := ""
         this._Placed := Map()
         this.DesktopOrders := Map()
+        ; 丢掉 WTM 会话内的布局覆盖：退出后 Alt+D 回到配置文件里的 [Tiling] Rules
+        WTM_LayoutOverride := false
+        WTM_ResizeRules    := Map()
+        InvalidateSlotTables()
         AllBorders.Rebuild()
         ShowOSD("WTM Mode: OFF")
     }
@@ -5902,16 +6239,17 @@ class WTM {
         this.TileOrder := newOrder
     }
 
-    ; -- 首次进入时按屏幕位置播种顺序 / Seed the initial order by screen position --
+    ; -- 首次进入时按屏上槽位播种顺序 / Seed the initial order from the on-screen slots --
     static SeedOrderByPosition() {
-        rows := []
+        byMon := Map()
         for hwnd in GetVisibleWindow() {
             if this.Excluded.Has(hwnd)
                 continue
             if !IsTilableWindow(hwnd)
                 continue
             try {
-                if (WinGetMinMax(hwnd) = -1)
+                mm := WinGetMinMax(hwnd)
+                if (mm = -1)                 ; 最小化的不进顺序 / skip minimized
                     continue
                 WinGetPos(&x, &y, &w, &h, hwnd)
             } catch {
@@ -5919,33 +6257,40 @@ class WTM {
             }
             m := 1
             try m := GetMonitorIndex(hwnd)
-            rows.Push({hwnd: hwnd, m: m, cx: x + w / 2, cy: y + h / 2})
-        }
-        Loop (rows.Length - 1) {
-            i := A_Index + 1
-            me := rows[i]
-            j := i - 1
-            while (j >= 1) {
-                if !this._PosAfter(rows[j], me)
-                    break
-                rows[j + 1] := rows[j]
-                j -= 1
-            }
-            rows[j + 1] := me
+            if !byMon.Has(m)
+                byMon[m] := []
+            ; claim=0：最大化的窗口外框是整屏，不算"已铺好"的证据 / maximized: no claim
+            byMon[m].Push({hwnd: hwnd, m: m, x: x, y: y, w: w, h: h, cx: x + w / 2, cy: y + h / 2
+                         , claim: (mm != 1)})
         }
         order := []
-        for r in rows
-            order.Push(r.hwnd)
+        Loop MonitorGetCount() {
+            m := A_Index
+            if byMon.Has(m)
+                for hwnd in this._SeedMonitorOrder(m, byMon[m])
+                    order.Push(hwnd)
+        }
         this.TileOrder := order
     }
 
-    ; -- a 是否应排在 b 之后 / Whether a sorts after b --
-    static _PosAfter(a, b) {
-        if (a.m != b.m)
-            return a.m > b.m
-        if (a.cy != b.cy)
-            return a.cy > b.cy
-        return a.cx > b.cx
+    ; -- 单屏播种：先认槽位，再补空位 / Seed one monitor: keep slots, fill the rest --
+    ; 只定"哪个窗口进哪个槽位"，几何照旧由配置/内置规则 + WTMGap 算（开关幂等）
+    static _SeedMonitorOrder(monIdx, recs) {
+        n := recs.Length
+        if (n = 0)
+            return []
+        if (n = 1)
+            return [recs[1].hwnd]
+        x0 := 0, y0 := 0, bw := 0, bh := 0
+        RectBBox(recs, &x0, &y0, &bw, &bh)
+        filled := 0
+        slotOf := SlotAssign(recs, GetSlotTable(monIdx, n, bw, bh), x0, y0, bw, bh, &filled)
+        res := []
+        for k, i in slotOf
+            if i
+                res.Push(recs[i].hwnd)
+        WMLog("WTM seed mon" monIdx " n" n " kept" (n - filled) " fill" filled)
+        return res
     }
 
     ; -- 自动平铺 / Auto-tile all monitors --
@@ -6315,7 +6660,15 @@ class WTM {
         if (this.TileOrder.Length = 0)
             return
         cur := this._OrderIndex(this.FocusHwnd) ? this.FocusHwnd : this.TileOrder[1]
-        target := this._PickNeighbor(cur, dir)
+        curMon := 1
+        try curMon := GetMonitorIndex(cur)
+        ; 与交换共用同一选取路径；同屏无目标才退回像素法跨屏 / same picker as swap, pixel fallback
+        target := this._PickSwapTarget(cur, dir, curMon, "focus")
+        if (!target && MonitorGetCount() > 1) {
+            target := this._PickNeighbor(cur, dir, curMon)
+            if target
+                WMLog("WTM focus " dir " 跨屏兜底 -> " target)
+        }
         if target {
             FocusWindowSafely(target)
             this.FocusHwnd := target
@@ -6370,6 +6723,84 @@ class WTM {
         }
     }
 
+    ; -- 缩放聚焦窗口（改写该屏布局规则）/ Resize the focused window, rewriting rules --
+    ; axis = "X"|"Y"，grow = true 放大 / false 缩小；每条边移动半个步长，邻居跟着让/收
+    static Resize(axis, grow) {
+        global WTM_ResizeRules, WTM_LayoutOverride, WTM_Gap, WTM_ResizeStep
+        if !this.Active
+            return
+        this.RebuildOrder()
+        cur := this._OrderIndex(this.FocusHwnd) ? this.FocusHwnd : 0
+        if !cur
+            return
+        mon := 1
+        try mon := GetMonitorIndex(cur)
+        if (this._FsMon.Has(mon) && this._FsMon[mon])
+            return
+        wins := this._MonitorSlots(mon)
+        n := wins.Length
+        if (n < 2)
+            return
+        i := 0
+        for idx, h in wins {
+            if (h = cur) {
+                i := idx
+                break
+            }
+        }
+        if !i
+            return
+
+        GetTileArea(mon, WTM_Gap, &ax, &ay, &W, &H)
+        axisX := (axis = "X")
+        span := axisX ? W : H
+        if (span <= 0)
+            return
+        table := GetSlotTable(mon, n, W, H)
+        if (table.Length < n)
+            return
+
+        spans := []
+        for t in table
+            spans.Push({lo: axisX ? t.xlo : t.ylo, hi: axisX ? t.xhi : t.yhi})
+
+        minSpan := Max(WTM_ResizeStep * 2, 80) / span      ; 最小尺寸：两倍步长（下限 80px）
+        delta   := (WTM_ResizeStep / 2) / span             ; 每条边移动半个步长
+        newSpans := ResizeSpans(spans, i, grow, delta, minSpan)
+        if !newSpans
+            return
+
+        ; 量化到像素栅格：屏幕上的实际布局 = 日志里的规则串 / quantise to the pixel grid
+        newSpans := QuantizeSpans(newSpans, span)
+
+        rules := []
+        for j, t in table {
+            xlo := t.xlo
+            xhi := t.xhi
+            ylo := t.ylo
+            yhi := t.yhi
+            if axisX {
+                xlo := newSpans[j].lo
+                xhi := newSpans[j].hi
+            } else {
+                ylo := newSpans[j].lo
+                yhi := newSpans[j].hi
+            }
+            rules.Push({x: {lo: xlo, hi: xhi, align: "Center"}, y: {lo: ylo, hi: yhi, align: "Center"}})
+        }
+
+        ; 只覆盖这块屏 + 这个窗口数，且只活在 WTM 会话里 / WTM session only, this monitor + count
+        if !WTM_ResizeRules.Has(mon)
+            WTM_ResizeRules[mon] := Map()
+        WTM_ResizeRules[mon][n] := rules
+        WTM_LayoutOverride := true
+        InvalidateSlotTables()
+        this._RePlace(mon)                 ; 与自定义布局同一条摆放路径 → 动画设置同样生效
+        this.RefreshBorder()
+        WMLog("WTM resize " (axisX ? "X" : "Y") (grow ? "+" : "-") " mon" mon " n" n
+            . " step" WTM_ResizeStep " -> " RuleStringFor(rules, W, H))
+    }
+
     ; -- 该显示器上的槽位顺序 / Slot-ordered windows of a monitor --
     static _MonitorSlots(monIdx) {
         wins := []
@@ -6385,7 +6816,9 @@ class WTM {
     }
 
     ; -- 同屏交换目标选取（槽位表数学）/ Pick the swap target from the slot table --
-    static _PickSwapTarget(hwnd, dir, monIdx) {
+    ; kind 只用于日志：focus（Alt+HJKL 聚焦）/ swap（Alt+Shift+HJKL 交换）
+    static _PickSwapTarget(hwnd, dir, monIdx, kind := "swap") {
+        global WTM_Debug
         wins := this._MonitorSlots(monIdx)
         n := wins.Length
         if (n < 2)
@@ -6404,6 +6837,19 @@ class WTM {
         if (table.Length < n)
             return 0
         j := PickSlotFromTable(table, i, dir)
+        if WTM_Debug {
+            s := ""
+            for k, t in table
+                s .= (k > 1 ? " " : "") . k . ":" . Round(t.cx, 3) . "/" . Round(t.cy, 3)
+            WMLog("WTM " kind " " dir " slots n" n " mon" monIdx " | " s)
+        }
+        ; 诊断：槽位 → 槽位（槽位号 = 屏上从左到右、从上到下）/ diagnostic: slot -> slot
+        if (j && j <= table.Length && i <= table.Length)
+            WMLog("WTM " kind " " dir " #" i " -> #" j " n" n
+                . " from " Round(table[i].cx, 3) "/" Round(table[i].cy, 3)
+                . " to " Round(table[j].cx, 3) "/" Round(table[j].cy, 3))
+        else
+            WMLog("WTM " kind " " dir " #" i " -> none n" n " mon" monIdx)
         return j ? wins[j] : 0
     }
 
@@ -6513,8 +6959,9 @@ class WTM {
         return 0
     }
 
-    ; -- 方向邻居选取 / Pick the nearest neighbor in a direction --
-    static _PickNeighbor(hwnd, dir) {
+    ; -- 像素兜底邻居选取（只在槽位表选不出目标时用）/ Pixel fallback neighbour pick --
+    ; skipMon：跳过该显示器上的窗口（0 = 不跳过）
+    static _PickNeighbor(hwnd, dir, skipMon := 0) {
         if !WinExist(hwnd)
             return 0
         try WinGetPos(&cx, &cy, &cw, &ch, hwnd)
@@ -6527,6 +6974,12 @@ class WTM {
                 continue
             if this.SoloHidden.Has(h)
                 continue                   ; 单人模式隐藏的窗口不参与聚焦
+            if skipMon {
+                m := 1
+                try m := GetMonitorIndex(h)
+                if (m = skipMon)
+                    continue
+            }
             try WinGetPos(&x, &y, &w, &h2, h)
             catch
                 continue

@@ -161,6 +161,7 @@ Border **colors** live in `[Theme]`: `BorderDrag` (focused), `BorderUnfocus`
 | `WTMGap` | int px | same as `[Border] Gap` (default `10`) | any | **WTM-only** tiling gap, independent of `Gap`. Leaves room for the inter-window borders; empty = fall back to `[Border] Gap`. |
 | `AnimationDuration` | int ms | `0` | ≥0 | **WTM** move/swap animation duration. `0` = instant (no animation). `120`–`180` recommended. |
 | `WTMDebug` | on/off | `off` | `on`, `off` | Write border-diagnostic lines to the log (only when the border set, focus or colour changes). Turn it on temporarily to trace "border not following / not removed / colour stuck". |
+| `ResizeStep` | int px | `20` | ≥1 | **WTM** resize step: `Ctrl+Alt+H/J/K/L` moves **each edge** of the focused window by half of it (the window's total width/height changes by `ResizeStep` px). What moves is the **whole boundary line** — every edge at that coordinate shifts with it (even across rows/columns), so columns and rows stay aligned and nothing splits open. The space is taken from the windows on that line; minimum window size = `2 × ResizeStep` (floor 80 px, not configurable); shrinking does nothing when nobody on the line can take the space. Layouts are quantised to the pixel grid, so the rule string in the log can be pasted straight back into `Rules`. The resized layout lives **only inside the WTM session** (that monitor + that window count) and is dropped when you leave WTM, so `Alt+D` (Smart Tile) always keeps using the configured `Rules`. |
 | `Rules` | spec | *(see template)* | `M,N,I,X,Y;…` | Custom layout rules, used by Smart Tile **and** WTM (user rules take priority). `M` = monitor (`*` = any), `N` = total window count the rule applies to, `I` = window index (1..N), `X`/`Y` = span expressions (`1` = full, `a/b`, `(a-c)/b`). A rule group is used only when complete (every `I` from 1..N present exactly once). |
 
 ## [Snapping]
@@ -343,6 +344,8 @@ modifiers only and are combined with digits `1–9`.
 | `WTMFocusLeft/Down/Up/Right` | `Alt+H/J/K/L` | WTM: focus in a direction. |
 | `WTMMoveLeft/Down/Up/Right` | `Alt+Shift+H/J/K/L` | WTM: swap / move in a direction (crosses monitors). |
 | `WTMFull` | `Alt+Shift+F` | Manual fullscreen inside WTM: bar and borders stay, only the focused window is shown on that monitor; press again to restore. |
+| `WTMShrinkWidth` / `WTMGrowWidth` | `Ctrl+Alt+H` / `Ctrl+Alt+L` | WTM: shrink / grow the focused window along X (see `[Tiling] ResizeStep`). |
+| `WTMGrowHeight` / `WTMShrinkHeight` | `Ctrl+Alt+J` / `Ctrl+Alt+K` | WTM: grow / shrink the focused window along Y. |
 
 ---
 

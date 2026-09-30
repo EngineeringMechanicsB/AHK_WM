@@ -3,7 +3,7 @@
 
 
 # read-only: list every window titled AHKWM_BORDER (the WM's border frames)
-# use: powershell -NoProfile -File tools\check_borders.ps1
+# use: powershell -NoProfile -File docs\tools\check_borders.ps1
 # each listed frame should hug one real window; a row matching no window is a leaked frame
 Add-Type @"
 using System;

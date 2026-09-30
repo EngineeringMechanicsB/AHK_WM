@@ -6,14 +6,15 @@
   <img src="https://img.shields.io/badge/AutoHotkey-v2.0-cba6f7?style=flat-square" alt="AutoHotkey v2" />
   <img src="https://img.shields.io/badge/platform-Windows_7_~_11-b4befe?style=flat-square" alt="Platform" />
   <img src="https://img.shields.io/badge/license-MIT-f5c2e7?style=flat-square" alt="License" />
-  <img src="https://img.shields.io/badge/release-v2.11.0-cba6f7?style=flat-square" alt="Release" />
+  <img src="https://img.shields.io/badge/version-v2.11.0-cba6f7?style=flat-square" alt="Version" />
 </p>
 
 <p>
   <a href="README.md"><img src="https://img.shields.io/badge/README-English-cba6f7?style=flat-square" alt="English" /></a>
   <a href="docs/README-zh.md"><img src="https://img.shields.io/badge/README-简体中文-b4befe?style=flat-square" alt="简体中文" /></a>
 </p>
-**A tiny, fast, single-file window manager for Windows — powered by AutoHotkey v2.**
+
+**A lightweight, fast, single-file window manager for Windows — powered by AutoHotkey v2**
 
 </div>
 
@@ -33,7 +34,6 @@
 - [📸 Screenshots](#-screenshots)
 - [📦 Installation](#-installation)
 - [🚀 Quick Start](#-quick-start)
-- [⌨️ WTM Mode](#️-wtm-mode)
 - [🧰 Detailed Features](#-detailed-features)
 - [🔌 External Interfaces](#-external-interfaces)
 - [⚙️ Configuration](#️-configuration)
@@ -49,18 +49,20 @@
 
 |  |  |  |
 |---|---|---|
-| 🖥️ **9 Virtual Desktops** | Switch, move, gather via hotkeys | 🧩 **Smart Tiling** | One-key layout per monitor |
-| 📊 **Status Bar** | Gradient, rounded, multi-monitor | 🎨 **20+ Themes** | Nord, Dracula, Catppuccin, etc. |
-| 🥧 **Pie Menu** | Space + Right Mouse | ⌨️ **WTM Mode** | Hyprland-like keyboard tiling |
-| ✋ **KDE-style Drag** | Alt + drag anywhere to move/resize | 🔤 **WinSelect** | Letter-labeled overlay for quick switching |
-| 📋 **Clipboard History** | Built-in logger & viewer | 🔌 **External API** | OSD & bar widgets via WM_COPYDATA |
-| ⏱️ **Work Timer** | Configurable progress bar | 📐 **Snapping** | Drag-to-snap, configurable thresholds |
+| 🖥️ **Virtual Desktops** | Switch, move and gather windows by hotkey | 🧩 **Smart Tiling** | One key arranges every window |
+| 📊 **Status Bar** | Gradients, rounded corners, multi-monitor | 🎨 **20+ Themes** | Nord, Dracula, Catppuccin, … |
+| 🥧 **Pie Menu** | Space + Right Mouse | ⌨️ **WTM Mode** | Keyboard-driven tiling |
+| ✋ **KDE-style Drag** | Alt + drag anywhere to move/resize | 🔤 **WinSelect** | Quick pick among stacked windows |
+| 📋 **Clipboard History** | Built-in logging and viewer | 🔌 **External API** | OSD & bar widgets from other scripts |
+| ⏱️ **Work Timer** | Configurable progress bar | 📐 **Snapping** | Drag-to-snap, configurable distances |
 
-> Two years of daily-use refinement. Built because every other Windows WM was too heavy and made my machine unusable for anyone else.
+> Two years of daily-use polish, with as little interruption as possible.
 
 <p align="center">
   <img src="docs/images/sep-tile.svg" alt="" width="85%">
 </p>
+
+---
 
 ## 📸 Screenshots
 
@@ -68,12 +70,13 @@
 |---------|-------------|
 | ![Screenshots](docs/images/Screenshots.png) | Desktop overview — borders, tiling, multi-window layout |
 | ![Smart Tile](docs/images/Smart-tile.gif) | Smart Tiling — one key arranges all windows |
-| ![Pie Menu](docs/images/pie-menu.gif) | Pie Menu — radial menu, Space + Right Mouse |
-| ![WinSelect](docs/images/window-Select.gif) | WinSelect — letter-labeled overlay |
+| ![Pie Menu](docs/images/pie-menu.gif) | Pie Menu — Space + Right Mouse |
+| ![WinSelect](docs/images/window-Select.gif) | WinSelect — quick pick among stacked windows |
 | ![Bar Widgets](docs/images/bar-widgets-2.png) | Status Bar — gradient widgets, rounded corners |
-| ![Border Gradient](docs/images/border-gradient.png) | Gradient Borders — focus/unfocus with gradient colors |
-| ![Border Fullscreen](docs/images/border-fullscreen.png) | Border in action — colored frames around tiled windows |
-| ![Help](docs/images/help-menu.png) | Built-in Help — Alt + / for full hotkey reference |
+| ![Border Gradient](docs/images/border-gradient.png) | Borders — highlight the window being dragged |
+| ![Border Fullscreen](docs/images/border-fullscreen.png) | Gradient borders — any color frame you want |
+| ![wtm mode](docs/images/wtm.gif) | WTM Mode — keyboard-driven tiling with fully customizable layouts and animation support |
+| ![Help](docs/images/help-menu.png) | Built-in Help — check every hotkey at a glance |
 
 ---
 
@@ -85,7 +88,7 @@
 
 1. Install **AutoHotkey v2** → https://www.autohotkey.com/
 2. Download `wm.ahk` from the [latest release](https://github.com/EngineeringMechanicsB/AHK_WM/releases/latest)
-3. **Run as Administrator** (required for elevated windows)
+3. **Run as Administrator** (otherwise elevated windows ignore it)
 
 <p align="center">
   <a href="https://github.com/EngineeringMechanicsB/AHK_WM/releases/latest">
@@ -93,7 +96,7 @@
   </a>
 </p>
 
-> ⚠️ Pie menu customization and some advanced features require AHK v2. Running the `.ahk` script is recommended.
+> ⚠️ The pie menu, external script calls and other advanced features need AHK v2. Installing AHK and running the `.ahk` script directly is recommended.
 
 ---
 
@@ -101,22 +104,23 @@
 
 | Action | Hotkey |
 |--------|--------|
-| 📖 Help page | `Alt + /` |
+| 📖 Help | `Alt + /` |
 | 🧩 Tile current monitor | `Alt + D` |
-| ✋ Move window (anywhere) | `Alt + Left Mouse` |
-| 📐 Resize window (anywhere) | `Alt + Right Mouse` |
+| ✋ Drag to move a window | `Alt + Left Mouse` |
+| 📐 Drag to resize a window | `Alt + Right Mouse` |
 | 🔄 Switch desktop 1~9 | `Alt + 1 ~ 9` |
 | 📦 Move window to desktop | `Alt + Shift + 1 ~ 9` |
-| 🚀 Move & follow to desktop | `Ctrl + Alt + 1 ~ 9` |
+| 🚀 Move and follow | `Ctrl + Alt + 1 ~ 9` |
 | 📊 Toggle status bar | `Ctrl + Alt + B` |
 | ⌨️ WTM mode (toggle) | `Alt + Shift + D` |
 | ⌨️ WTM: move focus | `Alt + H / J / K / L` |
-| ⌨️ WTM: swap focused window | `Alt + Shift + H / J / K / L` |
+| ⌨️ WTM: swap windows | `Alt + Shift + H / J / K / L` |
+| ⌨️ WTM: resize window | `Ctrl + Alt + H / J / K / L` |
 | 💾 Save layout | `Alt + Shift + S` |
 | 🧲 Gather all windows | `Alt + Shift + G` |
-| 📌 Toggle always-on-top | `Alt + T` |
+| 📌 Always on top | `Alt + T` |
 | 🔃 Reload script | `Alt + R` |
-| 🥧 Pie menu | `Space + Right Mouse` |
+| 🥧 Pie menu | `Space + Right Mouse` drag |
 | ⚡ Power menu | `Alt + X` |
 
 <p align="center">
@@ -125,53 +129,40 @@
 
 ---
 
-## ⌨️ WTM Mode
-
-WTM is a keyboard-driven tiling mode in the spirit of Hyprland. `Alt + Shift + D` tiles every monitor at once using your `[Tiling] Rules` (a monitor without rules falls back to the built-in algorithm). `Alt + H/J/K/L` moves focus, `Alt + Shift + H/J/K/L` swaps the focused window with its neighbour in that direction, and dropping a window onto another slot swaps it there as well.
-
-Placements are kept as normalized fractional slot coordinates rather than pixel rectangles, so a swap only ever touches the two windows involved — nothing else on screen jumps. `Alt + Shift + F` keeps the bar and borders and leaves only the focused window visible; a fullscreen or maximized window suspends tiling on its own monitor only. `[Tiling] WTMGap` sets the WTM-only gap and `[Tiling] AnimationDuration` turns on the animated moves.
-
-<!-- Insert your GIF here: replace the src below with your own gif path -->
-<p align="center">
-  <img src="docs/images/wtm-mode.gif" alt="WTM Mode" width="85%">
-</p>
-
----
-
 ## 🧰 Detailed Features
 
 | Feature | Description |
 |---------|-------------|
-| 🖥️ **Virtual Desktops** | 9 independent desktops. Switch (`Alt+N`), move windows (`Alt+Shift+N`), or move-and-follow (`Ctrl+Alt+N`). Inactive-desktop windows can be minimized or hidden. |
-| 🧩 **Smart Tiling** | One key tiles all windows on the current monitor. Custom layout rules per monitor with gap control. |
-| ✋ **KDE-style Drag** | Move windows by holding `Alt` + dragging anywhere (not just the title bar). Resize with `Alt + Right Mouse`. |
-| 🥧 **Pie Menu** | Hold `Space`, then right-click: a radial menu appears. Move the mouse in a direction to trigger that action. |
-| 📊 **Status Bar** | Multi-monitor bar with gradient colors, rounded corners, and per-element alignment. Shows desktops, clock, date, progress, system stats, and custom widgets. |
-| 🖼️ **Window Borders** | Colored borders around active/inactive windows with live gradient support. Toggle with `Ctrl+Alt+B`. |
-| ⌨️ **WTM Mode** | Hyprland-like keyboard tiling. Entering the mode tiles every monitor with your `[Tiling] Rules` (or the built-in algorithm); `Alt + H/J/K/L` moves focus, `Alt + Shift + H/J/K/L` swaps the focused window with the neighbour in that direction, and dragging a window onto a slot swaps too. Targets come from normalized fractional slot coordinates rather than pixels, so only the two windows involved ever move. Borders are diff-synced (exactly one per window), a fullscreen or maximized window suspends tiling on its monitor, and `[Tiling] AnimationDuration` enables animated moves. |
-| 📐 **Window Snapping** | Drag windows to screen edges or other windows to snap. Configurable snap/release distances. |
-| 🎨 **Themes** | 20+ built-in themes (Nord, Dracula, Catppuccin, Gruvbox, Tokyo Night, Monokai…). Export any theme to custom in one click. |
-| ⏱️ **Work Timer** | Configurable work period with progress bar on the status bar. |
-| 📋 **Clipboard History** | Logs all copied text to a file with timestamps. |
-| ⚡ **Power Menu** | Shutdown / Sleep / Reboot menu with gradient buttons. |
+| 🖥️ **Virtual Desktops** | Several independent desktops. Switch (`Alt+N`), move windows (`Alt+Shift+N`) or move and follow (`Ctrl+Alt+N`) with your own hotkeys. Windows on other desktops can be minimized or hidden. |
+| 🧩 **Smart Tiling** | Arranges every window on the current monitor with one key. Custom per-monitor layout rules and gaps. |
+| ✋ **KDE-style Drag** | Hold `Alt` and drag anywhere on a window to move it. `Alt + Right Mouse` drags to resize. |
+| 🥧 **Pie Menu** | Hold `Space` and right-click: a radial menu appears. Move the mouse in a direction and release to trigger that action. |
+| 📊 **Status Bar** | Multi-monitor status bar with gradients, rounded corners and per-element alignment. Shows desktop labels, time, date, progress bars, system stats and custom widgets — external scripts can push to it too. |
+| 🖼️ **Window Borders** | Fully customizable colored window borders with gradient support. |
+| ⌨️ **WTM Mode** | Entering it arranges every monitor by your rules; `Alt + H/J/K/L` moves focus, `Alt + Shift + H/J/K/L` moves the window, `Ctrl + Alt + H/J/K/L` resizes it. A fullscreen or maximized window suspends tiling on that monitor; `[Tiling] AnimationDuration` enables animated moves. |
+| 📐 **Window Snapping** | Windows snap when dragged to screen edges or other windows. Configurable snap and release distances. |
+| 🎨 **Themes** | 20+ built-in themes. Export the current theme as a custom palette in one click. |
+| ⏱️ **Work Timer** | Configurable work periods, shown as a progress bar on the status bar. |
+| 📋 **Clipboard History** | Records every copied text to a file, with timestamps. |
+| ⚡ **Power Menu** | Shutdown / sleep / restart menu with gradient buttons. |
 
 ---
 
 ## 🔌 External Interfaces
 
-AHK_WM listens for `WM_COPYDATA` messages. External scripts can push text to the **status bar** or pop up **center-screen notifications** — with full per-call visual customization.
+AHK_WM listens for `WM_COPYDATA` messages, so other scripts can push text to the **status bar** or pop up a notification **on screen** — with full visual customization.
 
 ### OSD (on-screen display)
 
 ```ahk
-; Basic — uses config defaults
+; Basic — uses the config defaults
 AHK_WM_OSD("Build passed!", 3000)
 
-; With per-call overrides (all keys optional)
+; Per-call overrides (every key is optional)
 AHK_WM_OSD("Disk full!", 5000, "fs=36,bg=CC3333,tx=FFFFFF,op=95,pos=30")
 ```
 
-**Available override keys** (see `docs/config-reference.md` for full table):
+**Available override keys** (full table in `docs/config-reference.md`):
 
 | Key | Meaning | Default |
 |-----|---------|---------|
@@ -180,7 +171,7 @@ AHK_WM_OSD("Disk full!", 5000, "fs=36,bg=CC3333,tx=FFFFFF,op=95,pos=30")
 | `pos` | Vertical position % | Config `OSDPositionPct` (80) |
 | `x` / `y` | Pixel/percentage coordinates | *(center / config)* |
 | `bg` / `tx` | Background / text color | Theme colors |
-| `wr` | Max width (auto-wrap) | 85% monitor width |
+| `wr` | Max width (auto-wrap) | 85% of screen width |
 | `rd` / `rr` | Rounded corners on/off + radius | Config values |
 | `fn` | Font face | Config `FontName` |
 | `tag` | Logical label (same-tag OSDs replace each other) | *(none)* |
@@ -213,13 +204,15 @@ each with English (`En/`) and Chinese (`Ch/`) variants, heavily commented with f
 }
 ```
 
-A simple config lets Claude Code pop an OSD on completion — the same idea works for task schedulers, CI pipelines, Pomodoro timers, whatever.
+A simple config lets Claude Code pop an OSD when it finishes — the same idea works for task schedulers, CI pipelines, Pomodoro timers, whatever.
 
 📂 `docs/Examples/OSDExamples/` and `docs/Examples/BarExamples/` — several ready-to-run demos to learn from.
 
 <p align="center">
   <img src="docs/images/sep-config.svg" alt="" width="85%">
 </p>
+
+---
 
 ## ⚙️ Configuration
 
@@ -257,7 +250,6 @@ All configuration lives in `%USERPROFILE%\.config\AHK_WM\wm_config.ini`. Edit it
 - 🐛 **Bug reports** — Open an issue with repro steps and Windows version
 - 💡 **Feature requests** — Open an issue with the `enhancement` label
 - 🔧 **Pull requests** — Welcome. For large changes, open an issue first.
-- 🎨 **Themes** — Submit with a screenshot.
 
 ---
 

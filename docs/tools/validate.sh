@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # AHK v2 语法检查（不执行脚本）
-# 用法: bash tools/validate.sh [脚本路径...]   默认检查 ../wm.ahk
+# 用法: bash docs/tools/validate.sh [脚本路径...]   默认检查 wm.ahk
 # 退出码: 0 = 语法通过, 2 = 有语法错误（错误信息已打印）
 set -uo pipefail
 

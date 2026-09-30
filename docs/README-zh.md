@@ -34,7 +34,6 @@
 - [📸 截图](#-截图)
 - [📦 安装](#-安装)
 - [🚀 快速上手](#-快速上手)
-- [⌨️ WTM 模式](#️-wtm-模式)
 - [🧰 详细功能](#-详细功能)
 - [🔌 外部接口](#-外部接口)
 - [⚙️ 配置](#️-配置)
@@ -76,6 +75,7 @@
 | ![Bar Widgets](images/bar-widgets-2.png) | 状态栏 — 渐变部件、圆角 |
 | ![Border Gradient](images/border-gradient.png) | 边框 — 高亮标识拖拽窗口 |
 | ![Border Fullscreen](images/border-fullscreen.png) | 渐变边框 — 自定义您想要的彩色边框 |
+| ![wtm mode](images/wtm.gif) | WTM 模式 — 键盘驱动的平铺模式，拥有完全可自定义的布局，简单的配置方式窗口动画支持。 |
 | ![Help](images/help-menu.png) | 内置帮助 —迅速查看所有快捷键 |
 
 ---
@@ -115,6 +115,7 @@
 | ⌨️ WTM 模式（开关） | `Alt + Shift + D` |
 | ⌨️ WTM 移动焦点 | `Alt + H / J / K / L` |
 | ⌨️ WTM 交换窗口 | `Alt + Shift + H / J / K / L` |
+| ⌨️ WTM 缩放窗口 | `Ctrl + Alt + H / J / K / L` |
 | 💾 保存布局 | `Alt + Shift + S` |
 | 🧲 收集所有窗口 | `Alt + Shift + G` |
 | 📌 窗口置顶 | `Alt + T` |
@@ -124,19 +125,6 @@
 
 <p align="center">
   <img src="images/sep-drag.svg" alt="" width="85%">
-</p>
-
----
-
-## ⌨️ WTM 模式
-
-WTM 是键盘驱动的平铺模式，用法参考 Hyprland。`Alt + Shift + D` 一次性把每块屏都铺好，布局走你的 `[Tiling] Rules`（那块屏没写规则就用内置算法）。`Alt + H/J/K/L` 移动焦点，`Alt + Shift + H/J/K/L` 把焦点窗口和该方向的邻居对调，窗口拖到别的槽位上也能交换。
-
-窗口位置存的是归一化分数坐标而不是像素矩形，所以一次交换只动相关的那两个窗口，屏幕上其它窗口不会跟着跳。`Alt + Shift + F` 保留状态栏和边框、只留焦点窗口；真全屏或被最大化的窗口只暂停那一块屏的平铺。`[Tiling] WTMGap` 管 WTM 专用间隙，`[Tiling] AnimationDuration` 打开移动动画。
-
-<!-- 这里放 GIF：把下面的 src 换成你自己的 gif 路径即可 -->
-<p align="center">
-  <img src="images/wtm-mode.gif" alt="WTM 模式" width="85%">
 </p>
 
 ---
@@ -151,7 +139,7 @@ WTM 是键盘驱动的平铺模式，用法参考 Hyprland。`Alt + Shift + D` �
 | 🥧 **饼菜单** | 按住 `空格`，点右键出现径向菜单，朝不同方向移动鼠标释放后触发对应操作。 |
 | 📊 **状态栏** | 多显示器状态栏，支持渐变色、圆角、每个元素独立对齐。显示桌面标签、时间、日期、进度条、系统状态等自定义部件，甚至支持外部脚本调用。 |
 | 🖼️ **窗口边框** | 完全可自定义彩色窗口边框，支持渐变。 |
-| ⌨️ **WTM 模式** | Hyprland 风格键盘平铺。进入即按 `[Tiling] Rules`（无规则则内置算法）铺满每块屏；`Alt + H/J/K/L` 移动焦点，`Alt + Shift + H/J/K/L` 与同方向邻居交换槽位，拖拽窗口到落点也可交换。目标选取基于归一化分数槽位而非像素，只有参与交换的两个窗口会移动；边框增量 diff 同步（一窗一边框，不再整屏重建）；全屏/最大化窗口暂停该屏平铺；`[Tiling] AnimationDuration` 可开启移动动画。 |
+| ⌨️ **WTM 模式** | 进入即按规则铺满每块屏；`Alt + H/J/K/L` 移动焦点，`Alt + Shift + H/J/K/L` 移动窗口，`Ctrl + Alt + H/J/K/L` 缩放窗口。全屏/最大化窗口暂停该屏平铺；`[Tiling] AnimationDuration` 可开启移动动画。 |
 | 📐 **窗口吸附** | 拖拽窗口到屏幕边缘或其他窗口时自动吸附，可配置吸附距离和脱离距离。 |
 | 🎨 **主题** | 20+ 内置主题，一键导出当前主题为自定义配色。 |
 | ⏱️ **工作计时** | 可配置的工作时段，状态栏显示进度条。 |

@@ -152,6 +152,7 @@ Layout=[N,]元素,跨度[,颜色1,颜色2,…][,bg|tx][,on|off][,fs=N][,wrap=N];
 | `WTMGap` | 整数 px | 同 `[Border] Gap`（默认 `10`） | 任意 | **WTM 专用**平铺间隙，独立于 `Gap`。为窗口间边框预留空间；留空时沿用 `[Border] Gap`。 |
 | `AnimationDuration` | 整数 ms | `0` | ≥0 | **WTM** 移动/交换窗口的动画时长。`0` = 瞬时到位（无动画）。建议 `120`–`180`。 |
 | `WTMDebug` | on/off | `off` | `on`, `off` | 输出边框诊断日志（只在边框集合 / 焦点 / 颜色发生变化时写一行）。排查"边框不跟随 / 不消除 / 颜色不切换"时临时打开。 |
+| `ResizeStep` | 整数 px | `20` | ≥1 | **WTM** 缩放步长：按 `Ctrl+Alt+H/J/K/L` 时焦点窗口每条边移动**一半**（即整宽/整高变化 `ResizeStep` 像素）。改的是**整条边界线**——与该线重合的所有边（跨行跨列的也算）一起平移，所以整列/整行始终对齐、不会裂缝；空间从线上其它窗口身上拿，窗口最小尺寸 = `2 × ResizeStep`（下限 80px，无需配置），缩小时线上没人接手就不动。布局按像素栅格量化，日志里的规则串可原样粘回 `Rules`。缩放出来的布局**只活在 WTM 会话内**（只覆盖该屏 + 该窗口数），退出 WTM 即失效，`Alt+D` 的智能平铺始终走配置文件里的 `Rules`。 |
 | `Rules` | 规格 | *(见模板)* | `M,N,I,X,Y;…` | 自定义布局规则，智能平铺与 **WTM 均适用**（用户规则优先于内置算法）。`M` = 显示器（`*` = 任意），`N` = 规则适用的窗口总数，`I` = 窗口序号（1..N），`X`/`Y` = 跨度表达式（`1` = 全幅、`a/b`、`(a-c)/b`）。规则组必须完整（1..N 每个序号恰好出现一次）才会生效。 |
 
 ## [Snapping] 吸附
@@ -330,6 +331,8 @@ OSD:文本[:持续时间毫秒][:fs=24,op=90,x=50%,y=30%,bg=FF4444,tx=FFFFFF]
 | `WTMFocusLeft/Down/Up/Right` | `Alt+H/J/K/L` | WTM：方向聚焦。 |
 | `WTMMoveLeft/Down/Up/Right` | `Alt+Shift+H/J/K/L` | WTM：方向交换/移动（可跨显示器）。 |
 | `WTMFull` | `Alt+Shift+F` | WTM 内手动全屏：保留 bar 与边框，该屏只显示焦点窗口；再按一次复原。 |
+| `WTMShrinkWidth` / `WTMGrowWidth` | `Ctrl+Alt+H` / `Ctrl+Alt+L` | WTM：焦点窗口沿 X 轴变窄 / 变宽（见 `[Tiling] ResizeStep`）。 |
+| `WTMGrowHeight` / `WTMShrinkHeight` | `Ctrl+Alt+J` / `Ctrl+Alt+K` | WTM：焦点窗口沿 Y 轴变高 / 变矮。 |
 
 ---
 

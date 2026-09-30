@@ -1,14 +1,6 @@
-# 测试台产物（每次重建）
-tools/test_slots.ahk
-tools/test_slots.out.txt
-tools/test_slots.stdout.txt
-tools/test_slots.stderr.txt
-tools/test_slots.log.txt
-tools/test_slots.err.txt
-tools/.stderr.txt
-tools/.stdout.txt
-tools/probe_*.out.txt
-tools/probe_*.stdout.txt
-tools/probe_*.stderr.txt
-tools/probe_wins.out.txt
+# 测试台产物（每次重建）/ test-harness artifacts (regenerated)
+docs/tools/test_slots.ahk
+docs/tools/*.out.txt
+docs/tools/*.stdout.txt
+docs/tools/*.stderr.txt
 Buttons/
