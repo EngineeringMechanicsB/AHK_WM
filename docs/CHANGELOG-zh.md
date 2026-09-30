@@ -20,7 +20,7 @@
 - 🐛 **边框逐帧跟随动画窗口** — 移动/交换动画进行时，每一帧都重读目标窗口的真实矩形并重绘其边框，未聚焦窗口不再滞后于所属窗口
 - 🐛 **孤儿边框回收** — 边框窗口带 `AHKWM_BORDER` 标题（永不显示，仅作标记）；`WTM.SweepOrphanBorders` 会把本进程内连续两轮都不在任何边框表里的窗口销毁，遗留边框不再长期挂在屏幕上
 - 🐛 **单人模式/全屏改为按显示器处理** — `Alt+Shift+F` 与最大化的进入和退出只作用于焦点窗口所在的那块屏，其它屏的布局、边框与单人状态不受影响
-- 🆕 **`osd-keycast.ahk` 示例（中英各一份）** — 屏幕左下角显示当前按下的按键；轮询 `GetKeyState(键名,"P")`，只在按键集合变化时重发，用 `duration=0` + `tag=keycast` 保证同时只存在一个浮层
+- 🆕 **`osd-keycast.ahk` 示例（中英各一份）** — 屏幕左下角显示当前按下的按键；轮询 `GetKeyState(键名,"P")`，只在按键集合变化时重发，用 `duration=0` + `tag=keycast` 保证同时只存在一个浮层；`Ctrl+Alt+F12` 退出并清除浮层（它的 `OnExit` 回调不返回任何值——返回非零会让 AHK v2 退不掉）
 - 📚 **示例配置刷新** — `docs/Examples/example-configs/wm_config.ini` 更新到当前键集（`WTMFull`、`WTMGap`、`AnimationDuration`、`WTMDebug`、带 `#` 的颜色），并把个人路径替换为通用路径
 
 ### v2.10.2 (2026-07-31)

@@ -20,7 +20,7 @@
 - 🐛 **Borders track animated windows frame by frame** — while a move/swap animation runs, every frame re-reads the target's real rect and redraws its border, so unfocused windows no longer lag behind the window they belong to
 - 🐛 **Orphan border frames are reclaimed** — border windows carry the `AHKWM_BORDER` title (never shown, used only as a marker); `WTM.SweepOrphanBorders` destroys any frame of this process that is absent from all border maps for two consecutive passes, so a leftover frame can no longer stay on screen
 - 🐛 **Solo / fullscreen handling is per monitor** — `Alt+Shift+F` and maximizing enter and exit only on the focused window's monitor; the other monitors keep their own layout, borders and solo state
-- 🆕 **`osd-keycast.ahk` example (Ch/En)** — bottom-left overlay listing the keys currently held; polls `GetKeyState(key,"P")`, re-sends only when the set changes, and uses `duration=0` + `tag=keycast` so exactly one overlay exists
+- 🆕 **`osd-keycast.ahk` example (Ch/En)** — bottom-left overlay listing the keys currently held; polls `GetKeyState(key,"P")`, re-sends only when the set changes, and uses `duration=0` + `tag=keycast` so exactly one overlay exists; `Ctrl+Alt+F12` exits and clears the overlay (its `OnExit` handler returns nothing — a non-zero return value would stop AHK v2 from exiting)
 - 📚 **Example config refreshed** — `docs/Examples/example-configs/wm_config.ini` now matches the current key set (`WTMFull`, `WTMGap`, `AnimationDuration`, `WTMDebug`, `#`-prefixed colors); personal paths are genericized
 
 ### v2.10.2 (2026-07-31)

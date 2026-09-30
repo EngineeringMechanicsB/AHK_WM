@@ -33,7 +33,7 @@ Persistent
 
 ; ---- Tunables ----
 global POLL_MS       := 30
-global OVERLAY_POS   := "x=16%,y=93%"
+global OVERLAY_POS   := "x=16%,y=88%"
 global OVERLAY_STYLE := "fs=22,op=92,rd=on,rr=10,tag=keycast"
 
 ; ---- Modifiers: display name → physical key names (either side counts, shown once) ----
@@ -105,7 +105,14 @@ Tick() {
         LAST_TEXT := text
 }
 
-OnExit((*) => AHK_WM_OSD(" ", 0, HIDE_OPTS))
+; ---- Remove the overlay before exiting (a duration=0 OSD never disappears by itself) ----
+; Note: an OnExit callback that returns non-zero prevents the script from exiting (AHK v2),
+; so use a function here rather than an arrow expression
+OnExit(CleanUp)
+
+CleanUp(*) {
+    AHK_WM_OSD(" ", 0, HIDE_OPTS)
+}
 
 SetTimer(Tick, POLL_MS)
 Tick()

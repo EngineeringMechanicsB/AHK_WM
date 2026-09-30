@@ -26,7 +26,7 @@ Persistent
 
 ; ---- 可调参数 ----
 global POLL_MS       := 30
-global OVERLAY_POS   := "x=16%,y=93%"
+global OVERLAY_POS   := "x=16%,y=88%"
 global OVERLAY_STYLE := "fs=22,op=92,rd=on,rr=10,tag=keycast"
 
 ; ---- 修饰键：显示名 → 物理键名（左右任一按下即显示，只显示一个名字）----
@@ -98,7 +98,13 @@ Tick() {
         LAST_TEXT := text
 }
 
-OnExit((*) => AHK_WM_OSD(" ", 0, HIDE_OPTS))
+; ---- 退出前先收掉浮层（duration=0 的 OSD 不会自己消失）----
+; 注意：OnExit 回调返回非零值会让脚本退不掉（AHK v2 语义），所以这里用函数而不是箭头表达式
+OnExit(CleanUp)
+
+CleanUp(*) {
+    AHK_WM_OSD(" ", 0, HIDE_OPTS)
+}
 
 SetTimer(Tick, POLL_MS)
 Tick()
