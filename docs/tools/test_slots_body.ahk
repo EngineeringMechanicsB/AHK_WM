@@ -684,6 +684,12 @@ if (pk.Length = 4)
     Assert(pk[1] = "chrome.exe" && pk[2] = "*pip*" && pk[3] = "foo" && pk[4] = "=exact",
         "K52: 编号键取右值、分号再切、注释跳过")
 
+; K53：预设里 "N==Value" 这种（规则本身以 = 开头）必须只切第一个 =
+eqK := ExclParseSection("2==Affinity Designer 2`r`n3=*Steam*")
+Assert(eqK.Length = 2 && eqK[1] = "=Affinity Designer 2" && eqK[2] = "*Steam*",
+    "K53: N==Value 只切第一个 =，(实际 " (eqK.Length ? eqK[1] : "") ")")
+Assert(MatchField("Affinity Designer 2", eqK[1], "title"), "K54: 解析出的 =规则 能正常匹配")
+
 ; K-Need：按规则内容推导"需要哪些字段"
 Excl_Titles := ["Picture-in-Picture"]
 Excl_Classes := ["cls:Chrome_WidgetWin*"]
@@ -702,6 +708,63 @@ Excl_Classes := []
 Excl_Processes := []
 ExclRecomputeNeed()
 Assert(Excl_NeedField = 0, "K62: 无规则 → 不读任何字段 (0)")
+
+; ---------------------------------------------------------------
+; 场景 L：exclude.ini 端到端（生成 → 读回）
+;   把 ConfigDir 指到临时目录，走一遍 EnsureExcludeFile + LoadExcludeRules，
+;   检查内置预设能落地成文件、再被解析成规则数组。
+; ---------------------------------------------------------------
+Log("")
+Log("-- L: exclude.ini 生成与读回 --")
+
+; 仅按进程名判断"是否被预设排除"（测试用，不涉及真实窗口句柄）
+IsExcludedByPreset(procName) {
+    global Excl_Processes
+    for r in Excl_Processes
+        if MatchField(procName, r, "proc")
+            return true
+    return false
+}
+
+ConfigDir  := A_Temp "\ahk_wm_excl_test"
+ExcludeFile := ConfigDir "\exclude.ini"
+ConfigFile := ConfigDir "\wm_config.ini"       ; 不存在 → 迁移逻辑走空分支
+try DirDelete(ConfigDir, true)
+EnsureExcludeFile()
+Assert(FileExist(ExcludeFile), "L1: EnsureExcludeFile 生成 exclude.ini")
+Assert(!FileExist(ConfigFile), "L2: 不碰 wm_config.ini")
+
+LoadExcludeRules()
+Assert(Excl_Titles.Length >= 10, "L3: 预设标题规则读回 (" Excl_Titles.Length " 条)")
+Assert(Excl_Classes.Length >= 20, "L4: 预设类名规则读回 (" Excl_Classes.Length " 条)")
+Assert(Excl_Processes.Length >= 40, "L5: 预设进程规则读回 (" Excl_Processes.Length " 条)")
+Assert(Excl_NeedField = 7, "L6: 三类规则齐 → 需要全部字段")
+
+; 预设必须"安全"：不能把用户的主窗口(浏览器/编辑器/资源管理器)排除掉
+Assert(!IsExcludedByPreset("chrome.exe"), "L7: chrome.exe 未被预设排除")
+Assert(!IsExcludedByPreset("Code.exe"),   "L7b: Code.exe 未被预设排除")
+Assert(!IsExcludedByPreset("explorer.exe"), "L7c: explorer.exe 未被预设排除")
+
+; 二次生成：文件已存在 → 不覆盖（保留用户改动）
+before := FileRead(ExcludeFile, "UTF-16")
+EnsureExcludeFile()
+Assert(FileRead(ExcludeFile, "UTF-16") = before, "L8: 文件已存在时不重复生成")
+
+; 用户加规则：写进 [User-Processes] 后能被读回
+ExclAppendUserK := 0
+try {
+    IniWrite("myapp.exe", ExcludeFile, "User-Processes", 1)
+    LoadExcludeRules()
+    found := false
+    for r in Excl_Processes
+        if (r = "myapp.exe")
+            found := true
+    Assert(found, "L9: 用户段规则并入进程规则")
+} catch as e {
+    Assert(false, "L9: 写入用户段失败: " e.Message)
+}
+
+try DirDelete(ConfigDir, true)
 
 Log("")
 Log(Fail ? "==== 失败 " Fail " 项 ====" : "==== 全部通过 ====")

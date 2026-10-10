@@ -35,11 +35,23 @@ extract() {   # $1 = 顶层函数名（匹配行首 "name(" 到行首 "}"）
              TileNormal TileVertical TileUltrawide BuildBuiltinSlotTable \
              GetTileArea SortRectsForRules BuildLayoutRulesForMonitor \
              GlobMatch _StripExe MatchField MatchTitleRule ExclFieldBit \
-             SplitExcludeList ExclParseSection ExclRecomputeNeed; do
+             SplitExcludeList ExclParseSection ExclRecomputeNeed \
+             ExclFileHeader ExclPresetIni EnsureExcludeFile ExclReadSection \
+             LoadExcludeRules ExclRuleExists; do
         echo ''
         echo "; ---- 抽取自 wm.ahk: $f ----"
         extract "$f"
     done
+    # ExclPresetIniText 是顶层 global（多行拼接），单独抽
+    echo ''
+    echo '; ---- 抽取自 wm.ahk: global ExclPresetIniText ----'
+    awk '
+        /^global ExclPresetIniText := ""/ { on = 1 }
+        on {
+            if ($0 !~ /^global ExclPresetIniText/ && $0 !~ /^[ \t]*\. "/) exit
+            print
+        }
+    ' wm.ahk
     cat docs/tools/test_slots_body.ahk
 } > docs/tools/test_slots.ahk
 
