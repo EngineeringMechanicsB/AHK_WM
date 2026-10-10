@@ -1,12 +1,12 @@
 <div align="center">
 
-# 🔲 AHK WM <sub>v2.11.0</sub>
+# 🔲 AHK WM <sub>v2.12.0</sub>
 
 <p>
   <img src="https://img.shields.io/badge/AutoHotkey-v2.0-cba6f7?style=flat-square" alt="AutoHotkey v2" />
   <img src="https://img.shields.io/badge/平台-Windows_7_~_11-b4befe?style=flat-square" alt="平台" />
   <img src="https://img.shields.io/badge/许可-MIT-f5c2e7?style=flat-square" alt="许可" />
-  <img src="https://img.shields.io/badge/版本-v2.11.0-cba6f7?style=flat-square" alt="版本" />
+  <img src="https://img.shields.io/badge/版本-v2.12.0-cba6f7?style=flat-square" alt="版本" />
 </p>
 
 <p>
@@ -229,7 +229,7 @@ WMBarPush(2, (200-550)/1920， "Take a sad song`nand make it better")  ; `n = �
 
 - **多显示器独立桌面** — 每显示器独立切换桌面
 - **包管理器** — Scoop、Chocolatey、winget 分发
-- **窗口排除规则** — 现阶段的窗口排除规则不完善
+- **排除规则编辑器** — 用图形界面编辑 `[User-*]` 规则，不用手写 `exclude.ini`
 - **BAR自动隐藏和显示** — 现在仅仅是全盘隐藏，添加一个遮挡自动隐藏或者降低透明度模式
 
 ---
@@ -249,6 +249,24 @@ WMBarPush(2, (200-550)/1920， "Take a sad song`nand make it better")  ; `n = �
 - 🐛 **Bug 报告** — 提交 Issue，附重现步骤和 Windows 版本
 - 💡 **功能建议** — 提交带 `enhancement` 标签的 Issue
 - 🔧 **Pull Request** — 欢迎。大改动请先开 Issue 讨论。
+
+### 开发工具
+
+都在 `docs/tools/`：
+
+| 工具 | 作用 |
+|---|---|
+| `validate.sh` | 用 `AutoHotkey64.exe /validate` 检查 `wm.ahk` 语法（不会真的执行脚本）。 |
+| `mk_testslots.sh` + `run_testslots.sh` | 把 `wm.ahk` 里的纯函数抽出来拼成独立脚本，跑 204 条断言（槽位模型、布局、排除规则）。 |
+| `probe_pick.ahk` | 在随机布局上交叉验证两套方向选取顺序。 |
+| `sync_version.sh [--check]` | 把 `global WM_Version`（唯一版本源）注入引用了它的四个文档。 |
+| `release.sh <X.Y.Z> [--commit] [--publish]` | bump → 同步 → 校验 → 断言 → Ahk2Exe 编译 x86/x64 到 `dist/`。只有 `--commit` 才提交打标签，只有 `--publish` 才 push 并创建 GitHub Release。 |
+| `migrate_config.py <旧.ini> <新.ini>` | 把旧版 `wm_config.ini` 合并到当前配置模板上。 |
+
+手动编译时的两个坑：v2 脚本的 base 是 `...\AutoHotkey\v2\AutoHotkey64.exe`
+（`Compiler\Unicode 64-bit.bin` 是 **v1** base，会报 `Failed to compile`）；在 Git Bash 里必须
+`export MSYS2_ARG_CONV_EXCL='*'`，否则 `/in` `/out` 会被改写成 `C:/Program Files/Git/in`，
+Ahk2Exe 会弹「无法识别的参数」。
 
 ---
 

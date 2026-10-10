@@ -1,4 +1,4 @@
-# AHK_WM Configuration Reference (v2.11.0)
+# AHK_WM Configuration Reference (v2.12.0)
 
 Config file location: `%USERPROFILE%\.config\AHK_WM\wm_config.ini` (UTF-16 LE).
 The file is created with defaults on first run. After editing, reload the script
@@ -214,8 +214,8 @@ OSD:text[:duration_ms][:fs=24,op=90,x=50%,y=30%,bg=FF4444,tx=FFFFFF]
 | `fs` | int pt | `OSDFontSize` (20) | Font size. |
 | `op` | %  | `OSDOpacity` (78) | Opacity. |
 | `pos` | %  | `OSDPositionPct` (80) | Vertical position (0=top, 100=bottom). |
-| `x` | px/% | *(center)* | Horizontal pos: `300` = 300px, `50%` = half screen. |
-| `y` | px/% | *(pos/config)* | Vertical pos: `200` = 200px, `30%` = screen height %. |
+| `x` | px/%/`center` | *(center)* | Horizontal pos: `300` = 300px, `50%` = half screen, `center` = monitor middle. |
+| `y` | px/%/`center` | *(pos/config)* | Vertical pos: `200` = 200px, `30%` = screen height %, `center` = the popup is centred on the monitor. |
 | `bg` | 6-hex | theme `Color_Bg` | Background color. |
 | `tx` | 6-hex | theme `Color_Active` | Text color. |
 | `wr` | int px | `monW × 0.85` | Max width; text auto-wraps when exceeded. |
@@ -244,6 +244,10 @@ grouped by `tag`.  Neither side interferes with the other.
 ## [Exclude]
 
 Windows matching any rule are ignored by tiling, borders and WinSelect.
+
+Legacy section: on first run these three keys are migrated into `exclude.ini`, which also
+supports globs, `re:`, `proc:`, `cls:` and `title:` rules and keeps your own entries
+(`[User-*]`) apart from the built-in preset. Edit `exclude.ini` afterwards, not this section.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -321,14 +325,13 @@ modifiers only and are combined with digits `1–9`.
 | `TileSmart` | `Alt+D` | Smart-tile the monitor under the mouse. |
 | `GatherAll` | `Alt+Shift+G` | Gather every window onto the current desktop. |
 | `TogglePin` | `Ctrl+Alt+T` | Toggle "always visible on every desktop". |
-| `ToggleBar` | `Ctrl+Alt+B` | Show / hide the bar. |
+| `ToggleBar` | `Ctrl+Alt+B` | Show / hide the status bar. |
 | `SaveLayout` / `RestoreLayout` | `Alt+Shift+S` / `Alt+Shift+R` | Save / restore a window-position snapshot. |
 | `CloseWindow` | `Alt+Q` | Close window (under mouse; **focused** window in WTM mode). |
 | `CloseWindowAlt` | `Alt+MButton` | Same as `CloseWindow`. |
 | `ToggleMaximize` | `Alt+F` | Maximize / restore window under mouse. |
 | `ToggleTop` | `Alt+T` | Toggle always-on-top (WTM: float + exclude the focused window). |
 | `HideWindow` | `Alt+W` | Minimize window under mouse. |
-| `ToggleAllBorders` | *(empty)* | Toggle borders on all windows. |
 | `TransparencyUp` / `TransparencyDown` | `Alt+WheelUp` / `Alt+WheelDown` | Adjust window transparency. |
 | `SnapLeft` / `SnapRight` | `Alt+Left` / `Alt+Right` | Snap window to the left / right half. |
 | `SnapUp` / `SnapDown` | `Alt+Up` / `Alt+Down` | Maximize / minimize. |
@@ -340,7 +343,8 @@ modifiers only and are combined with digits `1–9`.
 | `DragResize` | `Alt+RButton` | Drag-resize with snapping. |
 | `PieMenuTrigger` | `~Space & RButton` | Open the pie menu. |
 | `WinSelect` | `Alt+S` | Window-select mode. |
-| `WTMToggle` | *(empty; suggested `Alt+Shift+D`)* | Toggle WTM tiling mode. |
+| `WTMToggle` | `Alt+Shift+D` | Toggle WTM tiling mode. |
+| `DiagnoseWindow` | *(empty)* | Print the focused window's proc / class / title / HWND and the reason it is (not) excluded, as an on-screen OSD. Unbound by default — mostly for checking windows while writing exclusion rules. |
 | `WTMFocusLeft/Down/Up/Right` | `Alt+H/J/K/L` | WTM: focus in a direction. |
 | `WTMMoveLeft/Down/Up/Right` | `Alt+Shift+H/J/K/L` | WTM: swap / move in a direction (crosses monitors). |
 | `WTMFull` | `Alt+Shift+F` | Manual fullscreen inside WTM: bar and borders stay, only the focused window is shown on that monitor; press again to restore. |

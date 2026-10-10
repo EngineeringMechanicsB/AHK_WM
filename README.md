@@ -1,12 +1,12 @@
 <div align="center">
 
-# 🔲 AHK WM <sub>v2.11.0</sub>
+# 🔲 AHK WM <sub>v2.12.0</sub>
 
 <p>
   <img src="https://img.shields.io/badge/AutoHotkey-v2.0-cba6f7?style=flat-square" alt="AutoHotkey v2" />
   <img src="https://img.shields.io/badge/platform-Windows_7_~_11-b4befe?style=flat-square" alt="Platform" />
   <img src="https://img.shields.io/badge/license-MIT-f5c2e7?style=flat-square" alt="License" />
-  <img src="https://img.shields.io/badge/version-v2.11.0-cba6f7?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/version-v2.12.0-cba6f7?style=flat-square" alt="Version" />
 </p>
 
 <p>
@@ -230,7 +230,7 @@ All configuration lives in `%USERPROFILE%\.config\AHK_WM\wm_config.ini`. Edit it
 
 - **Per-monitor desktops** — independent desktop switching per monitor
 - **Package managers** — Scoop, Chocolatey, winget distribution
-- **Window exclude rules** — current exclusion rules need improvement
+- **Exclusion rule editor** — edit `[User-*]` rules in a GUI instead of hand-writing `exclude.ini`
 - **Bar auto-hide & reveal** — currently only full hide; add occlusion-based auto-hide or transparency mode
 
 ---
@@ -250,6 +250,25 @@ All configuration lives in `%USERPROFILE%\.config\AHK_WM\wm_config.ini`. Edit it
 - 🐛 **Bug reports** — Open an issue with repro steps and Windows version
 - 💡 **Feature requests** — Open an issue with the `enhancement` label
 - 🔧 **Pull requests** — Welcome. For large changes, open an issue first.
+
+### Development tooling
+
+Everything lives in `docs/tools/`:
+
+| Tool | What it does |
+|---|---|
+| `validate.sh` | Syntax-check `wm.ahk` with `AutoHotkey64.exe /validate` (it is never executed). |
+| `mk_testslots.sh` + `run_testslots.sh` | Extract the pure functions out of `wm.ahk` into a standalone script and run the 204 assertions over the slot model, layouts and exclusion rules. |
+| `probe_pick.ahk` | Cross-check the two directional-pick orders over random layouts. |
+| `sync_version.sh [--check]` | Push `global WM_Version` (the single version source) into the four documents that quote it. |
+| `release.sh <X.Y.Z> [--commit] [--publish]` | bump → sync → validate → test → Ahk2Exe x86/x64 into `dist/`. Commits and tags only with `--commit`, pushes and creates the GitHub release only with `--publish`. |
+| `migrate_config.py <old.ini> <out.ini>` | Merge an old `wm_config.ini` onto the current config template. |
+
+Two things that bite when compiling by hand: the base for a v2 script is
+`...\AutoHotkey\v2\AutoHotkey64.exe` (`Compiler\Unicode 64-bit.bin` is the **v1** base and
+fails with `Failed to compile`), and in Git Bash you need `export MSYS2_ARG_CONV_EXCL='*'`
+or `/in` / `/out` get rewritten into `C:/Program Files/Git/in` and Ahk2Exe complains about an
+unrecognised parameter.
 
 ---
 

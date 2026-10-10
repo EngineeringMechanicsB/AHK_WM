@@ -12,8 +12,9 @@
 ;   fs  — Font size in points       (default: OSDFontSize from config, 20)
 ;   op  — Opacity percentage        (default: OSDOpacity from config, 78)
 ;   pos — Vertical position %       (default: OSDPositionPct from config, 80)
-;   x   — Horizontal pos px or %    (default: center)        e.g. x=300 x=50%
-;   y   — Vertical pos px or %      (default: pos or config) e.g. y=200 y=30%
+;   x   — Horizontal pos px or %    (default: center)        e.g. x=300 x=50% x=center
+;   y   — Vertical pos px or %      (default: pos or config) e.g. y=200 y=30% y=center
+;        center = middle of the monitor (y=center centres the popup vertically)
 ;   bg  — Background color (6-hex)  (default: theme Color_Bg)
 ;   tx  — Text color (6-hex)        (default: theme Color_Active)
 ;   wr  — Max width in pixels       (default: 85% of monitor width)

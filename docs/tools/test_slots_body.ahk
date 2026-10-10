@@ -735,15 +735,27 @@ Assert(FileExist(ExcludeFile), "L1: EnsureExcludeFile 生成 exclude.ini")
 Assert(!FileExist(ConfigFile), "L2: 不碰 wm_config.ini")
 
 LoadExcludeRules()
-Assert(Excl_Titles.Length >= 10, "L3: 预设标题规则读回 (" Excl_Titles.Length " 条)")
-Assert(Excl_Classes.Length >= 20, "L4: 预设类名规则读回 (" Excl_Classes.Length " 条)")
-Assert(Excl_Processes.Length >= 40, "L5: 预设进程规则读回 (" Excl_Processes.Length " 条)")
-Assert(Excl_NeedField = 7, "L6: 三类规则齐 → 需要全部字段")
+Assert(Excl_Titles.Length >= 2, "L3: 预设标题规则读回 (" Excl_Titles.Length " 条)")
+Assert(Excl_Classes.Length >= 10, "L4: 预设类名规则读回 (" Excl_Classes.Length " 条)")
+Assert(Excl_Processes.Length = 0, "L5: 预设不含任何进程规则 (" Excl_Processes.Length " 条)")
+Assert(Excl_NeedField = 3, "L6: 只有标题+类名 → 位掩码 3 (实际 " Excl_NeedField ")")
 
 ; 预设必须"安全"：不能把用户的主窗口(浏览器/编辑器/资源管理器)排除掉
 Assert(!IsExcludedByPreset("chrome.exe"), "L7: chrome.exe 未被预设排除")
 Assert(!IsExcludedByPreset("Code.exe"),   "L7b: Code.exe 未被预设排除")
 Assert(!IsExcludedByPreset("explorer.exe"), "L7c: explorer.exe 未被预设排除")
+
+; 常用窗口一律不排除（用户明确要求：cmd / 终端 / 浏览器都不能被预设排除）
+Assert(!IsExcludedByPreset("cmd.exe"),   "L7d: cmd.exe 未被预设排除")
+Assert(!IsExcludedByPreset("WindowsTerminal.exe"), "L7e: WindowsTerminal.exe 未被预设排除")
+Assert(!IsExcludedByPreset("zen.exe"),   "L7f: zen.exe 未被预设排除")
+Assert(!IsExcludedByPreset("firefox.exe"), "L7g: firefox.exe 未被预设排除")
+; 管理器自己也不能被排除，否则排除规则一改就把自己关在门外
+Assert(!IsExcludedByPreset("AutoHotkey64.exe"), "L7h: AutoHotkey64.exe 未被预设排除")
+Assert(!IsExcludedByPreset("Zoom.exe"),  "L7i: Zoom.exe 未被预设排除")
+Assert(!IsExcludedByPreset("SnippingTool.exe"), "L7j: SnippingTool.exe 未被预设排除")
+Assert(InStr(ExclPresetIni(), ".exe") = 0, "L7k: 预设文本里没有任何进程名")
+Assert(InStr(ExclPresetIni(), "*") = 0, "L7l: 预设里没有通配兜底规则")
 
 ; 二次生成：文件已存在 → 不覆盖（保留用户改动）
 before := FileRead(ExcludeFile, "UTF-16")
@@ -776,10 +788,7 @@ try {
         if (r = "keepme.exe")
             kept := true
     Assert(kept, "L11: 重刷预设时用户段规则保留")
-    n := 0
-    for r in Excl_Processes
-        n += 1
-    Assert(n >= 40, "L12: 重刷后预设规则仍在 (" n " 条)")
+    Assert(Excl_Classes.Length >= 10, "L12: 重刷后预设类名规则仍在 (" Excl_Classes.Length " 条)")
 } catch as e {
     Assert(false, "L10: 预设重刷失败: " e.Message)
 }
@@ -824,6 +833,41 @@ Assert(PauseModeRead("0") = "off", "N6: 0 → off")
 Assert(PauseModeRead("1") = "all", "N7: 1 → all")
 Assert(PauseModeRead("") = "bar", "N8: 空值 → 默认 bar")
 Assert(PauseModeRead("garbage") = "bar", "N9: 无法识别 → 默认 bar")
+
+; ---------------------------------------------------------------
+; 场景 O：互相重叠的自定义槽位表上的方向选择
+;   用户实测布局（1585x853 平铺区，gap=15）：
+;     #1 x 217-958  y 21-791
+;     #2 x 799-1583 y 4-422
+;     #3 x 648-1432 y 364-782
+;   归一化后三个槽位在 x 轴上互相重叠 → 旧的"完全越过"判据全方向返回 none，
+;   WTM 下无法移动/切换聚焦。
+; ---------------------------------------------------------------
+Log("")
+Log("-- O: 重叠槽位表的方向选择 --")
+TblO := []
+TblO.Push(SlotFromSpan(217 / 1585, 958 / 1585, 21 / 853, 791 / 853, "custom"))
+TblO.Push(SlotFromSpan(799 / 1585, 1583 / 1585, 4 / 853, 422 / 853, "custom"))
+TblO.Push(SlotFromSpan(648 / 1585, 1432 / 1585, 364 / 853, 782 / 853, "custom"))
+Assert(PickSlotFromTable(TblO, 1, "R") = 3, "O1: #1 向右 → #3（最近的右侧槽位）")
+Assert(PickSlotFromTable(TblO, 1, "D") = 3, "O2: #1 向下 → #3")
+Assert(PickSlotFromTable(TblO, 1, "U") = 2, "O3: #1 向上 → #2")
+Assert(PickSlotFromTable(TblO, 1, "L") = 0, "O4: #1 向左 → 无（没有更左的窗口）")
+Assert(PickSlotFromTable(TblO, 3, "R") = 2, "O5: #3 向右 → #2")
+Assert(PickSlotFromTable(TblO, 3, "L") = 1, "O6: #3 向左 → #1")
+Assert(PickSlotFromTable(TblO, 3, "U") = 2, "O7: #3 向上 → #2")
+Assert(PickSlotFromTable(TblO, 3, "D") = 0, "O8: #3 向下 → 无")
+
+; 规则串 → 槽位表，端到端过一遍（配置写的就是这个串）
+sO := "3,1,(217-958)/1585,(21-791)/853;3,2,(799-1583)/1585,(4-422)/853;"
+      . "3,3,(648-1432)/1585,(364-782)/853;"
+rO := ParseLayoutRules(sO)
+Assert(rO.Has("*") && rO["*"].Has(3), "O9: 4 字段短式（省略显示器）解析成 *|3")
+TblO2 := []
+for it in rO["*"][3]
+    TblO2.Push(SlotFromSpan(it.x.lo, it.x.hi, it.y.lo, it.y.hi, "custom"))
+Assert(PickSlotFromTable(TblO2, 1, "R") = 3, "O10: 从规则串建表后 #1 向右 → #3")
+Assert(PickSlotFromTable(TblO2, 3, "L") = 1, "O11: 从规则串建表后 #3 向左 → #1")
 
 Log("")
 Log(Fail ? "==== 失败 " Fail " 项 ====" : "==== 全部通过 ====")

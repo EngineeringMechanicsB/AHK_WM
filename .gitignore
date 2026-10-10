@@ -4,3 +4,7 @@ docs/tools/*.out.txt
 docs/tools/*.stdout.txt
 docs/tools/*.stderr.txt
 Buttons/
+
+# 发布产物与本地备份 / release artifacts and local backups
+dist/
+docs/backup/

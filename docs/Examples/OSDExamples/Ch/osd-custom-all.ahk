@@ -12,8 +12,9 @@
 ;   fs  — 字体大小（磅）        默认：配置文件 OSDFontSize，20
 ;   op  — 不透明度（百分比）    默认：配置文件 OSDOpacity，78
 ;   pos — 垂直位置（百分比）    默认：配置文件 OSDPositionPct，80
-;   x   — 水平位置 px 或 %      默认：居中                  如 x=300 x=50%
-;   y   — 垂直位置 px 或 %      默认：pos 或配置值           如 y=200 y=30%
+;   x   — 水平位置 px 或 %      默认：居中                  如 x=300 x=50% x=center
+;   y   — 垂直位置 px 或 %      默认：pos 或配置值           如 y=200 y=30% y=center
+;        center = 显示器正中（y=center 让弹窗垂直居中）
 ;   bg  — 背景色（6 位 hex）   默认：主题 Color_Bg
 ;   tx  — 文字色（6 位 hex）   默认：主题 Color_Active
 ;   wr  — 最大宽度（像素）      默认：屏幕宽度 × 0.85，超出自动换行

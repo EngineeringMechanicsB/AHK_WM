@@ -1,5 +1,20 @@
 # 更新日志
 
+### v2.12.0 (2026-10-10)
+
+- **自定义布局槽位重叠时方向移动恢复可用** — 手存的 `[Tiling] Rules` 布局里槽位可以重叠（编辑器接受任意矩形，实机布局也常有带缝隙甚至压在一起的），而"候选槽位必须**整个**越过自己"这一门槛在跨度相交时永远不成立，四个方向全部返回 `none`，WTM 下键盘彻底失效。现在门槛无解时改用"移动轴**中心**"排序，再用垂直轴**重叠长度**破同分，`Alt+K` 落到正上方那个槽位，而不是更远但恰好重叠更多的那个
+- **进 WTM 不再把窗口塞错槽位** — 种子阶段拿窗口外框的 bbox 当归一化范围，而槽位表是按**平铺区域**（`GetTileArea`，即工作区减去 `[Border] Gap` / `[Tiling] WTMGap`）归一化的。留边或自定义重叠布局下两个取区口径不同，比例被拿到错的坐标系里查，窗口就落到它并不占用的槽位上（日志表现为 `seed mon1 n3 kept2 fill1`）。现在种子阶段使用建表时的同一口径，只在区域退化时退回 bbox
+- **排除预设改回自己维护，且不含任何进程规则** — 原预设抄的是另一款平铺管理器那种"标识符列表"格式，那种格式里裸写 `xxx.exe` 会排除**该进程的所有窗口**，`cmd`、Windows Terminal、浏览器就是这么变得不可平铺、没有边框的——连画中画以外的正常窗口也一起被吃掉。新预设按"确实绝不能碰的窗口"手写：画中画标题、桌面 / 任务栏 / 托盘类名、任务切换与缩略图覆盖层、工具提示，全文没有任何 `.exe`。`ExclPresetRev` 2 → 3，已有 `exclude.ini` 下次启动刷新 `[Preset-*]`，同时保留 `[User-*]`（以及用 `Alt+Shift+X` 手动加进去的规则）
+- **删除 `ToggleAllBorders`，保留 `ToggleBar`** — "一键切换所有窗口边框"这个功能连热键、配置键、帮助窗口条目一起移除；单窗口边框不受影响，`Alt+B` 空出来了。`Ctrl+Alt+B` 状态栏开关（`ToggleBar`，连同托盘里的 `Toggle Status Bar` 与帮助行）原样保留
+- **WTM 开关默认绑定** — 默认 `Alt+Shift+D`（`Hotkeys → WTMToggle`）；以前默认留空，等于进 WTM 模式前必须自己往 `[Hotkeys]` 里写一个键
+- **`DiagnoseWindow` 默认不绑定，弹窗改为 OSD** — 诊断热键不再弹 MessageBox（也不再默认开启），而是用 6 秒的屏幕提示显示焦点窗口的进程、类名、标题、`MinMax` 状态、`HWND`、是否被排除以及**命中哪条规则**，外加 `Alt+Shift+X` 的提示，全英文，无状态栏桌面或全屏窗口上也能看清。写排除规则时自己在 `[Hotkeys]` 里绑；顺带 `ShowOSD()` 现在支持传入时长。诊断信息改为**屏幕正中**显示（`x=center,y=center` + `tag=diagnose`）：默认的底部位置会把七行信息顶出屏幕下边缘，而靠顶部又会被状态栏压住。`center` 是 x / y 逐次覆盖选项的新取值；两条 OSD 路径现在还会在弹窗底边仍要溢出时整体上移，而不是放任它被截断。提示行会显示 `ExcludeWindow` 实际绑定的键，没绑定就直说未绑定
+- **注释与格式整理** — `wm.ahk` 删掉约 290 行叙述性注释，只留简短段落横幅（`; 9. Border System (BorderFrame / DragBorder / PinBorder) / 边框系统`）和少量"为什么"注释；描述生成配置文件的注释改成与全文一致的"英文在前 + 简短中文"。一次性的 `gen_exclude_presets.py` 生成脚本已删除（预设写在脚本里，靠 `ExclPresetRev` 下发）
+- **单一版本源 + 一键发布** — `docs/tools/sync_version.sh` 从 `wm.ahk` 的 `global WM_Version` 读版本号，注入引用了它的四个文档（`--check` 用于检测漂移；CHANGELOG 故意排除在外，每个标题属于它自己那个版本）。`docs/tools/release.sh <X.Y.Z>` 串起整条链路——bump、同步、`validate.sh`、`run_testslots.sh`、Ahk2Exe 编译 x86/x64 到 `dist/`——只有加 `--commit` 才提交打标签，只有加 `--publish` 才 push 和调 `gh release create`
+- **`docs/tools/migrate_config.py`** — 把旧版 `wm_config.ini` 合并到当前 `DefaultIni` 模板上：同名键以旧值为准，新键取默认值，模板已删除的键（`ToggleAllBorders`、`RestoreLayout`）自动丢弃，旧 `[Exclude]` 段原样保留以便照旧迁进 `exclude.ini`，目标文件备份为 `.pre-migrate.bak`
+- **测试 204 条断言** — 新增场景用刻意重叠的三槽位布局钉住八个方向的选取结果（正是让键盘失效的那种形状）；种子场景现在会在归一化口径不是平铺区域时失败；排除相关断言明确要求 `cmd`、Windows Terminal、Zen、Firefox、脚本自身（AutoHotkey）、Zoom**不被**排除，预设里不含 `.exe`（即没有任何进程规则）、也没有通配兜底规则，以及新的字段统计（两条标题规则、十条类名、零条进程）
+- **文档同步** — 两份配置参考删除 `ToggleAllBorders` 行（`ToggleBar` 行加回来），`WTMToggle` 默认值改为 `Alt+Shift+D`，新增 `DiagnoseWindow` 行，旧 `[Exclude]` 段标注"已迁移到 `exclude.ini`"，路线图里"改进排除规则"（已完成）换成"排除规则编辑器"；`docs/Examples/example-configs/wm_config.ini` 去掉 `RestoreLayout` /
+`ToggleAllBorders`，补上 `ToggleBar`、`ExcludeWindow`、`DiagnoseWindow` 和新的 `WTMToggle`
+默认值
 ### v2.11.0 后续修复 (2026-09-30)
 
 - **进入 WTM 不再打乱屏幕** — 旧实现按自己的窗口顺序重排布局，于是刚用 `Alt+D` 平铺好的那块屏，一进 WTM 就变了样（通常表现为窗口内容互相调换）。现在进入时先量出每个窗口的矩形，把中心点归一化后回查它**本来就占着的槽位**（`SlotAssign`），每个窗口留在原槽位；认不出原位的窗口（新开的、被拖走的）才按"行带 → x"的顺序填进剩下的空槽位。几何仍然由 `[Tiling] Rules`（该屏没规则就用内置算法）加 `[Tiling] WTMGap` 算，所以进入 WTM 就是"原来的布局 + WTM 间隙"，反复开关也不累积变化。最大化窗口的矩形是整块屏，不当作"已有布局"的证据

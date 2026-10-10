@@ -1,4 +1,4 @@
-# AHK_WM 配置参考（v2.11.0）
+# AHK_WM 配置参考（v2.12.0）
 
 配置文件位置：`%USERPROFILE%\.config\AHK_WM\wm_config.ini`（UTF-16 LE 编码）。
 首次运行时自动生成默认配置。修改后重载脚本生效（默认热键 `Alt+R`，或托盘菜单 → *Reload Script*）。
@@ -204,8 +204,8 @@ OSD:文本[:持续时间毫秒][:fs=24,op=90,x=50%,y=30%,bg=FF4444,tx=FFFFFF]
 | `fs` | 整数 磅 | `OSDFontSize` (20) | 字体大小。 |
 | `op` | %  | `OSDOpacity` (78) | 不透明度。 |
 | `pos` | %  | `OSDPositionPct` (80) | 垂直位置（0=顶部，100=底部）。 |
-| `x` | px/% | *(居中)* | 水平位置：`300` = 300px，`50%` = 屏幕一半。 |
-| `y` | px/% | *(pos/配置)* | 垂直位置：`200` = 200px，`30%` = 屏高百分比。 |
+| `x` | px/%/`center` | *(居中)* | 水平位置：`300` = 300px，`50%` = 屏幕一半。 |
+| `y` | px/%/`center` | *(pos/配置)* | 垂直位置：`200` = 200px，`30%` = 屏高百分比，`center` = 弹窗垂直居中于显示器。 |
 | `bg` | 6 位 hex | 主题 `Color_Bg` | 背景色。 |
 | `tx` | 6 位 hex | 主题 `Color_Active` | 文字色。 |
 | `wr` | 整数 px | `屏幕宽 × 0.85` | 最大宽度，超出自动换行。 |
@@ -233,6 +233,10 @@ OSD:文本[:持续时间毫秒][:fs=24,op=90,x=50%,y=30%,bg=FF4444,tx=FFFFFF]
 ## [Exclude] 排除
 
 命中任一规则的窗口不参与平铺、边框和 WinSelect。
+
+旧版段落：首次运行时这三个键会被迁移进 `exclude.ini`。那边还支持通配符、`re:`、`proc:`、
+`cls:`、`title:` 规则，并把你自己加的规则（`[User-*]`）与内置预设分开存放。
+迁移之后请改 `exclude.ini`，不要再改这一段。
 
 | 键 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -315,7 +319,6 @@ OSD:文本[:持续时间毫秒][:fs=24,op=90,x=50%,y=30%,bg=FF4444,tx=FFFFFF]
 | `ToggleMaximize` | `Alt+F` | 最大化/还原鼠标下窗口。 |
 | `ToggleTop` | `Alt+T` | 切换置顶（WTM 模式：浮动并排除聚焦窗口）。 |
 | `HideWindow` | `Alt+W` | 最小化鼠标下窗口。 |
-| `ToggleAllBorders` | *(空)* | 切换全窗口边框模式。 |
 | `TransparencyUp` / `TransparencyDown` | `Alt+WheelUp` / `Alt+WheelDown` | 调整窗口透明度。 |
 | `SnapLeft` / `SnapRight` | `Alt+Left` / `Alt+Right` | 窗口吸附到左/右半屏。 |
 | `SnapUp` / `SnapDown` | `Alt+Up` / `Alt+Down` | 最大化 / 最小化。 |
@@ -327,7 +330,8 @@ OSD:文本[:持续时间毫秒][:fs=24,op=90,x=50%,y=30%,bg=FF4444,tx=FFFFFF]
 | `DragResize` | `Alt+RButton` | 拖拽缩放（带吸附）。 |
 | `PieMenuTrigger` | `~Space & RButton` | 打开功能环。 |
 | `WinSelect` | `Alt+S` | 窗口选择模式。 |
-| `WTMToggle` | *(空；建议 `Alt+Shift+D`)* | 切换 WTM 平铺模式。 |
+| `WTMToggle` | `Alt+Shift+D` | 切换 WTM 平铺模式。 |
+| `DiagnoseWindow` | *(空)* | 用 OSD 显示焦点窗口的进程 / 类名 / 标题 / HWND 以及它被（未）排除的原因。默认不绑定——主要用于写排除规则时查窗口。 |
 | `WTMFocusLeft/Down/Up/Right` | `Alt+H/J/K/L` | WTM：方向聚焦。 |
 | `WTMMoveLeft/Down/Up/Right` | `Alt+Shift+H/J/K/L` | WTM：方向交换/移动（可跨显示器）。 |
 | `WTMFull` | `Alt+Shift+F` | WTM 内手动全屏：保留 bar 与边框，该屏只显示焦点窗口；再按一次复原。 |
