@@ -121,7 +121,7 @@ global Border_Pin_Rounded, Border_Pin_Radius
 ; ---- Shared border refresh interval / 刷新间隔 ----
 global Border_RefreshMs := 10
 global TransparencyStep := 20
-global PauseOnFullscreen := false
+global PauseOnFullscreenMode := "bar"   ; all | bar | off  （见 [General] PauseOnFullscreen）
 
 ; ---- Tiling & window exclusion / 平铺排除 ----
 global CurrentTileGap := 0
@@ -1492,8 +1492,15 @@ MigrateConfigKeys() {
     global ConfigFile
     if !FileExist(ConfigFile)
         return
-    if (IniRead(ConfigFile, "General", "ConfigVersion", "") = "2")
-        return
+    v := IniRead(ConfigFile, "General", "ConfigVersion", "0")
+    if (v = "0" || v = "1")
+        _MigrateV2(ConfigFile)
+    if (v != "3")
+        _MigrateV3(ConfigFile)
+}
+
+; ---- v2：旧键名统一为 PascalCase / v2: legacy key names -> PascalCase ----
+_MigrateV2(ConfigFile) {
     renames := [["Bar","time_format","TimeFormat"],["Bar","date_format","DateFormat"]
         ,["Bar","custom_items","CustomItems"],["Bar","desktop_labels","DesktopLabels"]
         ,["Bar","current_desktop_left","CurrentDesktopLeft"],["Bar","current_desktop_right","CurrentDesktopRight"]
@@ -1531,6 +1538,32 @@ MigrateConfigKeys() {
             FileDelete(ConfigFile)
             FileAppend(content, ConfigFile, "UTF-16")
         }
+    }
+}
+
+; ---- v3：PauseOnFullscreen on/off → all/bar 三态 / v3: pause mode becomes 3-state ----
+_MigrateV3(ConfigFile) {
+    content := ""
+    try content := FileRead(ConfigFile, "UTF-16")
+    if (content = "")
+        return
+    ; on → all（原语义没变）；off → bar（推荐值，用户要的是"有 bar 的屏才暂停"）
+    newContent := RegExReplace(content, "im)^(\s*PauseOnFullscreen\s*=\s*)on\s*$", "$1all")
+    if (newContent = content)
+        newContent := RegExReplace(content, "im)^(\s*PauseOnFullscreen\s*=\s*)off\s*$", "$1bar")
+    ; 版本号 → 3（链式，v2 迁移若已执行也不受影响）
+    newContent := RegExReplace(newContent, "im)^(\s*ConfigVersion\s*=\s*)\d+\s*$", "${1}3")
+    if !RegExMatch(newContent, "im)^\s*ConfigVersion\s*=") {
+        if RegExMatch(newContent, "is)(\[General\][^\[]*)", &gm) {
+            gb := gm[1]
+            newContent := StrReplace(newContent, gb, RTrim(gb, "`r`n") "`r`nConfigVersion=3`r`n")
+        }
+    }
+    if (newContent = content)
+        return
+    try {
+        FileDelete(ConfigFile)
+        FileAppend(newContent, ConfigFile, "UTF-16")
     }
 }
 
@@ -1634,8 +1667,16 @@ ActiveTheme=custom
 FontName=Segoe UI
 ; Transparency step / 透明度调
 TransparencyStep=10
-; Pause script when fullscreen / 全屏时暂
-PauseOnFullscreen=off
+; 全屏时暂停脚本 / Pause script when a fullscreen window appears
+; 三态 / three states:
+;   all = 任意显示器出现全屏窗口都暂停 / pause on any monitor
+;   bar = 只在配置了 bar 的显示器上出现全屏窗口时暂停（推荐）
+;         副屏没配 bar 就不会被误触发，主屏照常暂停
+;         / only pause when a bar-owning monitor goes fullscreen
+;   off = 从不暂停 / never pause
+; （旧配置的 on 等价于 all，会自动迁移）
+; / legacy on == all, auto-migrated
+PauseOnFullscreen=bar
 
 [Theme]
 ; All colors support gradient / 渐变色支持
@@ -2051,7 +2092,7 @@ WTMShrinkHeight=Ctrl+Alt+K
     Border_RefreshMs := Max(1, SafeInt(IniRead(ConfigFile, "Border", "RefreshMs", "10"), 10))
 
     TransparencyStep := Max(1, Min(50, SafeInt(IniRead(ConfigFile, "General", "TransparencyStep", "20"), 20)))
-    PauseOnFullscreen := (StrLower(Trim(IniRead(ConfigFile, "General", "PauseOnFullscreen", "off"))) = "on")
+    PauseOnFullscreenMode := PauseModeRead(IniRead(ConfigFile, "General", "PauseOnFullscreen", "bar"), "bar")
 
     Border_Enable := CfgRead("Border", "Enable", "on", ["Border","DragEnable"], ["BorderDrag","Enable"])
 
@@ -4671,6 +4712,17 @@ IsBarWindow(hwnd) {
     return false
 }
 
+; ---- 有 bar 的显示器集合 / Monitors that own a bar ----
+BarMonitorSet() {
+    global Bars
+    s := Map()
+    if IsSet(Bars) {
+        for b in Bars
+            s[b.Mon] := true
+    }
+    return s
+}
+
 ; ---- BarReserve / 区域预留 ----
 BarReserve(monIdx, &L, &T, &R, &B) {
     global Bars, Bar_ShownState
@@ -4828,26 +4880,49 @@ ApplyBarVisibility() {
     Bar_ShownState := anyShown
 }
 
+; ---- 全屏暂停模式读取 / Read the pause-on-fullscreen mode ----
+; all = 任意显示器全屏都暂停 / pause for any monitor
+; bar = 只在配置了 bar 的显示器全屏时暂停 / only for monitors that own a bar
+; off = 从不暂停 / never
+PauseModeRead(raw, def := "bar") {
+    m := StrLower(Trim(raw))
+    if (m = "all" || m = "on" || m = "1" || m = "true")
+        return "all"
+    if (m = "bar")
+        return "bar"
+    if (m = "off" || m = "0" || m = "false")
+        return "off"
+    return def
+}
+
+; ---- 哪个显示器上有全屏窗口（只算"要参与"的显示器）/ Fullscreen monitor ----
+HasFullscreenMonitor(mode) {
+    global PauseOnFullscreenMode
+    if (mode = "off")
+        return false
+    if (mode = "all") {
+        Loop MonitorGetCount() {
+            if HasFullscreenWindow(A_Index)
+                return true
+        }
+        return false
+    }
+    ; bar：只检查配置了 bar 的显示器
+    for mon, _ in BarMonitorSet() {
+        if HasFullscreenWindow(mon)
+            return true
+    }
+    return false
+}
+
 ; ---- ApplyPauseOnFullscreen / 全屏暂停 ----
 ApplyPauseOnFullscreen() {
-    global PauseOnFullscreen
+    global PauseOnFullscreenMode
     static wasPaused := false
-    if !PauseOnFullscreen {
-        if wasPaused {
-            Suspend false
-            wasPaused := false
-        }
-        return
-    }
-    fullscreen := false
-    if IsSet(Bars) {
-        for b in Bars {
-            if HasFullscreenWindow(b.Mon) {
-                fullscreen := true
-                break
-            }
-        }
-    }
+    mode := PauseOnFullscreenMode
+    if (mode != "all" && mode != "bar")
+        mode := "off"
+    fullscreen := HasFullscreenMonitor(mode)
     if fullscreen && !wasPaused {
         Suspend true
         wasPaused := true
@@ -5432,6 +5507,12 @@ TileWindowsOnMonitor(wins, monIdx, gapBase, useDwmComp := true) {
 ; ---- Smart-tile the monitor under the mouse / 当前显示 ----
 TileCurrentMonitor(*) {
     global Tile_Gap
+
+    ; WTM 模式下禁用：两者共用同一几何入口，同时激活会互相冲刷布局
+    if WTM.Active {
+        ShowOSD("WTM: Smart Tile Disabled")
+        return
+    }
 
     MouseGetPos(&mx, &my)
     targetMon := GetMonitorIndexAtPoint(mx, my)
@@ -7605,6 +7686,11 @@ class WinSelect {
         global WS_Scale, WS_Letters
         if this.Active {
             this.Cancel()
+            return
+        }
+        ; WTM 模式下禁用：WinSelect 会临时重排并在退出时还原，与 WTM 槽位顺序互相污染
+        if WTM.Active {
+            ShowOSD("WTM: WinSelect Disabled")
             return
         }
         this._CleanLocks()
