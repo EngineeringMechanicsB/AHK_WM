@@ -187,7 +187,6 @@ global Clip_MaxChars     := 100000   ; 单条历史上限字符数，0=不限制
 global Clip_ExcludeProcs := []       ; 不记录剪贴板的进程列表
 global Clip_LogBinary    := true     ; 是否记录二进制内容（文件路径/类型）
 
-global LayoutSnapshot  := Map()
 global HK := Map()
 
 ; ---- Window-select mode settings / 窗口选择 ----
@@ -1381,8 +1380,7 @@ RegisterAllHotkeys() {
     RegHotkey("SnapUp",    SnapWindow.Bind("Up"))
     RegHotkey("SnapDown",  SnapWindow.Bind("Down"))
 
-    RegHotkey("SaveLayout",    SaveLayout)
-    RegHotkey("RestoreLayout", RestoreLayout)
+    RegHotkey("SaveLayout",    CopyLayoutRules)   ; Alt+Shift+S：复制当前布局的规则串
 
     RegHotkey("Reload", (*) => ScriptReload())
     RegHotkey("ClipboardHistory", (*) => ToggleVimWindow())
@@ -1983,8 +1981,8 @@ TileSmart=Alt+D
 GatherAll=Alt+Shift+G
 TogglePin=Ctrl+Alt+T
 ToggleBar=Ctrl+Alt+B
+; 复制当前布局的规则串到剪贴板 / Copy current layout rules to the clipboard
 SaveLayout=Alt+Shift+S
-RestoreLayout=Alt+Shift+R
 
 CloseWindow=Alt+Q
 CloseWindowAlt=Alt+MButton
@@ -2262,7 +2260,7 @@ WTMShrinkHeight=Ctrl+Alt+K
     HK := Map()
     hkKeys := ["Help","Exit","Reload",
                "DesktopSwitchPrefix","DesktopMovePrefix","DesktopMoveSwitchPrefix",
-               "TileSmart","GatherAll","TogglePin","ToggleBar","SaveLayout","RestoreLayout",
+               "TileSmart","GatherAll","TogglePin","ToggleBar","SaveLayout",
                "CloseWindow","CloseWindowAlt","ToggleMaximize","ToggleTop","HideWindow",
                "ToggleAllBorders",
                "TransparencyUp","TransparencyDown",
@@ -2276,7 +2274,7 @@ WTMShrinkHeight=Ctrl+Alt+K
         "Help","Alt+/","Exit","Alt+F12","Reload","Alt+R",
         "DesktopSwitchPrefix","Alt","DesktopMovePrefix","Alt+Shift","DesktopMoveSwitchPrefix","Ctrl+Alt",
         "TileSmart","Alt+D","GatherAll","Alt+Shift+G","TogglePin","Ctrl+Alt+T","ToggleBar","Ctrl+Alt+B",
-        "SaveLayout","Alt+Shift+S","RestoreLayout","Alt+Shift+R",
+        "SaveLayout","Alt+Shift+S",
         "CloseWindow","Alt+Q","CloseWindowAlt","Alt+MButton","ToggleMaximize","Alt+F",
         "ToggleTop","Alt+T","HideWindow","Alt+W","ToggleAllBorders","Alt+B",
         "TransparencyUp","Alt+WheelUp","TransparencyDown","Alt+WheelDown",
@@ -2460,7 +2458,7 @@ ShowHelpGui(*) {
         [PrefP("TransparencyUp") . " / " . PrefP("TransparencyDown"), "Window Transparency"],
         [PrefP("SnapLeft") . " / " . PrefP("SnapRight"), "Snap Left / Right"],
         [PrefP("SnapUp")   . " / " . PrefP("SnapDown"),  "Maximize / Minimize"],
-        [PrefP("SaveLayout") . " / " . PrefP("RestoreLayout"), "Save / Restore Layout"],
+        [PrefP("SaveLayout"),                 "Copy Layout Rules to Clipboard"],
         [PrefP("GatherAll"),                  "Gather All Windows"],
         [PrefP("CloseWindow"),                "Close Window"],
         [PrefP("TileSmart"),                  "Smart Tile (current monitor)"],
@@ -2525,7 +2523,7 @@ class WelcomeScreen {
             "  >  Smart Tiling                " . PrettifyHotkey(HK["TileSmart"]),
             "  >  WTM Mode (hyprland-like)    " . PrettifyHotkey(HK["WTMToggle"]),
             "  >  Window Snap                 " . PrettifyHotkey(HK["SnapLeft"]) . " etc.",
-            "  >  Layout Snapshot             " . PrettifyHotkey(HK["SaveLayout"]) . " / " . PrettifyHotkey(HK["RestoreLayout"]),
+            "  >  Copy Layout Rules           " . PrettifyHotkey(HK["SaveLayout"]),
             "  >  Help Menu                   " . PrettifyHotkey(HK["Help"])
         ]
         yStart := Round(vh * 0.46)
@@ -6074,37 +6072,140 @@ SnapWindow(direction, *) {
     }
 }
 
-; ---- Save layout snapshot / 布局快照 ----
-SaveLayout(*) {
-    global LayoutSnapshot
-    LayoutSnapshot := Map()
-    for hwnd in GetVisibleWindow() {
-        try {
-            WinGetPos(&x, &y, &w, &h, hwnd)
-            LayoutSnapshot[hwnd] := {x:x, y:y, w:w, h:h}
+; （旧的像素布局快照 SaveLayout/RestoreLayout 已移除：Alt+Shift+S 现为
+;   复制当前布局的规则串到剪贴板，见下方 CopyLayoutRules）
+
+; ==============================================================================
+; 十六·补、复制当前布局为配置规则串 / 16b. Copy current layout as [Tiling] Rules
+; ==============================================================================
+; 把屏幕上窗口的实测矩形 → 按平铺区域归一化 → 复用 RuleStringFor 出配置串 →
+; 剪贴板。WTM / 普通模式都适用（用户要求不作区分）。
+; 归一化分母用"内缩后的平铺区域"而不是整屏：窗口矩形本身已含 gap 内缩，
+; 这样槽位正好落在 0..1 上，不必再约分也能得到 1/3、2/3 这种干净分数。
+
+; ---- 规则串排序（纯函数）/ Order rects for rule output ----
+; 按左上角：先"顶边同带"成行，再按左边界；同带用 0.4*min(h) 容差。
+; 不用 SortRowsByX：那个按中心 y 分行，遇到跨行的高窗口会把它和邻列的矮窗口
+; 并成一行，导致索引错位（SlotAssign 依赖它的旧行为，故另立此函数）。
+SortRectsForRules(recs) {
+    out := []
+    for r in recs
+        out.Push(r)
+    n := out.Length
+    if (n < 2)
+        return out
+    Loop (n - 1) {                       ; 顶边升序（插入排序，稳定）
+        i := A_Index + 1
+        me := out[i]
+        j := i - 1
+        while (j >= 1 && out[j].y > me.y) {
+            out[j + 1] := out[j]
+            j -= 1
         }
+        out[j + 1] := me
     }
-    ShowOSD("Layout Saved (" . LayoutSnapshot.Count . ")")
+    s := 1
+    Loop n {
+        i := A_Index
+        if (i < n) {
+            a := out[s], b := out[i + 1]
+            if (Abs(b.y - a.y) <= 0.4 * Min(a.h, b.h))
+                continue
+        }
+        Loop (i - s) {                   ; 顶边同带内按左边界升序
+            k := s + A_Index
+            me := out[k]
+            j := k - 1
+            while (j >= s && out[j].x > me.x) {
+                out[j + 1] := out[j]
+                j -= 1
+            }
+            out[j + 1] := me
+        }
+        s := i + 1
+    }
+    return out
 }
 
-; ---- Restore layout snapshot / 布局快照 ----
-RestoreLayout(*) {
-    global LayoutSnapshot
-    if (LayoutSnapshot.Count = 0) {
-        ShowOSD("No Saved Layout")
-        return
+; ---- 单显示器 → 规则串（纯函数；rects 需含 x,y,w,h,mon）/ one monitor -> rule string ----
+BuildLayoutRulesForMonitor(rects, mon, gap) {
+    GetTileArea(mon, gap, &ax, &ay, &W, &H)
+    if (W <= 0 || H <= 0 || rects.Length = 0)
+        return ""
+    ordered := SortRectsForRules(rects)
+    rules := []
+    for r in ordered {
+        rules.Push({
+            x: {lo: (r.x - ax) / W, hi: (r.x + r.w - ax) / W},
+            y: {lo: (r.y - ay) / H, hi: (r.y + r.h - ay) / H}
+        })
     }
-    n := 0
-    for hwnd, pos in LayoutSnapshot {
+    return RuleStringFor(rules, W, H)
+}
+
+; ---- 复制当前布局到剪贴板 / Copy current layout rules to the clipboard ----
+CopyLayoutRules(*) {
+    global Tile_Gap, WTM_Gap, WM_LogFile
+    gap := WTM.Active ? WTM_Gap : Tile_Gap
+
+    byMon := Map()
+    for hwnd in GetVisibleWindow() {
+        if !IsTilableWindow(hwnd)
+            continue
         try {
-            if WinExist(hwnd) {
-                WinRestore(hwnd)
-                WinMove(pos.x, pos.y, pos.w, pos.h, hwnd)
-                n++
-            }
+            if (WinGetMinMax(hwnd) = -1)     ; 最小化的不参与
+                continue
+            WinGetPos(&x, &y, &w, &h, hwnd)
+        } catch {
+            continue
+        }
+        m := 1
+        try m := GetMonitorIndexAtPoint(x + w / 2, y + h / 2)
+        if (m < 1)
+            m := 1
+        if !byMon.Has(m)
+            byMon[m] := []
+        byMon[m].Push({x: x, y: y, w: w, h: h, mon: m})
+    }
+
+    lineFor := Map()
+    total := 0
+    for m, rects in byMon {
+        s := BuildLayoutRulesForMonitor(rects, m, gap)
+        if (s != "") {
+            lineFor[m] := s
+            total += rects.Length
         }
     }
-    ShowOSD("Layout Restored (" . n . ")")
+    if (total = 0) {
+        ShowOSD("Copy Layout: No Windows")
+        return
+    }
+
+    out := ""
+    for m in [1, 2, 3, 4, 5, 6, 7, 8, 9] {
+        if lineFor.Has(m)
+            out .= lineFor[m] . "`r`n"
+    }
+
+    prevClip := ""
+    try prevClip := A_Clipboard
+    A_Clipboard := ""
+    A_Clipboard := out
+    ok := false
+    try {
+        if (A_Clipboard != "")
+            ok := true
+    }
+    if !ok {
+        try A_Clipboard := prevClip
+        ShowOSD("Copy Layout: Clipboard Failed")
+        try WMLog("CopyLayoutRules failed len=" . StrLen(out))
+        return
+    }
+    ShowOSD("Layout Rules Copied (" . byMon.Count . " mon, " . total . " win)")
+    if WM_LogLevel <= 2
+        try WMLog("CopyLayoutRules mon=" . byMon.Count . " win=" . total . " len=" . StrLen(out))
 }
 
 ; ==============================================================================
@@ -8839,8 +8940,7 @@ SetupTrayIcon() {
     A_TrayMenu.Add("Gather All Windows", GatherAllToCurrent)
     A_TrayMenu.Add("Toggle Status Bar",  ToggleBar)
     A_TrayMenu.Add("Toggle WTM Mode",    (*) => WTM.Toggle())
-    A_TrayMenu.Add("Save Layout",        SaveLayout)
-    A_TrayMenu.Add("Restore Layout",     RestoreLayout)
+    A_TrayMenu.Add("Copy Layout Rules",  CopyLayoutRules)
     A_TrayMenu.Add()
 
     themeMenu := Menu()

@@ -16,11 +16,23 @@ extract() {   # $1 = 顶层函数名（匹配行首 "name(" 到行首 "}"）
     echo 'WMLog(msg) {'
     echo '    return'
     echo '}'
+    echo '; 测试台里没有真实显示器：MonitorGetWorkArea 返回固定工作区，'
+    echo '; 由测试主体按需改写（BuildLayoutRulesForMonitor 只依赖 GetTileArea 的取区口径）。'
+    echo 'TestWorkArea := {l: 0, t: 0, r: 1920, b: 1080}'
+    echo 'MonitorGetWorkArea(idx, &L, &T, &R, &B) {'
+    echo '    global TestWorkArea'
+    echo '    L := TestWorkArea.l, T := TestWorkArea.t'
+    echo '    R := TestWorkArea.r, B := TestWorkArea.b'
+    echo '}'
+    echo 'BarReserve(monIdx, &L, &T, &R, &B) {'
+    echo '    return'
+    echo '}'
     for f in ParseAxis ParseLayoutRules GetCustomLayout SlotFromSpan SlotIndexAtPoint \
              RectBBox SortRowsByX SlotAssign PickSlotFromTable \
              NarrowByAxis NarrowByBand ResizeSpans QuantizeSpans RuleStringFor LayoutAxisToken \
              _GetTileMode ComputeTileRect MoveWinTo EmitPlace TileGrid \
-             TileNormal TileVertical TileUltrawide BuildBuiltinSlotTable; do
+             TileNormal TileVertical TileUltrawide BuildBuiltinSlotTable \
+             GetTileArea SortRectsForRules BuildLayoutRulesForMonitor; do
         echo ''
         echo "; ---- 抽取自 wm.ahk: $f ----"
         extract "$f"
