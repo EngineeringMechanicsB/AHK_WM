@@ -37,7 +37,7 @@ extract() {   # $1 = 顶层函数名（匹配行首 "name(" 到行首 "}"）
              GlobMatch _StripExe MatchField MatchTitleRule ExclFieldBit \
              SplitExcludeList ExclParseSection ExclRecomputeNeed \
              ExclFileHeader ExclPresetIni EnsureExcludeFile ExclReadSection \
-             LoadExcludeRules ExclRuleExists; do
+             LoadExcludeRules ExclRuleExists PauseModeRead ExclRefreshPreset; do
         echo ''
         echo "; ---- 抽取自 wm.ahk: $f ----"
         extract "$f"
@@ -52,6 +52,9 @@ extract() {   # $1 = 顶层函数名（匹配行首 "name(" 到行首 "}"）
             print
         }
     ' wm.ahk
+    echo ''
+    echo '; ---- 抽取自 wm.ahk: global ExclPresetRev ----'
+    grep '^global ExclPresetRev' wm.ahk
     cat docs/tools/test_slots_body.ahk
 } > docs/tools/test_slots.ahk
 

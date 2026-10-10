@@ -50,12 +50,41 @@ RE_OPTION = re.compile(r'^  - ([A-Za-z_]+)\s*$')          # options 列表项
 RE_ITEM_KIND = re.compile(r'^(\s*)(?:-\s+)?kind:\s*(\w+)\s*$')
 RE_ITEM_ID = re.compile(r'^\s*(?:-\s+)?id:\s*(.+?)\s*$')
 RE_ITEM_STRAT = re.compile(r'^\s*(?:-\s+)?matching_strategy:\s*(\w+)\s*$')
+# komorebi 的复合浮动标识："- - kind: X" 开头的嵌套列表 = 该组内所有条件必须同时成立
+# （AND），AHK_WM 的规则模型表达不了 → 整组跳过。按单条展平会变成整进程排除
+# （踩过：Zen/Firefox 的 "Title==Picture-in-Picture AND Exe==zen.exe" 被展平成 =zen.exe，
+#  结果整个浏览器进程被排除）。
+RE_FLOAT_COMPOSITE = re.compile(r'^  - - ')
+RE_KV = re.compile(r'(kind|id|matching_strategy):\s*(.*)$')
+RE_KV_IND = re.compile(r'^    ' + RE_KV.pattern)   # 普通条目的 4 空格续行
 
 KIND_BUCKET = {'Exe': 'Processes', 'Class': 'Classes', 'Title': 'Titles'}
 # komorebi 的 options 里，只有 force 是明确的"强制浮动"。
 # layered 是"该应用有 WS_EX_LAYERED 窗口"，komorebi 逐窗口处理，不是整进程浮动；
 # 若按进程排除会把 Excel/Word/Outlook/PPT/Discord 全排除掉，故不采用。
 FORCE_FLOAT_OPTIONS = {'force'}
+
+
+def _unquote(v):
+    """去掉 YAML 的单/双引号包裹（如 id: '#32770'）"""
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in ('\'', '"'):
+        return v[1:-1]
+    return v
+
+
+def _apply_kv(m, items, pending_kind, fresh_id):
+    """把一行 kind:/id:/matching_strategy: 应用到 items 列表，返回新的 (pending_kind, fresh_id)"""
+    k, v = m.group(1), _unquote(m.group(2).strip())
+    if k == 'kind':
+        return v, False
+    if k == 'id':
+        items.append([pending_kind, v, None])
+        return pending_kind, True
+    if k == 'matching_strategy':
+        if fresh_id and items:
+            items[-1][2] = v
+        return pending_kind, False
+    return pending_kind, fresh_id
 
 
 def parse(yaml_path, mode):
@@ -68,14 +97,16 @@ def parse(yaml_path, mode):
     sec = None            # 当前二级段
     pending_kind = None   # 当前条目块的 kind（在 id 行之前出现）
     fresh_id = False
+    composite = False     # 是否在"复合浮动标识"（AND）组里 —— 整组跳过
 
     def flush_item(kind, val, strat):
         strat = strat or 'Legacy'
         bucket = KIND_BUCKET.get(kind)
-        if bucket is None:
+        rule = to_rule(strat, val)
+        if bucket is None or rule is None or val == '':
             meta['skipped'] += 1
             return
-        buckets[bucket].add(to_rule(strat, val))
+        buckets[bucket].add(rule)
         stats[_stat_key(strat)] += 1
 
     def close_app(app):
@@ -103,21 +134,21 @@ def parse(yaml_path, mode):
             if m:
                 close_app(cur)
                 cur = {'name': m.group(1), 'ident': None, 'floats': [], 'options': []}
-                sec, pending_kind, fresh_id = None, None, False
+                sec, pending_kind, fresh_id, composite = None, None, False, False
                 continue
             if cur is None:
                 continue
             m = RE_SECTION.match(ln)
             if m:
                 sec = m.group(1)
-                pending_kind, fresh_id = None, False
+                pending_kind, fresh_id, composite = None, False, False
                 continue
             if sec == 'options':
                 m = RE_OPTION.match(ln)
                 if m:
                     cur['options'].append(m.group(1))
                 continue
-            if sec in ('identifier', 'float_identifiers'):
+            if sec == 'identifier':
                 m = RE_ITEM_KIND.match(ln)
                 if m:
                     pending_kind = m.group(2)
@@ -125,22 +156,33 @@ def parse(yaml_path, mode):
                     continue
                 m = RE_ITEM_ID.match(ln)
                 if m:
-                    entry = [pending_kind, m.group(1), None]
-                    if sec == 'identifier':
-                        cur['ident'] = entry
-                    else:
-                        cur['floats'].append(entry)
+                    cur['ident'] = [pending_kind, _unquote(m.group(1)), None]
                     fresh_id = True
                     continue
                 m = RE_ITEM_STRAT.match(ln)
-                if m:
-                    if fresh_id:
-                        if sec == 'identifier' and cur['ident']:
-                            cur['ident'][2] = m.group(1)
-                        elif cur['floats']:
-                            cur['floats'][-1][2] = m.group(1)
+                if m and fresh_id and cur['ident']:
+                    cur['ident'][2] = m.group(1)
                     fresh_id = False
+                continue
+            if sec == 'float_identifiers':
+                # 复合组（AND）整组跳过
+                if RE_FLOAT_COMPOSITE.match(ln):
+                    composite = True
                     continue
+                if ln.startswith('  - '):
+                    composite = False
+                    m = RE_KV.match(ln[4:])
+                    if m:
+                        pending_kind, fresh_id = _apply_kv(
+                            m, cur['floats'], pending_kind, fresh_id)
+                    continue
+                if composite:
+                    continue
+                # 普通条目的 4 空格续行（id / matching_strategy）
+                m = RE_KV_IND.match(ln)
+                if m:
+                    pending_kind, fresh_id = _apply_kv(
+                        m, cur['floats'], pending_kind, fresh_id)
                 continue
         close_app(cur)
 
@@ -161,7 +203,9 @@ def to_rule(strat, val):
         return '*' + val
     if strat == 'Regex':
         return '~=' + val
-    return val  # Contains / Legacy
+    if strat in ('Contains', 'Legacy'):
+        return val
+    return None   # DoesNotEqual 等 AHK_WM 表达不了的策略 → 丢弃
 
 
 def ini_section(name, rules):

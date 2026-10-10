@@ -764,7 +764,66 @@ try {
     Assert(false, "L9: 写入用户段失败: " e.Message)
 }
 
+; 预设版本过旧 → 自动重刷 [Preset-*]，[User-*] 保留
+try {
+    IniWrite("1", ExcludeFile, "Meta", "PresetRev")
+    IniWrite("keepme.exe", ExcludeFile, "User-Processes", 2)
+    LoadExcludeRules()
+    rev := IniRead(ExcludeFile, "Meta", "PresetRev", "")
+    Assert(rev = "" . ExclPresetRev, "L10: 旧预设版本 → 自动重刷到 rev " ExclPresetRev " (实际 " rev ")")
+    kept := false
+    for r in Excl_Processes
+        if (r = "keepme.exe")
+            kept := true
+    Assert(kept, "L11: 重刷预设时用户段规则保留")
+    n := 0
+    for r in Excl_Processes
+        n += 1
+    Assert(n >= 40, "L12: 重刷后预设规则仍在 (" n " 条)")
+} catch as e {
+    Assert(false, "L10: 预设重刷失败: " e.Message)
+}
+
 try DirDelete(ConfigDir, true)
+
+; ---------------------------------------------------------------
+; 场景 M：回归 —— 平铺区尺寸为浮点时，规则串不能带小数点
+;   用户 gap 为奇数时 edgeMargin = gap/2 = x.5，GetTileArea 的 W/H 变浮点，
+;   旧的 LayoutAxisToken 直接拼 D → "1915.0"，ParseAxis 只认整数 → 粘回配置报错。
+; ---------------------------------------------------------------
+Log("")
+Log("-- M: 规则串不出现小数点（奇数 gap） --")
+TestWorkArea := {l: 0, t: 0, r: 1920, b: 1080}
+recsM := [{x: 3, y: 3, w: 957, h: 1075}, {x: 960, y: 3, w: 957, h: 1075}]
+sM := BuildLayoutRulesForMonitor(recsM, 1, 5)        ; gap=5 → edgeMargin=2.5
+Assert(InStr(sM, ".") = 0, "M1: 奇数 gap 生成的规则串不含小数点 (实际 " sM ")")
+okM := true
+try {
+    rM := ParseLayoutRules(sM)
+    okM := rM.Has("*")
+} catch as e {
+    okM := false
+}
+Assert(okM, "M2: 该规则串能被 ParseLayoutRules 解析 (实际 " sM ")")
+
+; 偶数 gap 也要正常
+sM2 := BuildLayoutRulesForMonitor(recsM, 1, 6)
+Assert(InStr(sM2, ".") = 0, "M3: 偶数 gap 同样不含小数点")
+
+; ---------------------------------------------------------------
+; 场景 N：PauseOnFullscreen 三态解析（off 必须还是 off）
+; ---------------------------------------------------------------
+Log("")
+Log("-- N: PauseOnFullscreen 三态 --")
+Assert(PauseModeRead("off") = "off", "N1: off → off")
+Assert(PauseModeRead("Off") = "off", "N2: 大小写不敏感")
+Assert(PauseModeRead("bar") = "bar", "N3: bar → bar")
+Assert(PauseModeRead("all") = "all", "N4: all → all")
+Assert(PauseModeRead("on") = "all", "N5: 旧 on → all")
+Assert(PauseModeRead("0") = "off", "N6: 0 → off")
+Assert(PauseModeRead("1") = "all", "N7: 1 → all")
+Assert(PauseModeRead("") = "bar", "N8: 空值 → 默认 bar")
+Assert(PauseModeRead("garbage") = "bar", "N9: 无法识别 → 默认 bar")
 
 Log("")
 Log(Fail ? "==== 失败 " Fail " 项 ====" : "==== 全部通过 ====")

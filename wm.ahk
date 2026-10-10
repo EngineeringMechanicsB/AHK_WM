@@ -985,6 +985,10 @@ ExclFileHeader() {
         . "`r`n"
 }
 
+; 预设版本号：改预设内容时 +1，脚本启动会自动重刷 exclude.ini 的 [Preset-*] 段
+; （[User-*] 段原样保留）。rev 2 = 跳过 AND 复合组、去掉全应用口径。
+global ExclPresetRev := 2
+
 ; 预设段内容 —— 由 docs/tools/gen_exclude_presets.py 从 komorebi 的
 ; applications.yaml 生成。仅用于首次生成 exclude.ini，运行时一律读文件。
 global ExclPresetIniText := ""
@@ -999,15 +1003,14 @@ global ExclPresetIniText := ""
     . "8=Microsoft Teams Call`r`n"
     . "9=Microsoft Teams Notification`r`n"
     . "10=PopupMessageWindow`r`n"
-    . "11=Steam`r`n"
-    . "12=Window Spy*`r`n"
-    . "13=notificationtoasts_`r`n"
-    . "14=图片查看器`r`n"
-    . "15=群聊的聊天记录`r`n"
-    . "16=语音通话`r`n"
+    . "11=Window Spy*`r`n"
+    . "12=notificationtoasts_`r`n"
+    . "13=图片查看器`r`n"
+    . "14=群聊的聊天记录`r`n"
+    . "15=语音通话`r`n"
     . "`r`n"
     . "[Preset-Classes]`r`n"
-    . "1='#32770'`r`n"
+    . "1=#32770`r`n"
     . "2==CWebviewControlHostWnd`r`n"
     . "3==ChatContactMenu`r`n"
     . "4==ChatWnd`r`n"
@@ -1016,29 +1019,28 @@ global ExclPresetIniText := ""
     . "7==EmotionTipWnd`r`n"
     . "8==FileListMgrWnd`r`n"
     . "9==MsoSplash`r`n"
-    . "10==Picture-in-Picture`r`n"
-    . "11==SunAwtDialog`r`n"
-    . "12==TDLG2FILEACTIONMIN`r`n"
-    . "13==VISIOA`r`n"
-    . "14==VISIOQ`r`n"
-    . "15==VISIOS`r`n"
-    . "16==WeChatLoginWndForPC`r`n"
-    . "17==WeChatMainWndForPC`r`n"
-    . "18=AbletonVstPlugClass`r`n"
-    . "19=Chrome_RenderWidgetHostHWND`r`n"
-    . "20=EVERYTHING_(1.5a)`r`n"
-    . "21=MozillaTaskbarPreviewClass`r`n"
-    . "22=OneDriveReactNativeWin32WindowClass`r`n"
-    . "23=OperationStatusWindow`r`n"
-    . "24=Shell_Dialog`r`n"
-    . "25=TApplication`r`n"
-    . "26=TWizardForm`r`n"
-    . "27=TaskManagerWindow`r`n"
-    . "28=Vst3PlugWindow`r`n"
-    . "29=_WwB`r`n"
-    . "30=android(splash)`r`n"
-    . "31=obj_App`r`n"
-    . "32=obj_Form`r`n"
+    . "10==SunAwtDialog`r`n"
+    . "11==TDLG2FILEACTIONMIN`r`n"
+    . "12==VISIOA`r`n"
+    . "13==VISIOQ`r`n"
+    . "14==VISIOS`r`n"
+    . "15==WeChatLoginWndForPC`r`n"
+    . "16==WeChatMainWndForPC`r`n"
+    . "17=AbletonVstPlugClass`r`n"
+    . "18=Chrome_RenderWidgetHostHWND`r`n"
+    . "19=EVERYTHING_(1.5a)`r`n"
+    . "20=MozillaTaskbarPreviewClass`r`n"
+    . "21=OneDriveReactNativeWin32WindowClass`r`n"
+    . "22=OperationStatusWindow`r`n"
+    . "23=Shell_Dialog`r`n"
+    . "24=TApplication`r`n"
+    . "25=TWizardForm`r`n"
+    . "26=TaskManagerWindow`r`n"
+    . "27=Vst3PlugWindow`r`n"
+    . "28=_WwB`r`n"
+    . "29=android(splash)`r`n"
+    . "30=obj_App`r`n"
+    . "31=obj_Form`r`n"
     . "`r`n"
     . "[Preset-Processes]`r`n"
     . "1==1Password.exe`r`n"
@@ -1082,24 +1084,20 @@ global ExclPresetIniText := ""
     . "39==WaveLink.exe`r`n"
     . "40==WeChatAppEx.exe`r`n"
     . "41==Zoom.exe`r`n"
-    . "42==acad.exe`r`n"
-    . "43==firefox.exe`r`n"
-    . "44==git-credential-manager.exe`r`n"
-    . "45==keyviz.exe`r`n"
-    . "46==komorebi-gui.exe`r`n"
-    . "47==msiexec.exe`r`n"
-    . "48==nhm_app.exe`r`n"
-    . "49==paintdotnet.exe`r`n"
-    . "50==pinentry.exe`r`n"
-    . "51==sideloadly.exe`r`n"
-    . "52==tcconfig.exe`r`n"
-    . "53==ueli.exe`r`n"
-    . "54==winzip32.exe`r`n"
-    . "55==winzip64.exe`r`n"
-    . "56==wusa.exe`r`n"
-    . "57==zebar.exe`r`n"
-    . "58==zen.exe`r`n"
-    . "59=HwndWrapper[DefaultDomain*`r`n"
+    . "42==git-credential-manager.exe`r`n"
+    . "43==keyviz.exe`r`n"
+    . "44==komorebi-gui.exe`r`n"
+    . "45==msiexec.exe`r`n"
+    . "46==nhm_app.exe`r`n"
+    . "47==paintdotnet.exe`r`n"
+    . "48==pinentry.exe`r`n"
+    . "49==sideloadly.exe`r`n"
+    . "50==tcconfig.exe`r`n"
+    . "51==ueli.exe`r`n"
+    . "52==winzip32.exe`r`n"
+    . "53==winzip64.exe`r`n"
+    . "54==wusa.exe`r`n"
+    . "55==zebar.exe`r`n"
     . "`r`n"
 ExclPresetIni() {
     global ExclPresetIniText
@@ -1110,7 +1108,7 @@ ExclPresetIni() {
 
 ; 首次生成 exclude.ini（并把 wm_config.ini 旧 [Exclude] 迁进 [User-*]）
 EnsureExcludeFile() {
-    global ExcludeFile, ConfigFile, ConfigDir
+    global ExcludeFile, ConfigFile, ConfigDir, ExclPresetRev
     if FileExist(ExcludeFile)
         return
     txt := ExclFileHeader() . ExclPresetIni() . "`r`n"
@@ -1127,12 +1125,37 @@ EnsureExcludeFile() {
         hdr := "[User-" . name . "]`r`n"
         txt := StrReplace(txt, hdr, hdr . lines)
     }
+    txt .= "`r`n[Meta]`r`nPresetRev=" . ExclPresetRev . "`r`n"
     try {
         if !DirExist(ConfigDir)
             DirCreate(ConfigDir)
         FileAppend(txt, ExcludeFile, "UTF-16")
     } catch {
         try WMLog("EnsureExcludeFile failed: " . A_LastError)
+    }
+}
+
+; 预设版本变化时，只重刷 [Preset-*] 段，[User-*] 原样保留
+ExclRefreshPreset() {
+    global ExcludeFile, ExclPresetRev
+    cur := ""
+    try cur := IniRead(ExcludeFile, "Meta", "PresetRev", "0")
+    if (cur = "" . ExclPresetRev)
+        return
+    user := ""
+    for name in ["Titles", "Classes", "Processes"] {
+        sec := ""
+        try sec := IniRead(ExcludeFile, "User-" . name)
+        user .= "[User-" . name . "]`r`n" . RTrim(sec, "`r`n") . "`r`n`r`n"
+    }
+    txt := ExclFileHeader() . ExclPresetIni() . "`r`n" . user
+        . "[Meta]`r`nPresetRev=" . ExclPresetRev . "`r`n"
+    try {
+        FileDelete(ExcludeFile)
+        FileAppend(txt, ExcludeFile, "UTF-16")
+        try WMLog("ExclRefreshPreset → rev " . ExclPresetRev)
+    } catch {
+        try WMLog("ExclRefreshPreset failed: " . A_LastError)
     }
 }
 
@@ -1167,6 +1190,7 @@ ExclReadSection(name) {
 LoadExcludeRules() {
     global Excl_Titles, Excl_Classes, Excl_Processes
     EnsureExcludeFile()
+    ExclRefreshPreset()
     Excl_Titles    := ExclReadSection("Titles")
     Excl_Classes   := ExclReadSection("Classes")
     Excl_Processes := ExclReadSection("Processes")
@@ -1982,10 +2006,9 @@ _MigrateV3(ConfigFile) {
     try content := FileRead(ConfigFile, "UTF-16")
     if (content = "")
         return
-    ; on → all（原语义没变）；off → bar（推荐值，用户要的是"有 bar 的屏才暂停"）
+    ; 旧 on → all（原语义：任意屏全屏就暂停）。
+    ; 旧 off 保持 off —— "从不暂停"是用户明确的选择，不能替他改成 bar。
     newContent := RegExReplace(content, "im)^(\s*PauseOnFullscreen\s*=\s*)on\s*$", "$1all")
-    if (newContent = content)
-        newContent := RegExReplace(content, "im)^(\s*PauseOnFullscreen\s*=\s*)off\s*$", "$1bar")
     ; 版本号 → 3（链式，v2 迁移若已执行也不受影响）
     newContent := RegExReplace(newContent, "im)^(\s*ConfigVersion\s*=\s*)\d+\s*$", "${1}3")
     if !RegExMatch(newContent, "im)^\s*ConfigVersion\s*=") {
@@ -5880,6 +5903,10 @@ RuleStringFor(rules, W, H) {
 
 ; ---- 单个轴 → 配置记号 / One axis to a config token ----
 LayoutAxisToken(lo, hi, D) {
+    ; D 必须是整数：GetTileArea 里 edgeMargin 可能是半像素（gap 为奇数时
+    ; gapBase/2 = x.5），会把 W/H 带成浮点，拼进字符串就成了 "1915.0"，
+    ; ParseAxis 只认整数 → 粘回配置直接报错。
+    D := Round(D)
     if (D <= 0)
         D := 1
     if (lo <= 1.0e-9 && hi >= 1.0 - 1.0e-9)
