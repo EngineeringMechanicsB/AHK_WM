@@ -127,9 +127,10 @@ global PauseOnFullscreenMode := "bar"   ; all | bar | off  （见 [General] Paus
 global CurrentTileGap := 0
 global Tile_Gap        := 15
 global LayoutRules     := Map()
-global Excl_Titles     := []
-global Excl_Classes    := []
-global Excl_Processes  := []
+global Excl_Titles     := []   ; 已合并 预设+用户 的标题规则
+global Excl_Classes    := []   ; 已合并 预设+用户 的类名规则
+global Excl_Processes  := []   ; 已合并 预设+用户 的进程规则
+global Excl_NeedField  := 0    ; 位掩码：1=需要标题 2=需要类名 4=需要进程（见 ExclFieldBit）
 global Tile_IncludeAlwaysOnTop := true
 global TileBound_L := 0, TileBound_T := 0, TileBound_R := 0, TileBound_B := 0
 global TileBoundSet := false
@@ -181,6 +182,7 @@ global HelpGuiObj    := ""
 global PowerMenuObj  := ""
 global ConfigDir  := EnvGet("USERPROFILE") . "\.config\AHK_WM"
 global ConfigFile := ConfigDir . "\wm_config.ini"
+global ExcludeFile := ConfigDir . "\exclude.ini"   ; 窗口排除规则（预设+用户，可手工编辑）
 global LastClipContent := ""
 ; ---- Clipboard module settings / 剪贴板设置 ([Clipboard]) ----
 global Clip_MaxChars     := 100000   ; 单条历史上限字符数，0=不限制
@@ -785,39 +787,358 @@ SplitExcludeList(str) {
     return out
 }
 
-; ---- MatchTitle / 标题匹配 ----
-MatchTitleRule(text, rule) {
+; ---- GlobMatch / 通配符匹配（* 任意多个, ? 单个, 其余按字面） ----
+GlobMatch(text, pat) {
+    n := StrLen(pat), m := StrLen(text)
+    if (n = 0)
+        return (m = 0)
+    ti := 0, pi := 0, star := -1, mark := 0
+    while (ti < m) {
+        if (pi < n) {
+            c := SubStr(pat, pi + 1, 1)
+            if (c = "*") {
+                star := pi, mark := ti, pi += 1
+                continue
+            }
+            if (c = "?" || c = SubStr(text, ti + 1, 1)) {
+                ti += 1, pi += 1
+                continue
+            }
+        }
+        if (star >= 0) {
+            pi := star + 1, mark += 1, ti := mark
+            continue
+        }
+        return false
+    }
+    while (pi < n && SubStr(pat, pi + 1, 1) = "*")
+        pi += 1
+    return (pi = n)
+}
+
+; ---- MatchField / 单字段匹配 ----
+; 规则前缀（全部大小写不敏感）：
+;   =xxx    完全等于
+;   ~=xxx   正则（re: 为旧写法别名）
+;   *xx*    通配 * ?  (含 * 或 ? 时自动启用，无需前缀)
+;   proc:xx cls:xx title:xx   强制指定字段（覆盖所在分区的默认字段）
+;   裸字符串  子串包含（默认）
+; field: "title" | "class" | "proc"
+MatchField(text, rule, field) {
     rule := Trim(rule)
     if (rule = "")
         return false
-    if (SubStr(rule, 1, 3) = "re:") {
-        try return (text ~= SubStr(rule, 4)) ? true : false
-        return false
+    ; --- 字段前缀 ---
+    low := StrLower(rule)
+    if (SubStr(low, 1, 5) = "proc:") {
+        if (field != "proc")
+            return false
+        rule := Trim(SubStr(rule, 6))
+    } else if (SubStr(low, 1, 4) = "cls:") {
+        if (field != "class")
+            return false
+        rule := Trim(SubStr(rule, 5))
+    } else if (SubStr(low, 1, 6) = "title:") {
+        if (field != "title")
+            return false
+        rule := Trim(SubStr(rule, 7))
     }
+    if (rule = "")
+        return false
+    text := "" . text
     if (SubStr(rule, 1, 1) = "=")
-        return (StrLower(text) = StrLower(SubStr(rule, 2)))
-    return InStr(text, rule, false) ? true : false
+        return (StrLower(Trim(text)) = StrLower(Trim(SubStr(rule, 2))))
+    if (SubStr(rule, 1, 3) = "re:" || SubStr(rule, 1, 2) = "~=") {
+        pat := (SubStr(rule, 1, 3) = "re:") ? SubStr(rule, 4) : SubStr(rule, 3)
+        try
+            return (text ~= pat) ? true : false
+        catch
+            return false
+    }
+    if (InStr(rule, "*") || InStr(rule, "?"))
+        return GlobMatch(StrLower(text), StrLower(rule))
+    ; 进程名统一去掉 .exe 后缀再比（配置文件里写 chrome 或 chrome.exe 都行）
+    if (field = "proc")
+        return InStr(StrLower(_StripExe(text)), StrLower(_StripExe(rule))) ? true : false
+    return InStr(StrLower(text), StrLower(rule)) ? true : false
+}
+
+_StripExe(s) {
+    s := Trim(s)
+    return (SubStr(StrLower(s), -4) = ".exe") ? SubStr(s, 1, StrLen(s) - 4) : s
+}
+
+; 兼容旧调用点：等价于标题字段匹配
+MatchTitleRule(text, rule) {
+    return MatchField(text, rule, "title")
+}
+
+; ---- 排除规则字段位 ----
+ExclFieldBit(field) {
+    return (field = "title") ? 1 : (field = "class") ? 2 : 4
+}
+
+; 按当前 Excl_* 内容重算"需要读取哪些字段"，避免热路径多调 WinGet*
+ExclRecomputeNeed() {
+    global Excl_Titles, Excl_Classes, Excl_Processes, Excl_NeedField
+    need := 0
+    for r in Excl_Titles {
+        low := StrLower(Trim(r))
+        if (SubStr(low, 1, 5) = "proc:")
+            need |= 4
+        else if (SubStr(low, 1, 4) = "cls:")
+            need |= 2
+        else
+            need |= 1
+    }
+    for r in Excl_Classes {
+        low := StrLower(Trim(r))
+        if (SubStr(low, 1, 5) = "proc:")
+            need |= 4
+        else if (SubStr(low, 1, 6) = "title:")
+            need |= 1
+        else
+            need |= 2
+    }
+    for r in Excl_Processes {
+        low := StrLower(Trim(r))
+        if (SubStr(low, 1, 6) = "title:")
+            need |= 1
+        else if (SubStr(low, 1, 4) = "cls:")
+            need |= 2
+        else
+            need |= 4
+    }
+    Excl_NeedField := need
 }
 
 ; ---- IsExcluded / 窗口排除 ----
 IsExcludedWindow(hwnd) {
-    global Excl_Titles, Excl_Classes, Excl_Processes
-    if (Excl_Titles.Length = 0 && Excl_Classes.Length = 0 && Excl_Processes.Length = 0)
+    global Excl_Titles, Excl_Classes, Excl_Processes, Excl_NeedField
+    if (Excl_NeedField = 0)
         return false
     title := "", cls := "", proc := ""
+    try {
+        if (Excl_NeedField & 1)
+            title := WinGetTitle(hwnd)
+        if (Excl_NeedField & 2)
+            cls := WinGetClass(hwnd)
+        if (Excl_NeedField & 4)
+            proc := WinGetProcessName(hwnd)
+    }
+    for rule in Excl_Titles
+        if MatchField(title, rule, "title")
+            return true
+    for rule in Excl_Classes
+        if (cls != "" && MatchField(cls, rule, "class"))
+            return true
+    for rule in Excl_Processes
+        if (proc != "" && MatchField(proc, rule, "proc"))
+            return true
+    return false
+}
+
+; 诊断用：返回命中的第一条规则的字符串（未命中返回 ""）
+ExclusionReason(hwnd) {
+    global Excl_Titles, Excl_Classes, Excl_Processes, Excl_NeedField
+    title := "", cls := "", proc := ""
+    try {
+        title := WinGetTitle(hwnd)
+        cls   := WinGetClass(hwnd)
+        proc  := WinGetProcessName(hwnd)
+    }
+    for rule in Excl_Titles
+        if MatchField(title, rule, "title")
+            return "[Titles] " . rule
+    for rule in Excl_Classes
+        if (cls != "" && MatchField(cls, rule, "class"))
+            return "[Classes] " . rule
+    for rule in Excl_Processes
+        if (proc != "" && MatchField(proc, rule, "proc"))
+            return "[Processes] " . rule
+    return ""
+}
+
+; ---- exclude.ini / 排除规则文件 ----
+; 结构：预设段（脚本生成，勿手改） + 用户段（随意改）
+;   [Preset-Titles] / [Preset-Classes] / [Preset-Processes]
+;   [User-Titles]   / [User-Classes]   / [User-Processes]
+; 每段用编号键，一行一条：1=foo 2=*bar*
+ExclFileHeader() {
+    return ""
+        . "; ================================================================`r`n"
+        . ";  AHK_WM 窗口排除规则 / window exclusion rules`r`n"
+        . "; ================================================================`r`n"
+        . "; 全部大小写不敏感。匹配写法：`r`n"
+        . ";   foo          子串包含（默认）`r`n"
+        . ";   =foo         完全等于`r`n"
+        . ";   *foo*        通配符（* = 任意多个字符，? = 单个字符）`r`n"
+        . ";   ~=^foo$      正则（re: 前缀同样可用）`r`n"
+        . ";   proc:xxx / cls:xxx / title:xxx   强制匹配指定字段（可跨分区）`r`n"
+        . "; 规则放在哪个分区决定默认字段；进程名可不带 .exe（chrome == chrome.exe）。`r`n"
+        . "; `r`n"
+        . "; [Preset-*] 段由脚本生成/覆盖，手改会在下次更新时丢失；`r`n"
+        . "; 自定义规则请写进 [User-*] 段。`r`n"
+        . "; 热键：Alt+Shift+X 把当前窗口加入 [User-Processes]；`r`n"
+        . ";       Alt+Shift+E 诊断当前窗口为何被/未被排除。`r`n"
+        . "; ================================================================`r`n"
+        . "`r`n"
+}
+
+; 预设段内容（由 docs/tools/gen_exclude_presets.py 生成后粘进 ExclPresetIniText）
+global ExclPresetIniText := ""
+ExclPresetIni() {
+    global ExclPresetIniText
+    if (ExclPresetIniText != "")
+        return ExclPresetIniText
+    return "[Preset-Titles]`r`n`r`n[Preset-Classes]`r`n`r`n[Preset-Processes]`r`n"
+}
+
+; 首次生成 exclude.ini（并把 wm_config.ini 旧 [Exclude] 迁进 [User-*]）
+EnsureExcludeFile() {
+    global ExcludeFile, ConfigFile, ConfigDir
+    if FileExist(ExcludeFile)
+        return
+    txt := ExclFileHeader() . ExclPresetIni() . "`r`n"
+        . "[User-Titles]`r`n`r`n[User-Classes]`r`n`r`n[User-Processes]`r`n"
+    for name in ["Titles", "Classes", "Processes"] {
+        raw := ""
+        try raw := IniRead(ConfigFile, "Exclude", name, "")
+        arr := SplitExcludeList(raw)
+        if (arr.Length = 0)
+            continue
+        lines := ""
+        for i, r in arr
+            lines .= i . "=" . r . "`r`n"
+        hdr := "[User-" . name . "]`r`n"
+        txt := StrReplace(txt, hdr, hdr . lines)
+    }
+    try {
+        if !DirExist(ConfigDir)
+            DirCreate(ConfigDir)
+        FileAppend(txt, ExcludeFile, "UTF-16")
+    } catch {
+        try WMLog("EnsureExcludeFile failed: " . A_LastError)
+    }
+}
+
+; 解析一个 INI 段文本为规则数组
+ExclParseSection(text) {
+    out := []
+    for line in StrSplit(text, "`n", "`r") {
+        line := Trim(line)
+        if (line = "" || SubStr(line, 1, 1) = ";")
+            continue
+        p := InStr(line, "=")
+        val := (p = 0) ? line : Trim(SubStr(line, p + 1))
+        for r in SplitExcludeList(val)
+            out.Push(r)
+    }
+    return out
+}
+
+; 读取某字段的合并规则：预设段 + 用户段
+ExclReadSection(name) {
+    global ExcludeFile
+    out := []
+    for pre in ["Preset-", "User-"] {
+        raw := ""
+        try raw := IniRead(ExcludeFile, pre . name)
+        for r in ExclParseSection(raw)
+            out.Push(r)
+    }
+    return out
+}
+
+LoadExcludeRules() {
+    global Excl_Titles, Excl_Classes, Excl_Processes
+    EnsureExcludeFile()
+    Excl_Titles    := ExclReadSection("Titles")
+    Excl_Classes   := ExclReadSection("Classes")
+    Excl_Processes := ExclReadSection("Processes")
+    ExclRecomputeNeed()
+}
+
+; ---- 用户规则写入 ----
+ExclRuleExists(rule) {
+    global Excl_Processes, Excl_Classes, Excl_Titles
+    low := StrLower(Trim(rule))
+    for arr in [Excl_Processes, Excl_Classes, Excl_Titles]
+        for r in arr
+            if (StrLower(Trim(r)) = low)
+                return true
+    return false
+}
+
+ExclAppendUser(sec, rule) {
+    global ExcludeFile
+    cur := ""
+    try cur := IniRead(ExcludeFile, "User-" . sec)
+    n := 0
+    for line in StrSplit(cur, "`n", "`r") {
+        line := Trim(line)
+        if (line != "" && SubStr(line, 1, 1) != ";")
+            n += 1
+    }
+    try IniWrite(rule, ExcludeFile, "User-" . sec, n + 1)
+}
+
+; ---- 热键：加入排除 ----
+ExcludeCurrentWindow(*) {
+    global ExcludeFile, WM_LogLevel
+    hwnd := 0
+    try hwnd := WinExist("A")
+    if !hwnd {
+        ShowOSD("Exclude: No Window")
+        return
+    }
+    proc := ""
+    try proc := WinGetProcessName(hwnd)
+    if (proc = "") {
+        ShowOSD("Exclude: Failed")
+        return
+    }
+    rule := _StripExe(proc)
+    if ExclRuleExists(rule) {
+        ShowOSD("Already Excluded: " . rule)
+        return
+    }
+    ExclAppendUser("Processes", rule)
+    LoadExcludeRules()
+    ShowOSD("Excluded: " . rule)
+    if (WM_LogLevel <= 2)
+        try WMLog("ExcludeCurrentWindow proc=" . rule . " file=" . ExcludeFile)
+}
+
+; ---- 热键：诊断窗口 ----
+DiagnoseWindow(*) {
+    hwnd := 0
+    try hwnd := WinExist("A")
+    if !hwnd {
+        ShowOSD("Diagnose: No Window")
+        return
+    }
+    title := "", cls := "", proc := "", maxed := ""
     try title := WinGetTitle(hwnd)
     try cls   := WinGetClass(hwnd)
     try proc  := WinGetProcessName(hwnd)
-    for rule in Excl_Titles
-        if MatchTitleRule(title, rule)
-            return true
-    for rule in Excl_Classes
-        if (cls != "" && StrLower(cls) = StrLower(Trim(rule)))
-            return true
-    for rule in Excl_Processes
-        if (proc != "" && StrLower(proc) = StrLower(Trim(rule)))
-            return true
-    return false
+    try maxed := WinGetMinMax(hwnd)
+    reason := ExclusionReason(hwnd)
+    msg := "进程 / Proc : " . proc . "`n"
+        .  "类名 / Class: " . cls . "`n"
+        .  "标题 / Title: " . title . "`n"
+        .  "MinMax      : " . maxed . "   (-1=最小化 1=最大化)`n"
+        .  "`n"
+        .  "窗口句柄    : " . Format("0x{:X}", hwnd) . "`n"
+        .  "`n"
+        .  "是否排除    : " . (reason = "" ? "否 / no" : "是 / YES") . "`n"
+    if (reason != "")
+        msg .= "命中规则    : " . reason . "`n"
+    else
+        msg .= "`n提示：想排除它，按 Alt+Shift+X。`n"
+        .  "想加到指定字段，编辑 exclude.ini 的 [User-*] 段。"
+    ShowOSD("Window Diagnose")
+    MsgBox(msg, "窗口诊断 / Window Diagnose")
 }
 
 ; ---- ParseAxis / 轴解析 ----
@@ -1381,6 +1702,8 @@ RegisterAllHotkeys() {
     RegHotkey("SnapDown",  SnapWindow.Bind("Down"))
 
     RegHotkey("SaveLayout",    CopyLayoutRules)   ; Alt+Shift+S：复制当前布局的规则串
+    RegHotkey("ExcludeWindow",  ExcludeCurrentWindow)  ; Alt+Shift+X：把当前窗口加入排除
+    RegHotkey("DiagnoseWindow", DiagnoseWindow)        ; Alt+Shift+E：诊断当前窗口排除状态
 
     RegHotkey("Reload", (*) => ScriptReload())
     RegHotkey("ClipboardHistory", (*) => ToggleVimWindow())
@@ -1902,13 +2225,9 @@ WorkEnd=1745
 ;   Colors optional, fallback = theme / 颜色可选，默认主题色
 TaskTimes=1_1200_1300,#CDD6F4;2_1200_1300,#CDD6F4;3_1200_1300,#CDD6F4;4_1200_1300,#CDD6F4;5_1200_1300,#CDD6F4;6_1200_1300,#CDD6F4;7_1200_1300,#CDD6F4;2_1700_1745;3_0900_0920;1_1545_1600;2_1545_1600;3_1545_1600;4_1545_1600;5_1545_1600;1_1330_1500;
 
-[Exclude]
-; Excluded titles / 排除标题 contains|re:|=
-Titles=Picture-in-Picture
-; Excluded classes / 排除类名
-Classes=
-; Excluded processes / 排除进程
-Processes=
+; 窗口排除规则已移出本文件 —— 见同目录下的 exclude.ini
+; Window exclusion rules moved out of this file -> see exclude.ini
+; （旧版此处的 [Exclude] 段会在首次生成 exclude.ini 时自动迁移过去）
 
 [WinSelect]
 ; Scale ratio / 缩放比例
@@ -1983,6 +2302,10 @@ TogglePin=Ctrl+Alt+T
 ToggleBar=Ctrl+Alt+B
 ; 复制当前布局的规则串到剪贴板 / Copy current layout rules to the clipboard
 SaveLayout=Alt+Shift+S
+; 把当前窗口加入排除（写入 exclude.ini） / Add current window to exclusions
+ExcludeWindow=Alt+Shift+X
+; 诊断当前窗口为何被排除 / Diagnose why the current window is excluded
+DiagnoseWindow=Alt+Shift+E
 
 CloseWindow=Alt+Q
 CloseWindowAlt=Alt+MButton
@@ -2134,9 +2457,7 @@ WTMShrinkHeight=Ctrl+Alt+K
     Snap_Distance := Integer(IniRead(ConfigFile, "Snapping", "Distance", "12"))
     Snap_Release  := Max(0, Integer(IniRead(ConfigFile, "Snapping", "Release", "8")))
 
-    Excl_Titles      := SplitExcludeList(IniRead(ConfigFile, "Exclude", "Titles",    ""))
-    Excl_Classes     := SplitExcludeList(IniRead(ConfigFile, "Exclude", "Classes",   ""))
-    Excl_Processes   := SplitExcludeList(IniRead(ConfigFile, "Exclude", "Processes", ""))
+    LoadExcludeRules()
 
     GUI_Rounded      := IniRead(ConfigFile, "GUI", "RoundedCorners", "on")
     GUI_CornerRadius := Max(0, Integer(IniRead(ConfigFile, "GUI", "CornerRadius", "12")))
@@ -2261,6 +2582,7 @@ WTMShrinkHeight=Ctrl+Alt+K
     hkKeys := ["Help","Exit","Reload",
                "DesktopSwitchPrefix","DesktopMovePrefix","DesktopMoveSwitchPrefix",
                "TileSmart","GatherAll","TogglePin","ToggleBar","SaveLayout",
+               "ExcludeWindow","DiagnoseWindow",
                "CloseWindow","CloseWindowAlt","ToggleMaximize","ToggleTop","HideWindow",
                "ToggleAllBorders",
                "TransparencyUp","TransparencyDown",
@@ -2275,6 +2597,7 @@ WTMShrinkHeight=Ctrl+Alt+K
         "DesktopSwitchPrefix","Alt","DesktopMovePrefix","Alt+Shift","DesktopMoveSwitchPrefix","Ctrl+Alt",
         "TileSmart","Alt+D","GatherAll","Alt+Shift+G","TogglePin","Ctrl+Alt+T","ToggleBar","Ctrl+Alt+B",
         "SaveLayout","Alt+Shift+S",
+        "ExcludeWindow","Alt+Shift+X","DiagnoseWindow","Alt+Shift+E",
         "CloseWindow","Alt+Q","CloseWindowAlt","Alt+MButton","ToggleMaximize","Alt+F",
         "ToggleTop","Alt+T","HideWindow","Alt+W","ToggleAllBorders","Alt+B",
         "TransparencyUp","Alt+WheelUp","TransparencyDown","Alt+WheelDown",
@@ -2459,6 +2782,8 @@ ShowHelpGui(*) {
         [PrefP("SnapLeft") . " / " . PrefP("SnapRight"), "Snap Left / Right"],
         [PrefP("SnapUp")   . " / " . PrefP("SnapDown"),  "Maximize / Minimize"],
         [PrefP("SaveLayout"),                 "Copy Layout Rules to Clipboard"],
+        [PrefP("ExcludeWindow"),              "Exclude Current Window (add rule)"],
+        [PrefP("DiagnoseWindow"),             "Diagnose Window Exclusions"],
         [PrefP("GatherAll"),                  "Gather All Windows"],
         [PrefP("CloseWindow"),                "Close Window"],
         [PrefP("TileSmart"),                  "Smart Tile (current monitor)"],
@@ -2524,6 +2849,7 @@ class WelcomeScreen {
             "  >  WTM Mode (hyprland-like)    " . PrettifyHotkey(HK["WTMToggle"]),
             "  >  Window Snap                 " . PrettifyHotkey(HK["SnapLeft"]) . " etc.",
             "  >  Copy Layout Rules           " . PrettifyHotkey(HK["SaveLayout"]),
+            "  >  Exclude Window              " . PrettifyHotkey(HK["ExcludeWindow"]),
             "  >  Help Menu                   " . PrettifyHotkey(HK["Help"])
         ]
         yStart := Round(vh * 0.46)
@@ -5733,12 +6059,12 @@ GetVisibleWindow() {
                 , "Ptr", this_id, "Int", 14, "Int*", &isCloaked, "Int", 4)
             if isCloaked
                 continue
+            if IsExcludedWindow(this_id)      ; 排除判定提前：小窗口/无标题的 PiP 也能被排除
+                continue
             if (WinGetTitle(this_id) == "")
                 continue
             WinGetPos(,, &w, &h, this_id)
             if (w < 100 || h < 100)
-                continue
-            if IsExcludedWindow(this_id)
                 continue
         } catch
             continue
@@ -5760,6 +6086,8 @@ GetVisibleWindows() {
                 continue
             ex := WinGetExStyle(hwnd)
             if (ex & 0x80)
+                continue
+            if IsExcludedWindow(hwnd)
                 continue
             if (WinGetMinMax(hwnd) != -1)
                 windows.Push(hwnd)
@@ -8941,6 +9269,8 @@ SetupTrayIcon() {
     A_TrayMenu.Add("Toggle Status Bar",  ToggleBar)
     A_TrayMenu.Add("Toggle WTM Mode",    (*) => WTM.Toggle())
     A_TrayMenu.Add("Copy Layout Rules",  CopyLayoutRules)
+    A_TrayMenu.Add("Exclude Current Window", ExcludeCurrentWindow)
+    A_TrayMenu.Add("Diagnose Window",    DiagnoseWindow)
     A_TrayMenu.Add()
 
     themeMenu := Menu()

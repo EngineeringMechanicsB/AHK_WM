@@ -610,6 +610,99 @@ if okJ6 {
 }
 Assert(okJ6, "J6: 规则串可被 ParseLayoutRules 解析回 3 窗口且几何一致")
 
+; ---------------------------------------------------------------
+; 场景 K：窗口排除匹配引擎
+;   6 种前缀（裸子串/=/re:/~=/glob/proc:cls:title:），全部大小写不敏感
+; ---------------------------------------------------------------
+Log("")
+Log("-- K: 排除匹配引擎 --")
+
+; K-Glob：通配
+Assert(GlobMatch("chrome", "chr*"), "K1: chr* 命中 chrome")
+Assert(GlobMatch("chrome", "*rome"), "K2: *rome 命中 chrome")
+Assert(GlobMatch("abc", "a?c"), "K3: a?c 命中 abc")
+Assert(!GlobMatch("ac", "a?c"), "K4: a?c 不命中 ac (缺一个字符)")
+Assert(GlobMatch("", ""), "K5: 空模式匹配空串")
+Assert(!GlobMatch("x", ""), "K6: 空模式不匹配非空串")
+Assert(GlobMatch("aXbYc", "a*b*c"), "K7: 多星号 a*b*c 命中")
+Assert(!GlobMatch("abc", "a*b*c*d"), "K8: 尾段缺失不命中")
+Assert(GlobMatch("anything", "*"), "K9: 单星号命中一切")
+
+; K-StripExe
+Assert(_StripExe("chrome.exe") = "chrome", "K10: chrome.exe → chrome")
+Assert(_StripExe("CHROME.EXE") = "CHROME", "K11: 大写 .EXE 也去掉")
+Assert(_StripExe("chrome") = "chrome", "K12: 无扩展名原样")
+Assert(_StripExe("  code.exe  ") = "code", "K13: 去空白再剥 .exe")
+
+; K-Field：各前缀
+Assert(MatchField("My Window Title", "window", "title"), "K20: 子串包含 (大小写不敏感)")
+Assert(MatchField("hello", "=HELLO", "title"), "K21: = 完全等于 (大小写不敏感)")
+Assert(!MatchField("hello world", "=hello", "title"), "K22: = 要求整体相等")
+Assert(MatchField("chrome.exe", "chrome", "proc"), "K23: proc 剥 .exe 后包含")
+Assert(MatchField("chrome", "chrome.exe", "proc"), "K24: 规则带 .exe 也命中")
+Assert(MatchField("abc123", "re:^abc\d+$", "title"), "K25: re: 正则")
+Assert(MatchField("abc123", "~=^abc\d+$", "title"), "K26: ~= 等价 re:")
+Assert(!MatchField("zzz", "re:^(abc$", "title"), "K27: 坏正则不抛错、返回 false")
+Assert(MatchField("Picture-in-Picture", "*picture*", "title"), "K28: glob + 大小写")
+Assert(MatchField("SomeTitle", "title:SomeT", "title"), "K29: title: 前缀在同字段生效")
+
+; K-Cross：proc:/cls:/title: 强制跨字段
+Assert(MatchField("KeePassXC", "proc:keepassxc", "proc"), "K30: proc: 在进程字段命中")
+Assert(!MatchField("KeePassXC", "proc:keepassxc", "title"), "K31: proc: 在标题字段不命中")
+Assert(MatchField("Chrome_WidgetWin_1", "cls:Chrome_WidgetWin*", "class"), "K32: cls: + glob")
+Assert(!MatchField("Chrome_WidgetWin_1", "cls:Chrome_WidgetWin*", "title"), "K33: cls: 在标题字段不命中")
+Assert(MatchField("任务管理器", "title:任务", "title"), "K34: title: 中文子串")
+
+; K32b：分区默认字段与前缀不符 → false
+Assert(!MatchField("x", "cls:foo", "proc"), "K35: cls: 在进程字段不命中")
+
+; K-Empty
+Assert(!MatchField("anything", "", "title"), "K36: 空规则不命中")
+Assert(!MatchField("anything", "   ", "title"), "K37: 纯空白规则不命中")
+
+; K-BackCompat：MatchTitleRule == MatchField(title)
+Assert(MatchTitleRule("Hello World", "world"), "K40: MatchTitleRule 子串")
+Assert(MatchTitleRule("Hello", "=hello"), "K41: MatchTitleRule = 精确")
+Assert(!MatchTitleRule("abc", "re:^\d+$"), "K42: MatchTitleRule 正则不命中")
+
+; K-FieldBit
+Assert(ExclFieldBit("title") = 1 && ExclFieldBit("class") = 2 && ExclFieldBit("proc") = 4,
+    "K45: 字段位 title=1 class=2 proc=4")
+
+; K-Split
+; 注意 AHK v2 陷阱：字符串里出现"空格 + 分号"会被当注释起始，即使引号尚未闭合。
+; 故这里用不带前置空格的分号写测试字面量。
+arrK := SplitExcludeList("  a;b;;c  ")
+Assert(arrK.Length = 3 && arrK[1] = "a" && arrK[2] = "b" && arrK[3] = "c",
+    "K50: SplitExcludeList 去空去空格")
+
+; K-ParseSection：编号键 + 注释 + 分号分隔 + 裸行
+secK := "1=chrome.exe`r`n2=*pip*;foo`r`n; comment`r`n`r`n3==exact"
+pk := ExclParseSection(secK)
+Assert(pk.Length = 4, "K51: ExclParseSection 段解析出 4 条 (实际 " pk.Length ")")
+if (pk.Length = 4)
+    Assert(pk[1] = "chrome.exe" && pk[2] = "*pip*" && pk[3] = "foo" && pk[4] = "=exact",
+        "K52: 编号键取右值、分号再切、注释跳过")
+
+; K-Need：按规则内容推导"需要哪些字段"
+Excl_Titles := ["Picture-in-Picture"]
+Excl_Classes := ["cls:Chrome_WidgetWin*"]
+Excl_Processes := ["chrome"]
+ExclRecomputeNeed()
+Assert(Excl_NeedField = 7, "K60: 三类规则齐 → 需读标题+类名+进程 (7, 实际 " Excl_NeedField ")")
+
+Excl_Titles := ["proc:KeePassXC.exe"]
+Excl_Classes := []
+Excl_Processes := []
+ExclRecomputeNeed()
+Assert(Excl_NeedField = 4, "K61: 只有 proc: 前缀 → 只读进程 (4, 实际 " Excl_NeedField ")")
+
+Excl_Titles := []
+Excl_Classes := []
+Excl_Processes := []
+ExclRecomputeNeed()
+Assert(Excl_NeedField = 0, "K62: 无规则 → 不读任何字段 (0)")
+
 Log("")
 Log(Fail ? "==== 失败 " Fail " 项 ====" : "==== 全部通过 ====")
 ExitApp(Fail ? 1 : 0)

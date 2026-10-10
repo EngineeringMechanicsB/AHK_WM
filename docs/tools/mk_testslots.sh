@@ -8,6 +8,7 @@ extract() {   # $1 = 顶层函数名（匹配行首 "name(" 到行首 "}"）
 }
 
 {
+    printf '\xEF\xBB\xBF'   # UTF-8 BOM：否则 AHK 按 ANSI 读，中文串会吞掉引号
     echo '#Requires AutoHotkey v2.0'
     echo '#SingleInstance Off'
     echo '; ==== 由 tools/mk_testslots.sh 从 wm.ahk 自动抽取，请勿手工编辑 ===='
@@ -32,7 +33,9 @@ extract() {   # $1 = 顶层函数名（匹配行首 "name(" 到行首 "}"）
              NarrowByAxis NarrowByBand ResizeSpans QuantizeSpans RuleStringFor LayoutAxisToken \
              _GetTileMode ComputeTileRect MoveWinTo EmitPlace TileGrid \
              TileNormal TileVertical TileUltrawide BuildBuiltinSlotTable \
-             GetTileArea SortRectsForRules BuildLayoutRulesForMonitor; do
+             GetTileArea SortRectsForRules BuildLayoutRulesForMonitor \
+             GlobMatch _StripExe MatchField MatchTitleRule ExclFieldBit \
+             SplitExcludeList ExclParseSection ExclRecomputeNeed; do
         echo ''
         echo "; ---- 抽取自 wm.ahk: $f ----"
         extract "$f"
