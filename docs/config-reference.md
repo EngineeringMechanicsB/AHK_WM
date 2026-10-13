@@ -16,7 +16,7 @@ The file is created with defaults on first run. After editing, reload the script
 **v2.9 migration** — the `[Bar]` snake_case keys (`time_format`, `layout`, …) were
 renamed to PascalCase. Old configs are migrated automatically on first start
 (old key values are copied to the new names, old keys removed, and
-`[General] ConfigVersion=2` is written). No manual action is required.
+`[General] ConfigVersion=3` is written). No manual action is required.
 
 ---
 
@@ -27,8 +27,8 @@ renamed to PascalCase. Old configs are migrated automatically on first start
 | `ActiveTheme` | string | `custom` | `custom`, `nord`, `tokyonight`, `dracula`, `gruvbox`, `monokai`, `solarized-dark`, `solarized-light`, `catppuccin-mocha`, `catppuccin-latte`, `onedark`, `ayu-dark`, `github-dark`, `rose-pine`, `everforest`, `kanagawa`, `material-deep`, `nightfox`, `palenight`, `horizon`, `oxocarbon` | Active color theme. `custom` uses the colors from `[Theme]`; any built-in name overrides them. |
 | `FontName` | string | `Segoe UI` | any installed font | UI font. Use a Nerd Font to get bar icons (Wi-Fi, battery, …). |
 | `TransparencyStep` | int | `10` | 1–50 | Step size (in %) for the window-transparency hotkeys. |
-| `PauseOnFullscreen` | on/off | `off` | `on`, `off` | Suspend all script hotkeys while a fullscreen window is on a bar monitor. |
-| `ConfigVersion` | int | *(auto)* | `2` | Internal migration marker written by the script. Do not edit. |
+| `PauseOnFullscreen` | `all` \| `bar` \| `off` | `bar` | `all`, `bar`, `off` | Suspend all script hotkeys while a fullscreen window is showing. `all` = any monitor; `bar` = only monitors that own a status bar (a monitor with no bar is never treated as fullscreen); `off` = never. Legacy `on` is migrated to `all`. |
+| `ConfigVersion` | int | *(auto)* | `3` | Internal migration marker written by the script. Do not edit. |
 
 ## [Theme]
 
@@ -326,7 +326,7 @@ modifiers only and are combined with digits `1–9`.
 | `GatherAll` | `Alt+Shift+G` | Gather every window onto the current desktop. |
 | `TogglePin` | `Ctrl+Alt+T` | Toggle "always visible on every desktop". |
 | `ToggleBar` | `Ctrl+Alt+B` | Show / hide the status bar. |
-| `SaveLayout` / `RestoreLayout` | `Alt+Shift+S` / `Alt+Shift+R` | Save / restore a window-position snapshot. |
+| `SaveLayout` | `Alt+Shift+S` | Save a window-position snapshot. (`RestoreLayout` was removed in v2.12.) |
 | `CloseWindow` | `Alt+Q` | Close window (under mouse; **focused** window in WTM mode). |
 | `CloseWindowAlt` | `Alt+MButton` | Same as `CloseWindow`. |
 | `ToggleMaximize` | `Alt+F` | Maximize / restore window under mouse. |
@@ -344,6 +344,7 @@ modifiers only and are combined with digits `1–9`.
 | `PieMenuTrigger` | `~Space & RButton` | Open the pie menu. |
 | `WinSelect` | `Alt+S` | Window-select mode. |
 | `WTMToggle` | `Alt+Shift+D` | Toggle WTM tiling mode. |
+| `ExcludeWindow` | `Alt+Shift+X` | Add the focused window to the exclusions (`exclude.ini`). |
 | `DiagnoseWindow` | *(empty)* | Print the focused window's proc / class / title / HWND and the reason it is (not) excluded, as an on-screen OSD. Unbound by default — mostly for checking windows while writing exclusion rules. |
 | `WTMFocusLeft/Down/Up/Right` | `Alt+H/J/K/L` | WTM: focus in a direction. |
 | `WTMMoveLeft/Down/Up/Right` | `Alt+Shift+H/J/K/L` | WTM: swap / move in a direction (crosses monitors). |

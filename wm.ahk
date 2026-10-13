@@ -7582,7 +7582,10 @@ class WTM {
         loop MonitorGetCount() {
             m := A_Index
             fs := false
-            try fs := HasFullscreenWindow(m)
+            try {
+                if this._FullscreenTestApplies(m)
+                    fs := HasFullscreenWindow(m)
+            }
             old := this._FsMon.Has(m) ? this._FsMon[m] : false
             if (fs != old) {
                 this._FsMon[m] := fs
@@ -7615,6 +7618,17 @@ class WTM {
             this.AutoTile()
             this.RefreshBorder()
         }
+    }
+
+    ; 平铺区域与整块显示器重合（该屏没有 bar、没有间隙）时，"窗口铺满显示器"分不清真全屏
+    ; 和 WTM 自己平铺出来的单窗口 —— 跳过该屏的全屏判定，否则会被永久冻结
+    ; A tile area equal to the whole monitor means there is no bar to cover, so the
+    ; fullscreen test cannot tell a real fullscreen window from our own single tile.
+    static _FullscreenTestApplies(monIdx) {
+        global WTM_Gap
+        MonitorGet(monIdx, &mL, &mT, &mR, &mB)
+        GetTileArea(monIdx, WTM_Gap, &tL, &tT, &tW, &tH)
+        return (tL > mL + 2 || tT > mT + 2 || tL + tW < mR - 2 || tT + tH < mB - 2)
     }
 
     static _MonitorsOfOrder() {

@@ -21,8 +21,8 @@
 | `ActiveTheme` | 字符串 | `custom` | `custom`、`nord`、`tokyonight`、`dracula`、`gruvbox`、`monokai`、`solarized-dark`、`solarized-light`、`catppuccin-mocha`、`catppuccin-latte`、`onedark`、`ayu-dark`、`github-dark`、`rose-pine`、`everforest`、`kanagawa`、`material-deep`、`nightfox`、`palenight`、`horizon`、`oxocarbon` | 当前主题。`custom` 使用 `[Theme]` 节的颜色；内置主题名会覆盖之。 |
 | `FontName` | 字符串 | `Segoe UI` | 任意已安装字体 | 界面字体。使用 Nerd Font 可显示状态栏图标（WiFi、电池等）。 |
 | `TransparencyStep` | 整数 | `10` | 1–50 | 窗口透明度热键的调节步长（%）。 |
-| `PauseOnFullscreen` | 开关 | `off` | `on`、`off` | 状态栏所在显示器出现全屏窗口时挂起全部脚本热键。 |
-| `ConfigVersion` | 整数 | *(自动)* | `2` | 脚本写入的迁移标记，请勿手改。 |
+| `PauseOnFullscreen` | `all` \| `bar` \| `off` | `bar` | `all`、`bar`、`off` | 出现全屏窗口时挂起全部脚本热键。`all` = 任意显示器；`bar` = 仅配置了状态栏的显示器（没有状态栏的屏永不判为全屏）；`off` = 从不。旧值 `on` 会自动迁移为 `all`。 |
+| `ConfigVersion` | 整数 | *(自动)* | `3` | 脚本写入的迁移标记，请勿手改。 |
 
 ## [Theme] 主题颜色
 
@@ -313,7 +313,7 @@ OSD:文本[:持续时间毫秒][:fs=24,op=90,x=50%,y=30%,bg=FF4444,tx=FFFFFF]
 | `GatherAll` | `Alt+Shift+G` | 把所有窗口聚集到当前桌面。 |
 | `TogglePin` | `Ctrl+Alt+T` | 切换"所有桌面常显"。 |
 | `ToggleBar` | `Ctrl+Alt+B` | 显示/隐藏状态栏。 |
-| `SaveLayout` / `RestoreLayout` | `Alt+Shift+S` / `Alt+Shift+R` | 保存/恢复窗口位置快照。 |
+| `SaveLayout` | `Alt+Shift+S` | 保存窗口位置快照。（`RestoreLayout` 已在 v2.12 移除。） |
 | `CloseWindow` | `Alt+Q` | 关闭窗口（鼠标下窗口；**WTM 模式下为聚焦窗口**）。 |
 | `CloseWindowAlt` | `Alt+MButton` | 同 `CloseWindow`。 |
 | `ToggleMaximize` | `Alt+F` | 最大化/还原鼠标下窗口。 |
@@ -331,6 +331,7 @@ OSD:文本[:持续时间毫秒][:fs=24,op=90,x=50%,y=30%,bg=FF4444,tx=FFFFFF]
 | `PieMenuTrigger` | `~Space & RButton` | 打开功能环。 |
 | `WinSelect` | `Alt+S` | 窗口选择模式。 |
 | `WTMToggle` | `Alt+Shift+D` | 切换 WTM 平铺模式。 |
+| `ExcludeWindow` | `Alt+Shift+X` | 把聚焦窗口加入排除（`exclude.ini`）。 |
 | `DiagnoseWindow` | *(空)* | 用 OSD 显示焦点窗口的进程 / 类名 / 标题 / HWND 以及它被（未）排除的原因。默认不绑定——主要用于写排除规则时查窗口。 |
 | `WTMFocusLeft/Down/Up/Right` | `Alt+H/J/K/L` | WTM：方向聚焦。 |
 | `WTMMoveLeft/Down/Up/Right` | `Alt+Shift+H/J/K/L` | WTM：方向交换/移动（可跨显示器）。 |
