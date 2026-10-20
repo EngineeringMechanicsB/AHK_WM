@@ -8,3 +8,7 @@ Buttons/
 # 发布产物与本地备份 / release artifacts and local backups
 dist/
 docs/backup/
+
+# 错误监控运行产物 / error-watcher runtime output
+docs/tools/errors.log
+docs/tools/shots/
