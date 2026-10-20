@@ -1,18 +1,43 @@
 #!/usr/bin/env bash
 # 单一版本源：wm.ahk 里的 global WM_Version 是唯一权威，其他文档的版本号由本脚本注入。
-# CHANGELOG 不在同步范围内 —— 每个条目是属于它自己那个版本的，改版本号就篡改历史了。
+# CHANGELOG 条目标题不会被改写（每个条目属于它自己那个版本），但 --check 会确认
+# 当前版本在 CHANGELOG.md / CHANGELOG-zh.md 里各有一个 "### vX.Y.Z" 条目。
 #
-#   bash docs/tools/sync_version.sh            # 按 wm.ahk 改写 4 个文档里的版本号
-#   bash docs/tools/sync_version.sh --check     # 只检查是否漂移，不写文件（CI 用）
+#   bash docs/tools/sync_version.sh                 # 按 wm.ahk 改写 4 个文档里的版本号
+#   bash docs/tools/sync_version.sh --check         # 只检查：文档漂移 + CHANGELOG 条目
+#   bash docs/tools/sync_version.sh --set 2.13.0    # 改 wm.ahk 的 WM_Version，再同步文档
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-CHECK=0
+MODE="sync"
+NEW=""
 case "${1:-}" in
-    "")          ;;
-    --check|-c)  CHECK=1 ;;
-    *)           echo "用法: $0 [--check]" >&2; exit 2 ;;
+    "")                ;;
+    --check|-c)        MODE="check" ;;
+    --set|-s)
+        MODE="set"
+        NEW="${2:-}"
+        if ! [[ $NEW =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "用法: $0 [--check | --set X.Y.Z]" >&2
+            exit 2
+        fi
+        ;;
+    -h|--help)
+        sed -n '2,10p' "$0"
+        exit 0
+        ;;
+    *)
+        echo "用法: $0 [--check | --set X.Y.Z]" >&2
+        exit 2
+        ;;
 esac
+
+# ---- --set：先改唯一版本源 / bump the single source of truth ----
+if [ "$MODE" = "set" ]; then
+    # ${1}/${2} 而不是 \1/\2：版本号紧跟其后时 \1 会和数字粘成 \12
+    perl -pi -e 's|^(global WM_Version := ")[^"]*(")|${1}'"$NEW"'${2}|' wm.ahk
+    printf 'sync_version: wm.ahk WM_Version -> v%s\n' "$NEW"
+fi
 
 V=$(grep -m1 '^global WM_Version :=' wm.ahk | sed -E 's/.*"([^"]+)".*/\1/')
 if ! [[ $V =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -44,6 +69,7 @@ rules_for() {
 }
 
 FILES=(README.md docs/README-zh.md docs/config-reference.md docs/config-reference-zh.md)
+CHANGELOGS=(docs/CHANGELOG.md docs/CHANGELOG-zh.md)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
@@ -55,7 +81,7 @@ for f in "${FILES[@]}"; do
         continue
     fi
     drift=1
-    if (( CHECK )); then
+    if [ "$MODE" = "check" ]; then
         printf '  ! %s 版本号未同步:\n' "$f"
         diff -u "$f" "$tmp/$(basename "$f")" | sed -n '3,12p' | sed 's/^/      /' || true
     else
@@ -64,12 +90,26 @@ for f in "${FILES[@]}"; do
     fi
 done
 
-if (( CHECK )); then
+# CHANGELOG 标题不改写，但必须存在当前版本的条目。
+for f in "${CHANGELOGS[@]}"; do
+    if grep -q "^### v$V" "$f"; then
+        printf '  = %s has v%s\n' "$f" "$V"
+    else
+        drift=1
+        if [ "$MODE" = "check" ]; then
+            printf '  ! %s 缺少 "### v%s" 条目\n' "$f" "$V"
+        else
+            printf '  * 提醒：%s 还没有 "### v%s" 条目\n' "$f" "$V"
+        fi
+    fi
+done
+
+if [ "$MODE" = "check" ]; then
     if (( drift )); then
-        echo "sync_version: 文档版本号与 wm.ahk 的 v$V 不一致（跑 $0 修复）" >&2
+        echo "sync_version: v$V 检查未通过（跑 $0 同步文档，或补 CHANGELOG 条目）" >&2
         exit 1
     fi
-    echo "sync_version: 4 个文档版本号均为 v$V"
+    echo "sync_version: v$V 文档与 CHANGELOG 检查通过"
 else
     echo "sync_version: 已同步到 v$V（wm.ahk 为权威源）"
 fi

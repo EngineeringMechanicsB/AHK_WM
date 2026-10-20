@@ -63,23 +63,13 @@ if [ "$CUR" != "$VERSION" ] && [ "$(printf '%s\n%s\n' "$CUR" "$VERSION" | sort -
 fi
 echo "工作区干净，分支 $(git branch --show-current)，当前版本 v$CUR"
 
-# ---- 1. bump 唯一版本源 ----
-step "1/6 bump WM_Version -> v$VERSION"
-OLD=$(grep -m1 '^global WM_Version :=' wm.ahk | sed -E 's/.*"([^"]+)".*/\1/')
-if [ "$OLD" = "$VERSION" ]; then
-    echo "wm.ahk 已是 v$VERSION"
-else
-    # 注意用 ${1} 而不是 \1：版本号紧跟其后时 \1 会和数字粘成 \12（第 12 个反向引用）
-    perl -pi -e 's|^(global WM_Version := ")[^"]*(")|${1}'"$VERSION"'${2}|' wm.ahk
-    grep -m1 '^global WM_Version :=' wm.ahk
-fi
+# ---- 1. bump 唯一版本源 + 同步文档 ----
+step "1/6 bump WM_Version -> v$VERSION 并同步文档"
+bash docs/tools/sync_version.sh --set "$VERSION"
 
-# ---- 2. 文档版本号跟着走 ----
-step "2/6 同步文档版本号"
-bash docs/tools/sync_version.sh
-if ! grep -q "^### v$VERSION" docs/CHANGELOG.md docs/CHANGELOG-zh.md; then
-    echo "警告：CHANGELOG 里没有 '### v$VERSION' 条目，记得补" >&2
-fi
+# ---- 2. 版本一致性检查（含 CHANGELOG 条目）----
+step "2/6 检查版本号与 CHANGELOG"
+bash docs/tools/sync_version.sh --check
 
 # ---- 3/4. 校验 ----
 step "3/6 语法检查 validate.sh"
