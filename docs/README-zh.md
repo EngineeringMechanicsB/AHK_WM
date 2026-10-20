@@ -235,6 +235,8 @@ WMBarPush(2, (200-550)/1920， "Take a sad song`nand make it better")  ; `n = �
 - **包管理器** — Scoop、Chocolatey、winget 分发
 - **排除规则编辑器** — 用图形界面编辑 `[User-*]` 规则，不用手写 `exclude.ini`
 - **BAR自动隐藏和显示** — 现在仅仅是全盘隐藏，添加一个遮挡自动隐藏或者降低透明度模式
+- **窗口规则** — 特定窗口出现时自动套用特殊排列
+- **边框动画优化** — 让窗口边框与 Overview 分割线的过渡更顺滑
 
 ---
 

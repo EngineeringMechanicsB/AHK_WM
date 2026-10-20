@@ -336,9 +336,9 @@ OSD:文本[:持续时间毫秒][:fs=24,op=90,x=50%,y=30%,bg=FF4444,tx=FFFFFF]
 | `DiagnoseWindow` | *(空)* | 用 OSD 显示焦点窗口的进程 / 类名 / 标题 / HWND 以及它被（未）排除的原因。默认不绑定——主要用于写排除规则时查窗口。 |
 | `WTMFocusLeft/Down/Up/Right` | `Alt+H/J/K/L` | WTM：方向聚焦。 |
 | `WTMMoveLeft/Down/Up/Right` | `Alt+Shift+H/J/K/L` | WTM：方向交换/移动。滚动平铺下越过页边会把窗口推到相邻页（或相邻显示器），视口跟随。 |
-| `WTMFull` | `Alt+F` | WTM 内手动全屏：保留 bar 与边框，该屏只显示焦点窗口；再按一次复原。非 WTM 时该键仍是普通的窗口最大化。 |
+| `WTMFull` | `Alt+F` | WTM 内手动全屏：只把聚焦窗口当前屏幕上**当前可见**的窗口按 `[Desktop] HideMethod` 最小化/隐藏，并从桌面记录中剔除，让聚焦窗口独占整屏。滚动桌面只处理当前页，新窗口进右侧页；再按一次恢复。状态按桌面保存；把窗口移到其他显示器/桌面会退出全屏。非 WTM 时该键仍是普通的窗口最大化。 |
 | `WTMTrueMax` | `Alt+Shift+F` | WTM：焦点窗口真最大化（忽略状态栏，等同普通模式的 `Alt+F`）。非 WTM 时不生效。 |
-| `WTMOverview` | `Alt+O` | WTM：开关 Overview。当前桌面所有窗口（含滚动模式屏外页、其他显示器）按相对位置等比缩到焦点显示器；`Alt+H/J/K/L` 切焦点，`Alt+Shift+H/J/K/L` 交换顺序，`Alt+Q` 关闭；再按 `Alt+O` 恢复并按新顺序平铺。Overview 期间新开的窗口会自动加入。 |
+| `WTMOverview` | `Alt+O` | WTM：开关 Overview。当前桌面所有窗口（含滚动模式屏外页、其他显示器）按相对位置等比缩到焦点显示器；页/显示器之间画分割线（颜色 `BorderPin`，粗细与圆角读 `[Border]`，渐显）。`Alt+H/J/K/L` 切焦点，`Alt+Shift+H/J/K/L` 交换顺序，`Alt+Q` 关闭；再按 `Alt+O` 恢复并按新顺序平铺。Overview 期间新开的窗口会自动加入。 |
 | `WTMShrinkWidth` / `WTMGrowWidth` | `Ctrl+Alt+H` / `Ctrl+Alt+L` | WTM：焦点窗口沿 X 轴变窄 / 变宽（见 `[Tiling] ResizeStep`）。 |
 | `WTMGrowHeight` / `WTMShrinkHeight` | `Ctrl+Alt+J` / `Ctrl+Alt+K` | WTM：焦点窗口沿 Y 轴变高 / 变矮。 |
 

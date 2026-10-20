@@ -236,6 +236,8 @@ All configuration lives in `%USERPROFILE%\.config\AHK_WM\wm_config.ini`. Edit it
 - **Package managers** — Scoop, Chocolatey, winget distribution
 - **Exclusion rule editor** — edit `[User-*]` rules in a GUI instead of hand-writing `exclude.ini`
 - **Bar auto-hide & reveal** — currently only full hide; add occlusion-based auto-hide or transparency mode
+- **Window rules** — apply a special layout when a matching window appears
+- **Border animation polish** — smoother window-border and Overview-divider transitions
 
 ---
 

@@ -3577,6 +3577,8 @@ HideUnderMouse(*) {
     hwnd := _GetHwndUnderMouse()
     if !hwnd
         return
+    if (WTM.ManualFull && WTM.ManualFull = hwnd)
+        WTM._ExitFullManual()
     try {
         WinMinimize(hwnd)
         ShowOSD("WinMinimized")
@@ -3807,6 +3809,7 @@ SwitchDesktop(target, *) {
 
         wasWTMActive := WTM.Active
         if wasWTMActive {
+            WTM.PrepareDesktopSwitch()
             WTM.SaveOrderForDesktop(CurrentDesktop)
             WTM.DestroyAllBorders()
         }
@@ -3864,6 +3867,8 @@ MoveWindowToDesktop(target, *) {
     try hwnd := WinExist("A")
     if (!hwnd || IsBarWindow(hwnd))
         return
+    if (WTM.ManualFull && WTM.ManualFull = hwnd)
+        WTM._ExitFullManual()
 
     if AlwaysVisible.Has(hwnd) {
         AlwaysVisible.Delete(hwnd)
@@ -6596,6 +6601,11 @@ class WTM {
     static ScrollDesktop := Map()
     static Overview      := false
     static OverviewRects := Map()
+    static OverviewFrames := []
+    static OverviewFadeFn := ObjBindMethod(WTM, "_OverviewFadeTick")
+    static ManualFull    := 0
+    static FullHidden    := Map()
+    static FullState     := Map()
 
     static Toggle() {
         if this.Active
@@ -6651,13 +6661,16 @@ class WTM {
     }
 
     static CleanupOnExit() {
-        if (!this.Active && this.SoloHidden.Count = 0)
+        if (!this.Active && this.SoloHidden.Count = 0 && this.FullState.Count = 0)
             return
         SetTimer(this.TickFn, 0)
         try {
             this._StopAnim()
             this._ExitSolo()
+            this._ExitAllFull()
+            this._GatherAllOffscreen()
         } finally {
+            this._OverviewClearFrames()
             this.DestroyAllBorders()
         }
     }
@@ -6669,12 +6682,17 @@ class WTM {
         try {
             this._StopAnim()
             this._ExitSolo()
-            this._GatherOffscreen()
+            this._ExitAllFull()
+            this._GatherAllOffscreen()
         } catch Error as e {
             WMLogErr("WTM Deactivate", e)
         } finally {
             this.Overview      := false
             this.OverviewRects := Map()
+            this._OverviewClearFrames()
+            this.ManualFull    := 0
+            this.FullHidden    := Map()
+            this.FullState     := Map()
             this.DestroyAllBorders()
             this._ForceSweepBorders()
             this._LastWins := ""
@@ -6691,6 +6709,17 @@ class WTM {
         }
     }
 
+    ; ---- Prepare desktop switch / 切换前清理 ----
+    static PrepareDesktopSwitch() {
+        this._StopAnim()
+        this.Overview      := false
+        this.OverviewRects := Map()
+        this._OverviewClearFrames()
+        this.ManualFull := 0
+        this.FullHidden := Map()
+        this._ExitSolo()
+    }
+
     static SaveOrderForDesktop(d) {
         if !this.Active
             return
@@ -6704,9 +6733,12 @@ class WTM {
             return
         this._StopAnim()
         this._ExitSolo()
+        this.ManualFull := 0
+        this.FullHidden := Map()
         this.DestroyAllBorders()
         this.Overview      := false
         this.OverviewRects := Map()
+        this._OverviewClearFrames()
         this._ScrollClear()
         this.ScrollOn := (target && WTM_ScrollDesktops.Has(target))
         if (target && this.DesktopOrders.Has(target))
@@ -6722,6 +6754,19 @@ class WTM {
         }
         this.AutoTile()
         this.RefreshBorder()
+        if (target && this.FullState.Has(target)) {
+            st := this.FullState[target]
+            if WinExist(st.hwnd) {
+                this.ManualFull := st.hwnd
+                this.FullHidden := st.hidden
+                for h, _ in this.FullHidden
+                    this._DesktopRemove(target, h)
+                this.AutoTile()
+                this.RefreshBorder()
+            } else {
+                this._ExitFullDesktop(target)
+            }
+        }
     }
 
     static OnWindowChanged() {
@@ -6836,6 +6881,10 @@ class WTM {
         this.RebuildOrder()
         if this.ScrollOn
             this._ScrollSync()
+        if (this.SoloMon.Count > 0)
+            this._EnforceSolo()
+        if (this.ManualFull)
+            this._EnforceFull()
         if (this.TileOrder.Length = 0) {
             this._Placed := Map()
             return
@@ -6857,6 +6906,8 @@ class WTM {
         global TileSink
         if this.Overview
             return
+        if this.ManualFull
+            this._EnforceFull()
         if (this._FsMon.Has(monIdx) && this._FsMon[monIdx])
             return
         if this.SoloMon.Has(monIdx) {
@@ -6875,10 +6926,10 @@ class WTM {
                     wins.Push(hwnd)
             }
         }
-        if (this.SoloHidden.Count > 0) {
+        if (this.SoloHidden.Count > 0 || this.FullHidden.Count > 0) {
             vis := []
             for hwnd in wins {
-                if !this.SoloHidden.Has(hwnd)
+                if (!this.SoloHidden.Has(hwnd) && !this.FullHidden.Has(hwnd))
                     vis.Push(hwnd)
             }
             wins := vis
@@ -7056,6 +7107,27 @@ class WTM {
         for hwnd in this.TileOrder {
             if seen.Has(hwnd)
                 continue
+            ; Fullscreen new window -> right page / 全屏新窗口进右侧页
+            if (this.ManualFull && this.ScrollOn && this.FullState.Has(CurrentDesktop)) {
+                st := this.FullState[CurrentDesktop]
+                if (this._MonOf(this.ManualFull) = st.mon) {
+                    m := st.mon
+                    pages := this._ScrollPagesOf(m)
+                    if (pages.Length = 0)
+                        pages.Push([])
+                    pA := this.ScrollPageOf.Has(this.ManualFull) ? this.ScrollPageOf[this.ManualFull]
+                                                               : (this.ScrollView.Has(m) ? this.ScrollView[m] : 1)
+                    pA := Max(1, Min(pA, pages.Length))
+                    tp := pA + 1
+                    if (tp > pages.Length)
+                        pages.Push([])
+                    pages[tp].Push(hwnd)
+                    if !this.ScrollView.Has(m)
+                        this.ScrollView[m] := pA
+                    seen[hwnd] := true
+                    continue
+                }
+            }
             m := 1, p := 1
             if (this.FocusHwnd && this.ScrollOwner.Has(this.FocusHwnd)) {
                 m := this.ScrollOwner[this.FocusHwnd]
@@ -7095,16 +7167,18 @@ class WTM {
         TileBoundSet   := false
         try {
             for p, group in pages {
-                n := group.Length
+                vis := []
+                for h in group
+                    if (allow.Has(h) && WinExist(h))
+                        vis.Push(h)
+                n := vis.Length
                 if (n < 1)
                     continue
                 table := GetSlotTable(monIdx, n, W, H)
                 if (table.Length < n)
                     continue
                 dx := (p - view) * W
-                for i, hwnd in group {
-                    if (!allow.Has(hwnd) || !WinExist(hwnd))
-                        continue
+                for i, hwnd in vis {
                     t := table[i]
                     EmitPlace(hwnd, X + dx + t.xlo * W, Y + t.ylo * H
                             , (t.xhi - t.xlo) * W, (t.yhi - t.ylo) * H)
@@ -7126,26 +7200,34 @@ class WTM {
         return false
     }
 
-    ; Pull windows whose center is outside every monitor back into view.
-    static _GatherOffscreen() {
-        for hwnd in this.TileOrder {
+    ; ---- Gather all off-screen windows / 归拢屏外窗口 ----
+    static _GatherAllOffscreen() {
+        global Desktops, AlwaysVisible
+        seen := Map()
+        for h in this.TileOrder
+            seen[h] := true
+        for d, list in Desktops {
+            for h in list
+                seen[h] := true
+        }
+        for h, _ in AlwaysVisible
+            seen[h] := true
+        for h, _ in seen {
+            hwnd := Integer(h)
             if !WinExist(hwnd)
                 continue
-            try WinGetPos(&x, &y, &w, &h, hwnd)
+            try WinGetPos(&x, &y, &w, &hh, hwnd)
             catch
                 continue
-            cx := x + w / 2, cy := y + h / 2
+            cx := x + w / 2, cy := y + hh / 2
             if this._PointOnAnyMonitor(cx, cy)
                 continue
-            m := 1
-            if this.ScrollOwner.Has(hwnd)
-                m := this.ScrollOwner[hwnd]
-            else if (this._Placed.Has(hwnd) && this._Placed[hwnd].mon)
-                m := this._Placed[hwnd].mon
+            m := this.ScrollOwner.Has(hwnd) ? this.ScrollOwner[hwnd] : 1
             if (m < 1 || m > MonitorGetCount())
                 m := 1
             GetTileArea(m, WTM_Gap, &ax, &ay, &W, &H)
-            this._ForcePlace(hwnd, ax + Max(0, (W - w) / 2), ay + Max(0, (H - h) / 2), w, h)
+            try WinMove(Round(ax + Max(0, (W - w) / 2)), Round(ay + Max(0, (H - hh) / 2))
+                      , Round(w), Round(hh), hwnd)
         }
     }
 
@@ -7625,6 +7707,10 @@ class WTM {
             return
         }
         this._CheckFullscreen()
+        if (this.SoloMon.Count > 0)
+            this._EnforceSolo()
+        if (this.ManualFull)
+            this._EnforceFull()
         this._CheckDrift()
         this.SweepOrphanBorders()
     }
@@ -7643,6 +7729,14 @@ class WTM {
         try {
             if (IsObject(DragBorder.Frame) && IsObject(DragBorder.Frame.Gui) && DragBorder.Frame.Gui.Hwnd)
                 keep[DragBorder.Frame.Gui.Hwnd] := true
+        }
+        for item in this.OverviewFrames {
+            try {
+                if (IsObject(item) && IsObject(item.gui) && item.gui.Hwnd)
+                    keep[item.gui.Hwnd] := true
+                else if (IsObject(item) && IsObject(item.Gui) && item.Gui.Hwnd)
+                    keep[item.Gui.Hwnd] := true
+            }
         }
         me   := DllCall("GetCurrentProcessId")
         seen := Map()
@@ -8082,6 +8176,8 @@ class WTM {
         }
         if (!hwnd || !WinExist(hwnd))
             return
+        if (this.ManualFull && this.ManualFull = hwnd)
+            this._ExitFullManual()
         try {
             WinClose(hwnd)
             this.RemoveBorder(hwnd)
@@ -8169,8 +8265,15 @@ class WTM {
         return best
     }
 
+    ; ---- Manual-full border state / 全屏边框状态 ----
+    static _BorderState(hwnd) {
+        if (this.ManualFull && hwnd = this.ManualFull && hwnd = this.FocusHwnd)
+            return "pin"
+        return (hwnd = this.FocusHwnd) ? "focus" : "unfocus"
+    }
+
     static EnsureBorder(hwnd, state := "unfocus") {
-        col := (state = "focus") ? Border_FocusColor : Border_UnfocusColor
+        col := (state = "pin") ? Border_Pin_Color : (state = "focus") ? Border_FocusColor : Border_UnfocusColor
         if this.BorderMap.Has(hwnd) {
             bf := this.BorderMap[hwnd]
             if (IsObject(bf.Gui) && bf.Gui.Hwnd && DllCall("User32\IsWindow", "Ptr", bf.Gui.Hwnd))
@@ -8250,7 +8353,7 @@ class WTM {
             return
         if (this.BorderState.Has(hwnd) && this.BorderState[hwnd] = state)
             return
-        col := (state = "focus") ? Border_FocusColor : Border_UnfocusColor
+        col := (state = "pin") ? Border_Pin_Color : (state = "focus") ? Border_FocusColor : Border_UnfocusColor
         bf  := this.BorderMap[hwnd]
         if (bf.Color = col) {
             this.BorderState[hwnd] := state
@@ -8294,7 +8397,7 @@ class WTM {
                 this.RemoveBorder(hwnd)
         }
         for hwnd, _ in want {
-            st := (hwnd = this.FocusHwnd) ? "focus" : "unfocus"
+            st := this._BorderState(hwnd)
             this.EnsureBorder(hwnd, st)
             this._SetBorderColor(hwnd, st)
             _BorderPlaceFrame(this.BorderMap, hwnd)
@@ -8333,7 +8436,7 @@ class WTM {
         } catch {
             return
         }
-        st := hwnd = focusH ? "focus" : "unfocus"
+        st := this._BorderState(hwnd)
         this.EnsureBorder(hwnd, st)
         this._SetBorderColor(hwnd, st)
         _BorderPlaceFrame(this.BorderMap, hwnd)
@@ -8413,6 +8516,168 @@ class WTM {
         return out
     }
 
+    static _IsHiddenNow(hwnd) {
+        global Desktop_HideMethod
+        if (Desktop_HideMethod = "hide")
+            return !DllCall("IsWindowVisible", "Ptr", hwnd)
+        try return (WinGetMinMax(hwnd) = -1)
+        return false
+    }
+
+    ; ---- Desktop records / 桌面记录 ----
+    static _DesktopHas(d, hwnd) {
+        global Desktops
+        if !Desktops.Has(d)
+            return false
+        for h in Desktops[d]
+            if (h = hwnd)
+                return true
+        return false
+    }
+
+    static _DesktopRemove(d, hwnd) {
+        global Desktops
+        if !Desktops.Has(d)
+            return
+        nl := []
+        for h in Desktops[d]
+            if (h != hwnd)
+                nl.Push(h)
+        Desktops[d] := nl
+    }
+
+    static _DesktopAdd(d, hwnd) {
+        global Desktops
+        if this._DesktopHas(d, hwnd)
+            return
+        if !Desktops.Has(d)
+            Desktops[d] := []
+        Desktops[d].InsertAt(1, hwnd)
+    }
+
+    ; ---- Fullscreen targets / 全屏目标 ----
+    static _FullTargets(hwnd) {
+        m := this._MonOf(hwnd)
+        out := []
+        if this.ScrollOn {
+            if !this.ScrollPages.Has(m)
+                return out
+            pages := this._ScrollPagesOf(m)
+            p := this.ScrollPageOf.Has(hwnd) ? this.ScrollPageOf[hwnd]
+                                            : (this.ScrollView.Has(m) ? this.ScrollView[m] : 1)
+            if (p < 1 || p > pages.Length)
+                return out
+            for h in pages[p]
+                if (h != hwnd && WinExist(h))
+                    out.Push(h)
+            return out
+        }
+        for h in this.TileOrder
+            if (h != hwnd && this._MonOf(h) = m && WinExist(h))
+                out.Push(h)
+        return out
+    }
+
+    static _ShowNoActivate(hwnd) {
+        try DllCall("ShowWindow", "Ptr", hwnd, "Int", 4)
+    }
+
+    static _RestoreHidden(d, hidden) {
+        global CurrentDesktop
+        for h, _ in hidden.Clone() {
+            hwnd := Integer(h)
+            try {
+                if WinExist(hwnd) {
+                    if (d = CurrentDesktop)
+                        this._ShowNoActivate(hwnd)
+                    this._DesktopAdd(d, hwnd)
+                }
+            }
+            hidden.Delete(h)
+        }
+    }
+
+    static _ExitFullDesktop(d) {
+        global CurrentDesktop
+        if !this.FullState.Has(d)
+            return
+        st := this.FullState[d]
+        this._RestoreHidden(d, st.hidden)
+        this.FullState.Delete(d)
+        if (d = CurrentDesktop) {
+            this.ManualFull := 0
+            this.FullHidden := Map()
+        }
+    }
+
+    static _ExitAllFull() {
+        for d, _ in this.FullState.Clone()
+            this._ExitFullDesktop(d)
+    }
+
+    static _EnforceFull() {
+        global CurrentDesktop
+        if !this.ManualFull
+            return
+        if !WinExist(this.ManualFull) {
+            this._ExitFullDesktop(CurrentDesktop)
+            return
+        }
+        try {
+            if (WinGetMinMax(this.ManualFull) = -1) {
+                this._ExitFullDesktop(CurrentDesktop)
+                return
+            }
+        }
+        if !this.FullState.Has(CurrentDesktop)
+            return
+        st := this.FullState[CurrentDesktop]
+        if (this._MonOf(this.ManualFull) != st.mon) {
+            this._ExitFullDesktop(CurrentDesktop)
+            return
+        }
+        m := st.mon
+        for hwnd in this._FullTargets(this.ManualFull) {
+            if this.FullHidden.Has(hwnd) {
+                try {
+                    if !this._IsHiddenNow(hwnd)
+                        HideWin(hwnd)
+                }
+                continue
+            }
+            try {
+                HideWin(hwnd)
+                this.FullHidden[hwnd] := m
+                this._DesktopRemove(CurrentDesktop, hwnd)
+            }
+        }
+    }
+
+    ; ---- Enforce solo / 单人模式收拢 ----
+    static _EnforceSolo() {
+        for m, solo in this.SoloMon.Clone() {
+            if !WinExist(solo)
+                continue
+            for hwnd in this.TileOrder {
+                if (hwnd = solo)
+                    continue
+                if this.SoloHidden.Has(hwnd) {
+                    try {
+                        if !this._IsHiddenNow(hwnd)
+                            HideWin(hwnd)
+                    }
+                    continue
+                }
+                if (this._MonOf(hwnd) != m)
+                    continue
+                try {
+                    HideWin(hwnd)
+                    this.SoloHidden[hwnd] := m
+                }
+            }
+        }
+    }
+
     static _EnterSoloWith(monIdx, target, auto := false) {
         if (!target || !WinExist(target))
             return false
@@ -8431,7 +8696,7 @@ class WTM {
             if (this._MonOf(hwnd) != monIdx)
                 continue
             try {
-                DllCall("ShowWindow", "Ptr", hwnd, "Int", 0)
+                HideWin(hwnd)
                 this.SoloHidden[hwnd] := monIdx
             }
         }
@@ -8464,11 +8729,12 @@ class WTM {
     static _ExitSolo(onlyMon := 0) {
         if (this.SoloHidden.Count > 0) {
             for hwnd, m in this.SoloHidden.Clone() {
+                hwnd := Integer(hwnd)
                 if (onlyMon && m != onlyMon)
                     continue
                 try {
                     if WinExist(hwnd)
-                        DllCall("ShowWindow", "Ptr", hwnd, "Int", 8)
+                        ShowWin(hwnd)
                 }
                 this.SoloHidden.Delete(hwnd)
             }
@@ -8496,26 +8762,69 @@ class WTM {
         this._ExitSolo(m)
     }
 
+    ; ---- Hide fullscreen peers / 全屏收拢 ----
+    static _FullHideOthers(hwnd) {
+        global CurrentDesktop
+        m := this._MonOf(hwnd)
+        for h in this._FullTargets(hwnd) {
+            try {
+                HideWin(h)
+                this.FullHidden[h] := m
+                this._DesktopRemove(CurrentDesktop, h)
+            }
+        }
+    }
+
+    static _EnterFullManual(hwnd) {
+        global CurrentDesktop
+        if (!hwnd || !WinExist(hwnd))
+            return false
+        this._ExitSolo()
+        if this.FullState.Has(CurrentDesktop)
+            this._ExitFullDesktop(CurrentDesktop)
+        m := this._MonOf(hwnd)
+        hidden := Map()
+        this.FullState[CurrentDesktop] := {hwnd: hwnd, mon: m, hidden: hidden}
+        this.ManualFull := hwnd
+        this.FullHidden := hidden
+        this._FullHideOthers(hwnd)
+        this.AutoTile()
+        this.RefreshBorder()
+        FocusWindowSafely(hwnd)
+        this.FocusHwnd := hwnd
+        this._MoveCursorToWindow(hwnd)
+        this.RefreshBorder()
+        return true
+    }
+
+    static _ExitFullManual() {
+        hwnd := this.ManualFull
+        this._ExitFullDesktop(CurrentDesktop)
+        this.AutoTile()
+        this.RefreshBorder()
+        if (hwnd && WinExist(hwnd)) {
+            FocusWindowSafely(hwnd)
+            this.FocusHwnd := hwnd
+            this._MoveCursorToWindow(hwnd)
+            this.RefreshBorder()
+        }
+    }
+
     static ToggleFull() {
         if (!this.Active || this.Overview)
             return
-        cur := this._OrderIndex(this.FocusHwnd) ? this.FocusHwnd : 0
-        if !cur
-            return
-        m := this._MonOf(cur)
-        if (m < 1)
-            m := 1
-        if (this.SoloMon.Has(m) && this.SoloMon[m] = cur) {
-            this._LeaveSoloRestoreMon(m)
-            this.AutoTile()
-            this.RefreshBorder()
+        if (this.ManualFull && WinExist(this.ManualFull)) {
+            this._ExitFullManual()
             ShowOSD("WTM Full: OFF")
             return
         }
-        if !this._EnterSoloWith(m, cur)
+        cur := this.FocusHwnd
+        if (!cur || !WinExist(cur) || !this._OrderIndex(cur))
+            cur := this.TileOrder.Length ? this.TileOrder[1] : 0
+        if !cur
             return
-        this.AutoTile()
-        this.RefreshBorder()
+        if !this._EnterFullManual(cur)
+            return
         ShowOSD("WTM Full: ON")
     }
 
@@ -8652,19 +8961,192 @@ class WTM {
                 TileSink := saved
             }
             for r in rects
-                model[r.hwnd] := {x: r.x, y: r.y, w: r.w, h: r.h, mon: m}
+                model[Integer(r.hwnd)] := {x: r.x, y: r.y, w: r.w, h: r.h, mon: m}
         }
         return model
     }
 
+    ; ---- Overview groups / 缩略分组 ----
+    static _OverviewPageRects(model) {
+        out := []
+        if this.ScrollOn {
+            loop MonitorGetCount() {
+                m := A_Index
+                if !this.ScrollPages.Has(m)
+                    continue
+                pages := this._ScrollPagesOf(m)
+                view := this.ScrollView.Has(m) ? this.ScrollView[m] : 1
+                GetTileArea(m, WTM_Gap, &X, &Y, &W, &H)
+                for p, group in pages {
+                    wins := []
+                    for h in group
+                        if model.Has(h)
+                            wins.Push(Integer(h))
+                    if wins.Length = 0
+                        continue
+                    out.Push({x: X + (p - view) * W, y: Y, w: W, h: H, wins: wins})
+                }
+            }
+            return out
+        }
+        loop MonitorGetCount() {
+            m := A_Index
+            wins := []
+            for h, r in model
+                if (r.mon = m)
+                    wins.Push(Integer(h))
+            if wins.Length = 0
+                continue
+            GetTileArea(m, WTM_Gap, &X, &Y, &W, &H)
+            out.Push({x: X, y: Y, w: W, h: H, wins: wins})
+        }
+        return out
+    }
+
+    static _OverviewClearFrames() {
+        SetTimer(this.OverviewFadeFn, 0)
+        for item in this.OverviewFrames {
+            try {
+                if (IsObject(item) && IsObject(item.gui))
+                    item.gui.Destroy()
+                else if IsObject(item)
+                    item.Destroy()
+            }
+        }
+        this.OverviewFrames := []
+    }
+
+    static _OverviewAddLine(x, y, w, h) {
+        if (w < 1 || h < 1)
+            return
+        g := Gui("-Caption +AlwaysOnTop +ToolWindow +Owner +E0x08000000 -DPIScale")
+        g.BackColor := C1(Border_Pin_Color, "FF5555")
+        try {
+            g.Show(Format("x{} y{} w{} h{} NoActivate", x, y, w, h))
+            if (Border_Rounded = "on") {
+                rad := Min(w, h) // 2
+                if (rad > 0) {
+                    d := rad * 2
+                    rgn := DllCall("Gdi32\CreateRoundRectRgn", "Int",0, "Int",0
+                        , "Int",w+1, "Int",h+1, "Int",d, "Int",d, "Ptr")
+                    DllCall("User32\SetWindowRgn", "Ptr", g.Hwnd, "Ptr", rgn, "Int", 1)
+                }
+            }
+            WinSetTransparent(0, g.Hwnd)
+        }
+        this.OverviewFrames.Push({gui: g, a: 0})
+    }
+
+    static _OverviewFadeStart() {
+        if (this.OverviewFrames.Length = 0)
+            return
+        SetTimer(this.OverviewFadeFn, 16)
+    }
+
+    static _OverviewFadeTick() {
+        done := true
+        step := Max(1, Round(Border_Opacity / 12))
+        for item in this.OverviewFrames {
+            if !(IsObject(item) && IsObject(item.gui))
+                continue
+            if (item.a < Border_Opacity) {
+                item.a := Min(Border_Opacity, item.a + step)
+                try WinSetTransparent(item.a, item.gui.Hwnd)
+            }
+            if (item.a < Border_Opacity)
+                done := false
+        }
+        if done
+            SetTimer(this.OverviewFadeFn, 0)
+    }
+
+    static _OverviewSpan(wins, axis) {
+        lo := 0, hi := 0, found := false
+        for h in wins {
+            if !this.OverviewRects.Has(h)
+                continue
+            r := this.OverviewRects[h]
+            a := (axis = "y") ? r.y : r.x
+            b := (axis = "y") ? r.y + r.h : r.x + r.w
+            if !found {
+                lo := a, hi := b, found := true
+            } else {
+                lo := Min(lo, a), hi := Max(hi, b)
+            }
+        }
+        return found ? {lo: lo, hi: hi} : 0
+    }
+
+    ; ---- Dividers / 分割线 ----
+    static _OverviewDrawDividers(pageRects, ox, oy, s, wx0, wy0) {
+        this._OverviewClearFrames()
+        if (pageRects.Length < 2)
+            return
+        arr := []
+        for r in pageRects
+            arr.Push(r)
+        Loop (arr.Length - 1) {
+            i := A_Index + 1
+            me := arr[i]
+            j := i - 1
+            while (j >= 1 && (arr[j].x > me.x || (arr[j].x = me.x && arr[j].y > me.y))) {
+                arr[j + 1] := arr[j]
+                j -= 1
+            }
+            arr[j + 1] := me
+        }
+        lineW := Max(2, Border_Thickness)
+        Loop (arr.Length - 1) {
+            a := arr[A_Index], b := arr[A_Index + 1]
+            wins := []
+            if a.HasProp("wins")
+                for h in a.wins
+                    wins.Push(h)
+            if b.HasProp("wins")
+                for h in b.wins
+                    wins.Push(h)
+            if (b.x >= a.x + a.w - 1) {
+                bx := (a.x + a.w + b.x) / 2
+                x  := Round(ox + (bx - wx0) * s)
+                span := wins.Length ? this._OverviewSpan(wins, "y") : 0
+                if span {
+                    y0 := span.lo, y1 := span.hi
+                } else {
+                    y0 := Round(oy + (Min(a.y, b.y) + WTM_Gap / 2 - wy0) * s)
+                    y1 := Round(oy + (Max(a.y + a.h, b.y + b.h) - WTM_Gap / 2 - wy0) * s)
+                }
+                this._OverviewAddLine(x - lineW // 2, y0, lineW, Max(1, y1 - y0))
+                continue
+            }
+            if (b.y >= a.y + a.h - 1) {
+                by := (a.y + a.h + b.y) / 2
+                y  := Round(oy + (by - wy0) * s)
+                span := wins.Length ? this._OverviewSpan(wins, "x") : 0
+                if span {
+                    x0 := span.lo, x1 := span.hi
+                } else {
+                    x0 := Round(ox + (Min(a.x, b.x) + WTM_Gap / 2 - wx0) * s)
+                    x1 := Round(ox + (Max(a.x + a.w, b.x + b.w) - WTM_Gap / 2 - wx0) * s)
+                }
+                this._OverviewAddLine(x0, y - lineW // 2, Max(1, x1 - x0), lineW)
+            }
+        }
+        this._OverviewFadeStart()
+    }
+
     static _OverviewEnter() {
+        if this.ManualFull
+            this._ExitFullManual()
         this._StopAnim()
+        this._OverviewClearFrames()
         model := this._ComputeModelRects()
         if (model.Count = 0)
             return
+        pageRects := this._OverviewPageRects(model)
         rects := Map(), found := false
         wx0 := 0, wy0 := 0, wx1 := 0, wy1 := 0
         for hwnd, r in model {
+            hwnd := Integer(hwnd)
             if !WinExist(hwnd)
                 continue
             try {
@@ -8685,6 +9167,10 @@ class WTM {
         }
         if !found
             return
+        for r in pageRects {
+            wx0 := Min(wx0, r.x), wy0 := Min(wy0, r.y)
+            wx1 := Max(wx1, r.x + r.w), wy1 := Max(wy1, r.y + r.h)
+        }
         m := this._MonOf(this.FocusHwnd)
         if (m < 1)
             m := 1
@@ -8706,6 +9192,7 @@ class WTM {
             this.OverviewRects[hwnd] := {x: nx, y: ny, w: nw, h: nh}
             this._AnimMove(hwnd, nx, ny, nw, nh, true)
         }
+        this._OverviewDrawDividers(pageRects, ox, oy, s, wx0, wy0)
         this.RefreshBorder()
         ShowOSD("WTM Overview: ON")
     }
@@ -8713,6 +9200,7 @@ class WTM {
     static _OverviewExit() {
         this.Overview := false
         this.OverviewRects := Map()
+        this._OverviewClearFrames()
         if (this.ScrollOn && this.FocusHwnd && this.ScrollPageOf.Has(this.FocusHwnd)) {
             m := this._MonOf(this.FocusHwnd)
             this.ScrollView[m] := this.ScrollPageOf[this.FocusHwnd]
