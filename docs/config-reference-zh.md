@@ -1,4 +1,4 @@
-# AHK_WM 配置参考（v2.13.0）
+﻿# AHK_WM 配置参考（v2.14.0）
 
 配置文件位置：`%USERPROFILE%\.config\AHK_WM\wm_config.ini`（UTF-16 LE 编码）。
 首次运行时自动生成默认配置。修改后重载脚本生效（默认热键 `Alt+R`，或托盘菜单 → *Reload Script*）。
@@ -150,10 +150,11 @@ Layout=[N,]元素,跨度[,颜色1,颜色2,…][,bg|tx][,on|off][,fs=N][,wrap=N];
 | `Gap` | 整数 px | `15` | 任意（可为负） | 智能平铺与 WinSelect 平铺的窗口间隙（**WTM 用 `WTMGap`**）。 |
 | `TileAlwaysOnTop` | 开关 | `off` | `on`、`off` | 置顶窗口是否参与平铺。 |
 | `WTMGap` | 整数 px | 同 `[Border] Gap`（默认 `10`） | 任意 | **WTM 专用**平铺间隙，独立于 `Gap`。为窗口间边框预留空间；留空时沿用 `[Border] Gap`。 |
-| `AnimationDuration` | 整数 ms | `0` | ≥0 | **WTM** 移动/交换窗口的动画时长。`0` = 瞬时到位（无动画）。建议 `120`–`180`。 |
+| `AnimationDuration` | 整数 ms | `0` | ≥0 | **WTM** 移动/交换窗口的动画时长。`0` = 瞬时到位（无动画）。建议 `120`–`500`。 |
+| `AnimationFrameMs` | 整数 ms | `12` | 4–50 | WTM 动画帧间隔。越小越顺滑，CPU 占用越高：`6` ≈ 166 fps（170 Hz 屏）、`8` ≈ 125 fps、`16` ≈ 60 fps。超出范围会被钳制。 |
 | `WTMDebug` | on/off | `off` | `on`, `off` | 输出边框诊断日志（只在边框集合 / 焦点 / 颜色发生变化时写一行）。排查"边框不跟随 / 不消除 / 颜色不切换"时临时打开。 |
-| `ResizeStep` | 整数 px | `20` | ≥1 | **WTM** 缩放步长：按 `Ctrl+Alt+H/J/K/L` 时焦点窗口每条边移动**一半**（即整宽/整高变化 `ResizeStep` 像素）。改的是**整条边界线**——与该线重合的所有边（跨行跨列的也算）一起平移，所以整列/整行始终对齐、不会裂缝；空间从线上其它窗口身上拿，窗口最小尺寸 = `2 × ResizeStep`（下限 80px，无需配置），缩小时线上没人接手就不动。布局按像素栅格量化，日志里的规则串可原样粘回 `Rules`。缩放出来的布局**只活在 WTM 会话内**（只覆盖该屏 + 该窗口数），退出 WTM 即失效，`Alt+D` 的智能平铺始终走配置文件里的 `Rules`。 |
-| `ScrollableDesktops` | 列表 | *(空)* | `1;3` | 在这些虚拟桌面启用**无限滚动平铺**（分号分隔，留空 = 关闭）。每台显示器是一条无限横向纸带：窗口在页边继续移动会推到相邻页，视口跟随；屏外页和屏内页使用同一套 `Rules` / 内置布局。新窗口一律进入焦点页。退出 WTM 时，中心在所有显示器之外的窗口会被拉回屏内。 |
+| `ResizeStep` | 整数 px | `20` | ≥1 | **WTM** 缩放步长：按 `Ctrl+Shift+H/J/K/L` 时焦点窗口每条边移动**一半**（即整宽/整高变化 `ResizeStep` 像素）。改的是**整条边界线**——与该线重合的所有边（跨行跨列的也算）一起平移，所以整列/整行始终对齐、不会裂缝；空间从线上其它窗口身上拿，窗口最小尺寸 = `2 × ResizeStep`（下限 80px，无需配置），缩小时线上没人接手就不动。布局按像素栅格量化，日志里的规则串可原样粘回 `Rules`。缩放出来的布局**只活在 WTM 会话内**（只覆盖该屏 + 该窗口数），退出 WTM 即失效，`Alt+D` 的智能平铺始终走配置文件里的 `Rules`。 |
+| `ScrollableDesktops` | 列表 | *(空)* | `1:2;3` | 在虚拟桌面启用**无限滚动平铺**并指定卷轴屏。格式 `桌面` 或 `桌面:显示器`，分号分隔（留空 = 关闭）；只写桌面时用 1 号屏。例：`1:2;3` = 桌面 1 用 2 号屏，桌面 3 用 1 号屏。只有指定屏变成无限横向纸带，其它屏保持普通平铺。屏外页停靠在所有显示器并集之外。窗口在页边继续移动会推到下一页，视口跟随。新窗口跟随焦点屏（新窗口出现前焦点所在的屏）。指定屏不存在时回退 1 号屏。Overview 只收录卷轴屏窗口。 |
 | `Rules` | 规格 | *(见模板)* | `M,N,I,X,Y;…` | 自定义布局规则，智能平铺与 **WTM 均适用**（用户规则优先于内置算法）。`M` = 显示器（`*` = 任意），`N` = 规则适用的窗口总数，`I` = 窗口序号（1..N），`X`/`Y` = 跨度表达式（`1` = 全幅、`a/b`、`(a-c)/b`）。规则组必须完整（1..N 每个序号恰好出现一次）才会生效。滚动平铺下 `N` 指**单页内的窗口数**，不是该屏总数。 |
 
 ## [Snapping] 吸附
@@ -335,12 +336,14 @@ OSD:文本[:持续时间毫秒][:fs=24,op=90,x=50%,y=30%,bg=FF4444,tx=FFFFFF]
 | `ExcludeWindow` | `Alt+Shift+X` | 把聚焦窗口加入排除（`exclude.ini`）。 |
 | `DiagnoseWindow` | *(空)* | 用 OSD 显示焦点窗口的进程 / 类名 / 标题 / HWND 以及它被（未）排除的原因。默认不绑定——主要用于写排除规则时查窗口。 |
 | `WTMFocusLeft/Down/Up/Right` | `Alt+H/J/K/L` | WTM：方向聚焦。 |
-| `WTMMoveLeft/Down/Up/Right` | `Alt+Shift+H/J/K/L` | WTM：方向交换/移动。滚动平铺下越过页边会把窗口推到相邻页（或相邻显示器），视口跟随。 |
+| `WTMMoveLeft/Down/Up/Right` | `Alt+Shift+H/J/K/L` | WTM：方向交换/移动。滚动平铺下越过页边会把窗口推到下一页，视口跟随。这些键不会跨显示器，跨屏用 `WTMMoveMon*`。 |
+| `WTMMoveMonLeft/Right/Up/Down` | `Ctrl+Alt+Shift+H/L/K/J` | 把焦点窗口发到相邻物理显示器。窗口离开的屏会立刻重排。进入卷轴屏时插入当前页；离开卷轴屏时从所在页移除。 |
+| `WTMFocusMonLeft/Right/Up/Down` | `Ctrl+Alt+H/L/K/J` | 焦点切到相邻物理显示器上最近的可见窗口。忽略停靠页，卷轴屏只参与当前页。不移动光标。 |
 | `WTMFull` | `Alt+F` | WTM 内手动全屏：只把聚焦窗口当前屏幕上**当前可见**的窗口按 `[Desktop] HideMethod` 最小化/隐藏，并从桌面记录中剔除，让聚焦窗口独占整屏。滚动桌面只处理当前页，新窗口进右侧页；再按一次恢复。状态按桌面保存；把窗口移到其他显示器/桌面会退出全屏。非 WTM 时该键仍是普通的窗口最大化。 |
 | `WTMTrueMax` | `Alt+Shift+F` | WTM：焦点窗口真最大化（忽略状态栏，等同普通模式的 `Alt+F`）。非 WTM 时不生效。 |
-| `WTMOverview` | `Alt+O` | WTM：开关 Overview。当前桌面所有窗口（含滚动模式屏外页、其他显示器）按相对位置等比缩到焦点显示器；页/显示器之间画分割线（颜色 `BorderPin`，粗细与圆角读 `[Border]`，渐显）。`Alt+H/J/K/L` 切焦点，`Alt+Shift+H/J/K/L` 交换顺序，`Alt+Q` 关闭；再按 `Alt+O` 恢复并按新顺序平铺。Overview 期间新开的窗口会自动加入。 |
-| `WTMShrinkWidth` / `WTMGrowWidth` | `Ctrl+Alt+H` / `Ctrl+Alt+L` | WTM：焦点窗口沿 X 轴变窄 / 变宽（见 `[Tiling] ResizeStep`）。 |
-| `WTMGrowHeight` / `WTMShrinkHeight` | `Ctrl+Alt+J` / `Ctrl+Alt+K` | WTM：焦点窗口沿 Y 轴变高 / 变矮。 |
+| `WTMOverview` | `Alt+O` | WTM：开关 Overview。滚动桌面下只收录卷轴屏窗口，普通屏保持原样。页按横排展开、普通屏排在页行之后，整体缩到焦点显示器；页/显示器之间画分割线（颜色 `BorderPin`，粗细与圆角读 `[Border]`，渐显）。`Alt+H/J/K/L` 切焦点，`Alt+Shift+H/J/K/L` 交换顺序，`Alt+Q` 关闭；按 `Alt+O`、`Enter` 或 `Space` 恢复并重新平铺。Overview 期间新开的窗口会自动加入。 |
+| `WTMShrinkWidth` / `WTMGrowWidth` | `Ctrl+Shift+H` / `Ctrl+Shift+L` | WTM：焦点窗口沿 X 轴变窄 / 变宽（见 `[Tiling] ResizeStep`）。 |
+| `WTMGrowHeight` / `WTMShrinkHeight` | `Ctrl+Shift+J` / `Ctrl+Shift+K` | WTM：焦点窗口沿 Y 轴变高 / 变矮。 |
 
 > **兼容性：** 旧配置里仍是默认值 `WTMFull=Alt+Shift+F` 时，加载阶段会在内存中改映射为 `Alt+F`；配置文件本身不会被改写，`Alt+Shift+F` 自动落到 `WTMTrueMax`。
 
