@@ -1,4 +1,4 @@
-# AHK_WM Configuration Reference (v2.12.0)
+# AHK_WM Configuration Reference (v2.13.0)
 
 Config file location: `%USERPROFILE%\.config\AHK_WM\wm_config.ini` (UTF-16 LE).
 The file is created with defaults on first run. After editing, reload the script
@@ -162,7 +162,8 @@ Border **colors** live in `[Theme]`: `BorderDrag` (focused), `BorderUnfocus`
 | `AnimationDuration` | int ms | `0` | ≥0 | **WTM** move/swap animation duration. `0` = instant (no animation). `120`–`180` recommended. |
 | `WTMDebug` | on/off | `off` | `on`, `off` | Write border-diagnostic lines to the log (only when the border set, focus or colour changes). Turn it on temporarily to trace "border not following / not removed / colour stuck". |
 | `ResizeStep` | int px | `20` | ≥1 | **WTM** resize step: `Ctrl+Alt+H/J/K/L` moves **each edge** of the focused window by half of it (the window's total width/height changes by `ResizeStep` px). What moves is the **whole boundary line** — every edge at that coordinate shifts with it (even across rows/columns), so columns and rows stay aligned and nothing splits open. The space is taken from the windows on that line; minimum window size = `2 × ResizeStep` (floor 80 px, not configurable); shrinking does nothing when nobody on the line can take the space. Layouts are quantised to the pixel grid, so the rule string in the log can be pasted straight back into `Rules`. The resized layout lives **only inside the WTM session** (that monitor + that window count) and is dropped when you leave WTM, so `Alt+D` (Smart Tile) always keeps using the configured `Rules`. |
-| `Rules` | spec | *(see template)* | `M,N,I,X,Y;…` | Custom layout rules, used by Smart Tile **and** WTM (user rules take priority). `M` = monitor (`*` = any), `N` = total window count the rule applies to, `I` = window index (1..N), `X`/`Y` = span expressions (`1` = full, `a/b`, `(a-c)/b`). A rule group is used only when complete (every `I` from 1..N present exactly once). |
+| `ScrollableDesktops` | list | *(empty)* | `1;3` | Enable **scrollable tiling** on these virtual desktops (semicolon-separated; empty = off). Each monitor becomes an infinite horizontal strip of pages. Moving a window past the strip edge pushes it to the adjacent page and the viewport follows; pages outside the screen use the same `Rules` / built-in layout as the visible page. New windows always join the focused page. Windows whose centre is outside every monitor are pulled back into view when WTM is turned off. |
+| `Rules` | spec | *(see template)* | `M,N,I,X,Y;…` | Custom layout rules, used by Smart Tile **and** WTM (user rules take priority). `M` = monitor (`*` = any), `N` = total window count the rule applies to, `I` = window index (1..N), `X`/`Y` = span expressions (`1` = full, `a/b`, `(a-c)/b`). A rule group is used only when complete (every `I` from 1..N present exactly once). In scrollable tiling `N` is the number of windows **on one page**, not the total on the monitor. |
 
 ## [Snapping]
 
@@ -347,10 +348,14 @@ modifiers only and are combined with digits `1–9`.
 | `ExcludeWindow` | `Alt+Shift+X` | Add the focused window to the exclusions (`exclude.ini`). |
 | `DiagnoseWindow` | *(empty)* | Print the focused window's proc / class / title / HWND and the reason it is (not) excluded, as an on-screen OSD. Unbound by default — mostly for checking windows while writing exclusion rules. |
 | `WTMFocusLeft/Down/Up/Right` | `Alt+H/J/K/L` | WTM: focus in a direction. |
-| `WTMMoveLeft/Down/Up/Right` | `Alt+Shift+H/J/K/L` | WTM: swap / move in a direction (crosses monitors). |
-| `WTMFull` | `Alt+Shift+F` | Manual fullscreen inside WTM: bar and borders stay, only the focused window is shown on that monitor; press again to restore. |
+| `WTMMoveLeft/Down/Up/Right` | `Alt+Shift+H/J/K/L` | WTM: swap / move in a direction. In scrollable tiling, moving past a page edge pushes the window to the adjacent page (or adjacent monitor) and the viewport follows. |
+| `WTMFull` | `Alt+F` | Manual fullscreen inside WTM: bar and borders stay, only the focused window is shown on that monitor; press again to restore. Outside WTM this key keeps its normal maximize behaviour. |
+| `WTMTrueMax` | `Alt+Shift+F` | WTM: maximize the focused window ignoring the status bar (same result as the normal-mode `Alt+F`). Outside WTM it is unbound. |
+| `WTMOverview` | `Alt+O` | WTM: toggle Overview. Every window on the current desktop — including off-screen scroll pages and other monitors — is scaled down into the focused monitor while keeping its relative position. `Alt+H/J/K/L` moves focus, `Alt+Shift+H/J/K/L` swaps order, `Alt+Q` closes; press `Alt+O` again to restore and re-tile. New windows opened while Overview is active are added to it automatically. |
 | `WTMShrinkWidth` / `WTMGrowWidth` | `Ctrl+Alt+H` / `Ctrl+Alt+L` | WTM: shrink / grow the focused window along X (see `[Tiling] ResizeStep`). |
 | `WTMGrowHeight` / `WTMShrinkHeight` | `Ctrl+Alt+J` / `Ctrl+Alt+K` | WTM: grow / shrink the focused window along Y. |
+
+> **Compatibility:** if an existing config still has the old default `WTMFull=Alt+Shift+F`, it is remapped to `Alt+F` in memory at load time. The file itself is not rewritten, and `Alt+Shift+F` falls back to `WTMTrueMax`.
 
 ---
 

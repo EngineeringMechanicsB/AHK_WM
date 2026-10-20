@@ -49,7 +49,7 @@ Persistent
 ; 1. Environment & Global Directives / 环境与全局指令
 ; ==============================================================================
 
-global WM_Version := "2.12.0"
+global WM_Version := "2.13.0"
 global FontName
 
 SetWorkingDir(A_ScriptDir)
@@ -142,6 +142,7 @@ global WTM_Debug  := false
 global WTM_ResizeStep := 20
 global WTM_ResizeRules    := Map()
 global WTM_LayoutOverride := false
+global WTM_ScrollDesktops := Map()
 
 ; ---- GUI rounding / GUI圆角 ----
 global GUI_Rounded     := "on"
@@ -1196,6 +1197,27 @@ ParseAxis(tok) {
     throw Error("unrecognized axis: " tok)
 }
 
+; ---- Scrollable desktops "1;3" -> Map / 滚动桌面列表 ----
+ParseScrollDesktops(str, maxD := 9) {
+    out := Map()
+    for tok in StrSplit(Trim(str), ";") {
+        tok := Trim(tok)
+        if (tok = "")
+            continue
+        if !IsInteger(tok) {
+            WMLog("ScrollableDesktops skipped (bad token): " tok)
+            continue
+        }
+        d := Integer(tok)
+        if (d < 1 || d > maxD) {
+            WMLog("ScrollableDesktops skipped (out of range): " tok)
+            continue
+        }
+        out[d] := true
+    }
+    return out
+}
+
 ; ---- ParseLayoutRules / 平铺规则 ----
 ParseLayoutRules(str) {
     result := Map()
@@ -1712,7 +1734,7 @@ RegisterAllHotkeys() {
 
     RegHotkey("CloseWindow",    CloseWindowDispatch)
     RegHotkey("CloseWindowAlt", CloseWindowDispatch)
-    RegHotkey("ToggleMaximize", ToggleMaximizeUnderMouse)
+    RegHotkey("ToggleMaximize", ToggleMaximizeDispatch)
     RegHotkey("ToggleTop",      ToggleTopDispatch)
     RegHotkey("HideWindow",     HideUnderMouse)
 
@@ -1748,7 +1770,10 @@ RegisterAllHotkeys() {
     RegHotkey("WinSelect", (*) => WinSelect.Start())
 
     RegHotkey("WTMToggle",     (*) => WTM.Toggle())
-    RegHotkey("WTMFull",       (*) => WTM.ToggleFull())
+    if (HK["WTMFull"] != HK["ToggleMaximize"])
+        RegHotkey("WTMFull",   (*) => WTM.ToggleFull())
+    RegHotkey("WTMTrueMax",    (*) => WTM.ToggleTrueMax())
+    RegHotkey("WTMOverview",   (*) => WTM.ToggleOverview())
     RegHotkey("WTMFocusLeft",  (*) => WTM.FocusDir("L"))
     RegHotkey("WTMFocusDown",  (*) => WTM.FocusDir("D"))
     RegHotkey("WTMFocusUp",    (*) => WTM.FocusDir("U"))
@@ -1775,6 +1800,14 @@ PieMenuRButtonUp(*) {
     if PieMenu.IsActive
         PieMenu.Execute()
     PieMenu.PendingRUp := false
+}
+
+; ---- ToggleMaximize / 最大化分发 ----
+ToggleMaximizeDispatch(*) {
+    if WTM.Active
+        WTM.ToggleFull()
+    else
+        ToggleMaximizeUnderMouse()
 }
 
 ; ---- ToggleTop / 置顶分发 ----
@@ -2161,6 +2194,8 @@ AnimationDuration=0
 ResizeStep=20
 ; Tile always-on-top windows / 置顶窗口是否参与平铺
 TileAlwaysOnTop=off
+; Scrollable tiling desktops, e.g. 1;3; empty = off / 无限滚动平铺桌面
+ScrollableDesktops=
 ; Custom layout rules: M,N,I,X,Y;... (full docs in docs/config-reference.md)
 ;   M = monitor ("*" = all), N = window count, I = window index
 ;   X/Y span: 1 = full, a/b = one segment, (a-c)/b = several segments
@@ -2350,7 +2385,9 @@ WTMMoveLeft=Alt+Shift+H
 WTMMoveDown=Alt+Shift+J
 WTMMoveUp=Alt+Shift+K
 WTMMoveRight=Alt+Shift+L
-WTMFull=Alt+Shift+F
+WTMFull=Alt+F
+WTMTrueMax=Alt+Shift+F
+WTMOverview=Alt+O
 WTMShrinkWidth=Ctrl+Alt+H
 WTMGrowWidth=Ctrl+Alt+L
 WTMGrowHeight=Ctrl+Alt+J
@@ -2494,6 +2531,7 @@ WTMShrinkHeight=Ctrl+Alt+K
         DesktopCount := 1
     if (DesktopCount > 9)
         DesktopCount := 9
+    WTM_ScrollDesktops := ParseScrollDesktops(IniRead(ConfigFile, "Tiling", "ScrollableDesktops", ""), DesktopCount)
     Desktop_HideMethod := StrLower(CfgRead("Desktop", "HideMethod", "minimize", ["Desktops","HideMethod"]))
     if !(Desktop_HideMethod = "minimize" || Desktop_HideMethod = "hide")
         Desktop_HideMethod := "minimize"
@@ -2597,6 +2635,7 @@ WTMShrinkHeight=Ctrl+Alt+K
                "DragMove","DragResize","PieMenuTrigger","WinSelect",
                "WTMToggle","WTMFocusLeft","WTMFocusDown","WTMFocusUp","WTMFocusRight",
                "WTMMoveLeft","WTMMoveDown","WTMMoveUp","WTMMoveRight","WTMFull",
+               "WTMTrueMax","WTMOverview",
                "WTMShrinkWidth","WTMGrowWidth","WTMGrowHeight","WTMShrinkHeight"]
     hkDefaults := Map(
         "Help","Alt+/","Exit","Alt+F12","Reload","Alt+R",
@@ -2616,12 +2655,14 @@ WTMShrinkHeight=Ctrl+Alt+K
         "WTMFocusLeft","Alt+H","WTMFocusDown","Alt+J","WTMFocusUp","Alt+K","WTMFocusRight","Alt+L",
         "WTMMoveLeft","Alt+Shift+H","WTMMoveDown","Alt+Shift+J",
         "WTMMoveUp","Alt+Shift+K","WTMMoveRight","Alt+Shift+L",
-        "WTMFull","Alt+Shift+F",
+        "WTMFull","Alt+F","WTMTrueMax","Alt+Shift+F","WTMOverview","Alt+O",
         "WTMShrinkWidth","Ctrl+Alt+H","WTMGrowWidth","Ctrl+Alt+L",
         "WTMGrowHeight","Ctrl+Alt+J","WTMShrinkHeight","Ctrl+Alt+K"
     )
     for k in hkKeys {
         raw := IniRead(ConfigFile, "Hotkeys", k, hkDefaults[k])
+        if (k = "WTMFull" && NormalizeHotkey(raw) = NormalizeHotkey("Alt+Shift+F"))
+            raw := "Alt+F"
         if InStr(k, "Prefix") {
             HK[k] := NormalizeModifiersOnly(raw)
         } else {
@@ -2779,6 +2820,8 @@ ShowHelpGui(*) {
         [PrefP("WTMFocusLeft") . " / J / K / L",      "WTM Focus (H/J/K/L)"],
         [PrefP("WTMMoveLeft")  . " / J / K / L",      "WTM Move/Swap (Shift+HJKL)"],
         [PrefP("WTMFull"),                    "WTM Fullscreen (keep bar+border)"],
+        [PrefP("WTMTrueMax"),                 "WTM Maximize (ignore bar)"],
+        [PrefP("WTMOverview"),                "WTM Overview"],
         [PrefP("WTMShrinkWidth") . " / " . PrefP("WTMGrowWidth"), "WTM Resize Width (H/L)"],
         [PrefP("WTMGrowHeight") . " / " . PrefP("WTMShrinkHeight"), "WTM Resize Height (J/K)"],
         [PrefP("WinSelect"),                  "Window Select Mode"],
@@ -6545,6 +6588,14 @@ class WTM {
     static AnimStarted := false
     static TickFn     := ObjBindMethod(WTM, "Tick")
     static AnimTickFn := ObjBindMethod(WTM, "AnimTick")
+    static ScrollOn      := false
+    static ScrollPages   := Map()
+    static ScrollView    := Map()
+    static ScrollOwner   := Map()
+    static ScrollPageOf  := Map()
+    static ScrollDesktop := Map()
+    static Overview      := false
+    static OverviewRects := Map()
 
     static Toggle() {
         if this.Active
@@ -6554,7 +6605,7 @@ class WTM {
     }
 
     static Activate() {
-        global WTM_ResizeRules, WTM_LayoutOverride
+        global WTM_ResizeRules, WTM_LayoutOverride, CurrentDesktop
         WTM_LayoutOverride := true
         WTM_ResizeRules    := Map()
         InvalidateSlotTables()
@@ -6576,6 +6627,13 @@ class WTM {
         try this.FocusHwnd := WinGetID("A")
         this.RebuildOrder()
         this.SeedOrderByPosition()
+        this.ScrollOn      := WTM_ScrollDesktops.Has(CurrentDesktop)
+        this.ScrollDesktop := Map()
+        this.Overview      := false
+        this.OverviewRects := Map()
+        this._ScrollClear()
+        if this.ScrollOn
+            this._ScrollInit()
         for hwnd in this.TileOrder {
             try {
                 if (WinGetMinMax(hwnd) = 1)
@@ -6596,31 +6654,49 @@ class WTM {
         if (!this.Active && this.SoloHidden.Count = 0)
             return
         SetTimer(this.TickFn, 0)
-        this._StopAnim()
-        this._ExitSolo()
-        this.DestroyAllBorders()
+        try {
+            this._StopAnim()
+            this._ExitSolo()
+        } finally {
+            this.DestroyAllBorders()
+        }
     }
 
     static Deactivate() {
         global WTM_ResizeRules, WTM_LayoutOverride
         this.Active := false
         SetTimer(this.TickFn, 0)
-        this._StopAnim()
-        this._ExitSolo()
-        this.DestroyAllBorders()
-        this._LastWins := ""
-        this._Placed := Map()
-        this.DesktopOrders := Map()
-        WTM_LayoutOverride := false
-        WTM_ResizeRules    := Map()
-        InvalidateSlotTables()
-        AllBorders.Rebuild()
-        ShowOSD("WTM Mode: OFF")
+        try {
+            this._StopAnim()
+            this._ExitSolo()
+            this._GatherOffscreen()
+        } catch Error as e {
+            WMLogErr("WTM Deactivate", e)
+        } finally {
+            this.Overview      := false
+            this.OverviewRects := Map()
+            this.DestroyAllBorders()
+            this._ForceSweepBorders()
+            this._LastWins := ""
+            this._Placed := Map()
+            this.DesktopOrders := Map()
+            this.ScrollDesktop := Map()
+            this.ScrollOn := false
+            this._ScrollClear()
+            WTM_LayoutOverride := false
+            WTM_ResizeRules    := Map()
+            InvalidateSlotTables()
+            AllBorders.Rebuild()
+            ShowOSD("WTM Mode: OFF")
+        }
     }
 
     static SaveOrderForDesktop(d) {
-        if this.Active
-            this.DesktopOrders[d] := this.TileOrder.Clone()
+        if !this.Active
+            return
+        this.DesktopOrders[d] := this.TileOrder.Clone()
+        if this.ScrollOn
+            this.ScrollDesktop[d] := {pages: this._ScrollCopyPages(), view: this.ScrollView.Clone()}
     }
 
     static OnDesktopSwitched(target := 0) {
@@ -6629,11 +6705,21 @@ class WTM {
         this._StopAnim()
         this._ExitSolo()
         this.DestroyAllBorders()
+        this.Overview      := false
+        this.OverviewRects := Map()
+        this._ScrollClear()
+        this.ScrollOn := (target && WTM_ScrollDesktops.Has(target))
         if (target && this.DesktopOrders.Has(target))
             this.TileOrder := this.DesktopOrders[target].Clone()
         this._Placed   := Map()
         this._LastWins := ""
         this.RebuildOrder()
+        if this.ScrollOn {
+            if (target && this.ScrollDesktop.Has(target))
+                this._ScrollRestore(target)
+            else
+                this._ScrollInit()
+        }
         this.AutoTile()
         this.RefreshBorder()
     }
@@ -6745,15 +6831,18 @@ class WTM {
     }
 
     static AutoTile() {
+        if this.Overview
+            return
         this.RebuildOrder()
+        if this.ScrollOn
+            this._ScrollSync()
         if (this.TileOrder.Length = 0) {
             this._Placed := Map()
             return
         }
         groups := Map()
         for hwnd in this.TileOrder {
-            m := 1
-            try m := GetMonitorIndex(hwnd)
+            m := this._MonOf(hwnd)
             if (m < 1)
                 m := 1
             if !groups.Has(m)
@@ -6766,6 +6855,8 @@ class WTM {
 
     static _RePlace(monIdx, wins := 0, animate := true) {
         global TileSink
+        if this.Overview
+            return
         if (this._FsMon.Has(monIdx) && this._FsMon[monIdx])
             return
         if this.SoloMon.Has(monIdx) {
@@ -6780,9 +6871,7 @@ class WTM {
             for hwnd in this.TileOrder {
                 if !WinExist(hwnd)
                     continue
-                m := 1
-                try m := GetMonitorIndex(hwnd)
-                if (m = monIdx)
+                if (this._MonOf(hwnd) = monIdx)
                     wins.Push(hwnd)
             }
         }
@@ -6800,11 +6889,561 @@ class WTM {
         saved := TileSink
         TileSink := (hwnd, x, y, w, h) => rects.Push({hwnd: hwnd, x: x, y: y, w: w, h: h})
         try {
-            TileWindowsOnMonitor(wins, monIdx, WTM_Gap, false)
+            if this.ScrollOn
+                this._ScrollLayout(monIdx, wins)
+            else
+                TileWindowsOnMonitor(wins, monIdx, WTM_Gap, false)
         } finally {
             TileSink := saved
         }
         this._ApplyRects(rects, animate, monIdx)
+    }
+
+    ; ---- Scrollable tiling state / 无限滚动状态 ----
+    static _MonOf(hwnd) {
+        if (this.ScrollOn && this.ScrollOwner.Has(hwnd))
+            return this.ScrollOwner[hwnd]
+        try return GetMonitorIndex(hwnd)
+        return 1
+    }
+
+    static _ScrollClear() {
+        this.ScrollPages  := Map()
+        this.ScrollView   := Map()
+        this.ScrollOwner  := Map()
+        this.ScrollPageOf := Map()
+    }
+
+    static _ScrollPagesOf(m) {
+        if !this.ScrollPages.Has(m)
+            this.ScrollPages[m] := [[]]
+        pages := this.ScrollPages[m]
+        if !(pages is Array) {
+            WMLog("WTM scroll pages reset mon" m " (" Type(pages) ")")
+            pages := [[]]
+            this.ScrollPages[m] := pages
+        }
+        return pages
+    }
+
+    static _ScrollCopyPages() {
+        out := Map()
+        for m, pages in this.ScrollPages {
+            arr := []
+            if (pages is Array) {
+                for group in pages
+                    if (group is Array)
+                        arr.Push(group.Clone())
+            }
+            out[m] := arr
+        }
+        return out
+    }
+
+    static _ScrollInit() {
+        this._ScrollClear()
+        for hwnd in this.TileOrder {
+            m := 1
+            try m := GetMonitorIndex(hwnd)
+            if (m < 1)
+                m := 1
+            if !this.ScrollPages.Has(m)
+                this.ScrollPages[m] := [[]]
+            this.ScrollPages[m][1].Push(hwnd)
+        }
+        for m, pages in this.ScrollPages
+            this.ScrollView[m] := 1
+        this._ScrollReindex()
+    }
+
+    static _ScrollRestore(d) {
+        snap := this.ScrollDesktop[d]
+        this._ScrollClear()
+        for m, pages in snap.pages {
+            arr := []
+            for group in pages {
+                if !(group is Array)
+                    continue
+                g := []
+                for h in group
+                    if (WinExist(h) && this._OrderIndex(h))
+                        g.Push(h)
+                if g.Length
+                    arr.Push(g)
+            }
+            if arr.Length
+                this.ScrollPages[m] := arr
+        }
+        for m, pages in this.ScrollPages {
+            v := snap.view.Has(m) ? snap.view[m] : 1
+            this.ScrollView[m] := Max(1, Min(v, pages.Length))
+        }
+        this._ScrollReindex()
+    }
+
+    static _ScrollReindex() {
+        this.ScrollOwner  := Map()
+        this.ScrollPageOf := Map()
+        loop MonitorGetCount() {
+            m := A_Index
+            if !this.ScrollPages.Has(m)
+                continue
+            pages := this._ScrollPagesOf(m)
+            for p, group in pages {
+                for h in group {
+                    this.ScrollOwner[h]  := m
+                    this.ScrollPageOf[h] := p
+                }
+            }
+            v := this.ScrollView.Has(m) ? this.ScrollView[m] : 1
+            this.ScrollView[m] := Max(1, Min(v, pages.Length))
+        }
+    }
+
+    static _ScrollFlatten() {
+        order := []
+        loop MonitorGetCount() {
+            m := A_Index
+            if !this.ScrollPages.Has(m)
+                continue
+            for group in this.ScrollPages[m] {
+                if !(group is Array)
+                    continue
+                for h in group
+                    if WinExist(h)
+                        order.Push(h)
+            }
+        }
+        this.TileOrder := order
+    }
+
+    static _ScrollSync() {
+        loop MonitorGetCount() {
+            m := A_Index
+            if !this.ScrollPages.Has(m)
+                continue
+            pages := this._ScrollPagesOf(m)
+            view := this.ScrollView.Has(m) ? this.ScrollView[m] : 1
+            newPages := [], remap := Map()
+            for p, group in pages {
+                if !(group is Array)
+                    continue
+                g := []
+                for h in group
+                    if (WinExist(h) && this._OrderIndex(h))
+                        g.Push(h)
+                if g.Length {
+                    newPages.Push(g)
+                    remap[p] := newPages.Length
+                }
+            }
+            this.ScrollPages[m] := newPages
+            if remap.Has(view)
+                this.ScrollView[m] := remap[view]
+            else
+                this.ScrollView[m] := newPages.Length ? Min(view, newPages.Length) : 1
+        }
+        seen := Map()
+        loop MonitorGetCount() {
+            m := A_Index
+            if !this.ScrollPages.Has(m)
+                continue
+            for group in this.ScrollPages[m] {
+                for h in group
+                    seen[h] := true
+            }
+        }
+        for hwnd in this.TileOrder {
+            if seen.Has(hwnd)
+                continue
+            m := 1, p := 1
+            if (this.FocusHwnd && this.ScrollOwner.Has(this.FocusHwnd)) {
+                m := this.ScrollOwner[this.FocusHwnd]
+                p := this.ScrollPageOf[this.FocusHwnd]
+            } else {
+                try m := GetMonitorIndex(hwnd)
+            }
+            pages := this._ScrollPagesOf(m)
+            if !this.ScrollView.Has(m)
+                this.ScrollView[m] := 1
+            if (pages.Length = 0) {
+                pages.Push([])
+                this.ScrollView[m] := 1
+            }
+            p := Max(1, Min(p, pages.Length))
+            pages[p].Push(hwnd)
+            seen[hwnd] := true
+        }
+        this._ScrollReindex()
+        this._ScrollFlatten()
+    }
+
+    static _ScrollLayout(monIdx, wins) {
+        global CurrentTileGap, TileBoundSet
+        if !this.ScrollPages.Has(monIdx)
+            return
+        pages := this._ScrollPagesOf(monIdx)
+        view  := this.ScrollView.Has(monIdx) ? this.ScrollView[monIdx] : 1
+        GetTileArea(monIdx, WTM_Gap, &X, &Y, &W, &H)
+        if (W <= 0 || H <= 0)
+            return
+        allow := Map()
+        for h in wins
+            allow[h] := true
+        savedGap := CurrentTileGap, savedBound := TileBoundSet
+        CurrentTileGap := WTM_Gap
+        TileBoundSet   := false
+        try {
+            for p, group in pages {
+                n := group.Length
+                if (n < 1)
+                    continue
+                table := GetSlotTable(monIdx, n, W, H)
+                if (table.Length < n)
+                    continue
+                dx := (p - view) * W
+                for i, hwnd in group {
+                    if (!allow.Has(hwnd) || !WinExist(hwnd))
+                        continue
+                    t := table[i]
+                    EmitPlace(hwnd, X + dx + t.xlo * W, Y + t.ylo * H
+                            , (t.xhi - t.xlo) * W, (t.yhi - t.ylo) * H)
+                }
+            }
+        } finally {
+            CurrentTileGap := savedGap
+            TileBoundSet   := savedBound
+        }
+    }
+
+    ; Bring off-screen windows back into view without re-tiling.
+    static _PointOnAnyMonitor(x, y) {
+        loop MonitorGetCount() {
+            MonitorGet(A_Index, &L, &T, &R, &B)
+            if (x >= L && x < R && y >= T && y < B)
+                return true
+        }
+        return false
+    }
+
+    ; Pull windows whose center is outside every monitor back into view.
+    static _GatherOffscreen() {
+        for hwnd in this.TileOrder {
+            if !WinExist(hwnd)
+                continue
+            try WinGetPos(&x, &y, &w, &h, hwnd)
+            catch
+                continue
+            cx := x + w / 2, cy := y + h / 2
+            if this._PointOnAnyMonitor(cx, cy)
+                continue
+            m := 1
+            if this.ScrollOwner.Has(hwnd)
+                m := this.ScrollOwner[hwnd]
+            else if (this._Placed.Has(hwnd) && this._Placed[hwnd].mon)
+                m := this._Placed[hwnd].mon
+            if (m < 1 || m > MonitorGetCount())
+                m := 1
+            GetTileArea(m, WTM_Gap, &ax, &ay, &W, &H)
+            this._ForcePlace(hwnd, ax + Max(0, (W - w) / 2), ay + Max(0, (H - h) / 2), w, h)
+        }
+    }
+
+    static _ScrollPickWithin(hwnd, dir) {
+        m := this._MonOf(hwnd)
+        if (!this.ScrollPages.Has(m) || !this.ScrollPageOf.Has(hwnd))
+            return 0
+        p := this.ScrollPageOf[hwnd]
+        pages := this._ScrollPagesOf(m)
+        if (p < 1 || p > pages.Length)
+            return 0
+        group := pages[p]
+        i := 0
+        for k, h in group
+            if (h = hwnd) {
+                i := k
+                break
+            }
+        if !i
+            return 0
+        GetTileArea(m, WTM_Gap, &X, &Y, &W, &H)
+        table := GetSlotTable(m, group.Length, W, H)
+        if (table.Length < group.Length)
+            return 0
+        j := PickSlotFromTable(table, i, dir)
+        return j ? group[j] : 0
+    }
+
+    static _ScrollNeighborPage(hwnd, dir) {
+        m := this._MonOf(hwnd)
+        if (!this.ScrollPages.Has(m) || !this.ScrollPageOf.Has(hwnd))
+            return 0
+        p := this.ScrollPageOf[hwnd]
+        pages := this._ScrollPagesOf(m)
+        np := (dir = "L") ? p - 1 : (dir = "R") ? p + 1 : 0
+        if (!np || np < 1 || np > pages.Length || pages[np].Length = 0)
+            return 0
+        GetTileArea(m, WTM_Gap, &X, &Y, &W, &H)
+        try WinGetPos(&cx, &cy, &cw, &ch, hwnd)
+        catch
+            return 0
+        ccy := cy + ch / 2
+        table := GetSlotTable(m, pages[np].Length, W, H)
+        best := 0, bestX := (dir = "L") ? -1.0e18 : 1.0e18, bestDy := 1.0e18
+        for i, h in pages[np] {
+            if (i > table.Length)
+                break
+            sx := table[i].cx * W
+            dy := Abs(Y + table[i].cy * H - ccy)
+            better := (dir = "L") ? (sx > bestX + 1 || (Abs(sx - bestX) <= 1 && dy < bestDy))
+                                  : (sx < bestX - 1 || (Abs(sx - bestX) <= 1 && dy < bestDy))
+            if better
+                bestX := sx, bestDy := dy, best := h
+        }
+        if best
+            return {page: np, hwnd: best}
+        return 0
+    }
+
+    static _ScrollMoveAcross(hwnd, dir) {
+        m := this._MonOf(hwnd)
+        if (!this.ScrollPages.Has(m) || !this.ScrollPageOf.Has(hwnd))
+            return
+        pages := this._ScrollPagesOf(m)
+        p := this.ScrollPageOf[hwnd]
+        if (p < 1 || p > pages.Length)
+            return
+        group := pages[p]
+        i := 0
+        for k, h in group
+            if (h = hwnd) {
+                i := k
+                break
+            }
+        if !i
+            return
+        group.RemoveAt(i)
+        targetIdx := 0
+        if (dir = "L") {
+            if (p > 1) {
+                this._ScrollInsertByX(m, pages[p - 1], hwnd, dir)
+                targetIdx := p - 1
+            } else {
+                pages.InsertAt(1, [hwnd])
+                targetIdx := 1
+            }
+        } else {
+            if (p < pages.Length) {
+                this._ScrollInsertByX(m, pages[p + 1], hwnd, dir)
+                targetIdx := p + 1
+            } else {
+                pages.Push([hwnd])
+                targetIdx := pages.Length
+            }
+        }
+        if (group.Length = 0) {
+            for k, g in pages {
+                if (g.Length = 0) {
+                    pages.RemoveAt(k)
+                    if (k < targetIdx)
+                        targetIdx -= 1
+                    break
+                }
+            }
+        }
+        this.ScrollView[m] := Max(1, Min(targetIdx, pages.Length))
+        this._ScrollReindex()
+        this._ScrollFlatten()
+    }
+
+    ; Insert at the rightmost (L) / leftmost (R) slot after re-layout.
+    static _ScrollInsertByX(m, group, hwnd, dir) {
+        GetTileArea(m, WTM_Gap, &X, &Y, &W, &H)
+        table := GetSlotTable(m, group.Length + 1, W, H)
+        idx := 1, best := (dir = "L") ? -1.0e18 : 1.0e18
+        for i, t in table {
+            if ((dir = "L" && t.cx > best) || (dir = "R" && t.cx < best)) {
+                best := t.cx
+                idx := i
+            }
+        }
+        group.InsertAt(Min(idx, group.Length + 1), hwnd)
+    }
+
+    static _ScrollDetach(hwnd) {
+        m := this._MonOf(hwnd)
+        if (!this.ScrollPages.Has(m) || !this.ScrollPageOf.Has(hwnd))
+            return 0
+        pages := this._ScrollPagesOf(m)
+        p := this.ScrollPageOf[hwnd]
+        if (p < 1 || p > pages.Length)
+            return 0
+        group := pages[p]
+        found := false
+        for k, h in group
+            if (h = hwnd) {
+                group.RemoveAt(k)
+                found := true
+                break
+            }
+        if !found
+            return 0
+        if (group.Length = 0) {
+            for k, g in pages
+                if (g.Length = 0) {
+                    pages.RemoveAt(k)
+                    break
+                }
+        }
+        return m
+    }
+
+    ; Rightmost (L) / leftmost (R) window on monitors in that direction.
+    static _ScrollExtremeWindow(dir, skipMon, refHwnd) {
+        if (skipMon < 1 || skipMon > MonitorGetCount())
+            skipMon := 1
+        MonitorGet(skipMon, &cL, &cT, &cR, &cB)
+        ccx := (cL + cR) / 2
+        try WinGetPos(&fx, &fy, &fw, &fh, refHwnd)
+        catch
+            return 0
+        fcy := fy + fh / 2
+        best := 0, bestX := 0, bestDy := 1.0e18
+        loop MonitorGetCount() {
+            m := A_Index
+            if (m = skipMon)
+                continue
+            MonitorGet(m, &mL, &mT, &mR, &mB)
+            mcx := (mL + mR) / 2
+            if (dir = "L" && mcx >= ccx)
+                continue
+            if (dir = "R" && mcx <= ccx)
+                continue
+            if !this.ScrollPages.Has(m)
+                continue
+            pages := this._ScrollPagesOf(m)
+            view := this.ScrollView.Has(m) ? this.ScrollView[m] : 1
+            GetTileArea(m, WTM_Gap, &X, &Y, &W, &H)
+            for p, group in pages {
+                if (!(group is Array) || group.Length = 0)
+                    continue
+                table := GetSlotTable(m, group.Length, W, H)
+                for i, h in group {
+                    if (i > table.Length || !WinExist(h))
+                        continue
+                    gx := mL + (p - view) * W + table[i].cx * W
+                    gy := mT + table[i].cy * H
+                    better := false
+                    if !best
+                        better := true
+                    else if (dir = "L")
+                        better := (gx > bestX + 1) || (Abs(gx - bestX) <= 1 && Abs(gy - fcy) < bestDy)
+                    else
+                        better := (gx < bestX - 1) || (Abs(gx - bestX) <= 1 && Abs(gy - fcy) < bestDy)
+                    if better {
+                        best := {mon: m, page: p, hwnd: h}
+                        bestX := gx, bestDy := Abs(gy - fcy)
+                    }
+                }
+            }
+        }
+        return best
+    }
+
+    ; Move at the strip edge -> extreme-x slot on the target monitor.
+    static _ScrollCrossMonitor(hwnd, dir) {
+        m := this._MonOf(hwnd)
+        ext := this._ScrollExtremeWindow(dir, m, hwnd)
+        targetMon := 0, targetPage := 0
+        if ext {
+            targetMon  := ext.mon
+            targetPage := ext.page
+        } else {
+            targetMon := this._AdjacentMonitor(m, dir)
+            if !targetMon
+                return 0
+        }
+        if !this._ScrollDetach(hwnd)
+            return 0
+        ap := this._ScrollPagesOf(targetMon)
+        if (targetPage < 1 || targetPage > ap.Length) {
+            if (ap.Length = 0)
+                ap.Push([])
+            targetPage := (dir = "L") ? ap.Length : 1
+        }
+        this._ScrollInsertByX(targetMon, ap[targetPage], hwnd, dir)
+        this.ScrollView[targetMon] := targetPage
+        this._ScrollReindex()
+        this._ScrollFlatten()
+        WMLog("WTM scroll cross move " dir " mon" m " -> mon" targetMon " page" targetPage)
+        return targetMon
+    }
+
+    ; Focus jumps to the x-extreme window on the target monitor.
+    static _ScrollCrossFocus(hwnd, dir) {
+        m := this._MonOf(hwnd)
+        ext := this._ScrollExtremeWindow(dir, m, hwnd)
+        if !ext
+            return 0
+        this.ScrollView[ext.mon] := ext.page
+        WMLog("WTM scroll cross focus " dir " mon" m " -> mon" ext.mon " page" ext.page)
+        return {mon: ext.mon, hwnd: ext.hwnd}
+    }
+
+    static _ScrollDrop(hwnd) {
+        this.RebuildOrder()
+        if !this._OrderIndex(hwnd)
+            return
+        MouseGetPos(&mx, &my)
+        dm := GetMonitorIndexAtPoint(mx, my)
+        if (dm < 1)
+            dm := 1
+        oldM := this._MonOf(hwnd)
+        if (this.ScrollPages.Has(oldM) && this.ScrollPageOf.Has(hwnd)) {
+            pages := this._ScrollPagesOf(oldM)
+            pOld := this.ScrollPageOf[hwnd]
+            if (pOld >= 1 && pOld <= pages.Length) {
+                group := pages[pOld]
+                for k, h in group
+                    if (h = hwnd) {
+                        group.RemoveAt(k)
+                        break
+                    }
+                if (group.Length = 0) {
+                    for k, g in pages
+                        if (g.Length = 0) {
+                            pages.RemoveAt(k)
+                            break
+                        }
+                }
+            }
+        }
+        pages := this._ScrollPagesOf(dm)
+        if !this.ScrollView.Has(dm)
+            this.ScrollView[dm] := 1
+        p := Max(1, Min(this.ScrollView.Has(dm) ? this.ScrollView[dm] : 1, pages.Length))
+        group := pages[p]
+        GetTileArea(dm, WTM_Gap, &X, &Y, &W, &H)
+        group.Push(hwnd)
+        table := GetSlotTable(dm, group.Length, W, H)
+        idx := group.Length, best := 1.0e18
+        for i, t in table {
+            sx := X + t.cx * W, sy := Y + t.cy * H
+            d := (sx - mx) ** 2 + (sy - my) ** 2
+            if (d < best)
+                best := d, idx := i
+        }
+        for k, h in group
+            if (h = hwnd) {
+                group.RemoveAt(k)
+                break
+            }
+        group.InsertAt(Min(idx, group.Length + 1), hwnd)
+        this.ScrollView[dm] := p
+        this._ScrollReindex()
+        this._ScrollFlatten()
+        this.AutoTile()
+        this.RefreshBorder()
     }
 
     static _ApplyRects(rects, animate, monIdx := 0) {
@@ -6819,10 +7458,10 @@ class WTM {
                 continue
             }
             if (animate && WTM_AnimMs > 0)
-                this._AnimMove(r.hwnd, r.x, r.y, r.w, r.h)
+                this._AnimMove(r.hwnd, r.x, r.y, r.w, r.h, true)
             else {
                 this._AnimDrop(r.hwnd)
-                MoveWinTo(r.hwnd, r.x, r.y, r.w, r.h)
+                this._ForcePlace(r.hwnd, r.x, r.y, r.w, r.h)
             }
         }
     }
@@ -6832,10 +7471,13 @@ class WTM {
             this.Anim.Delete(hwnd)
     }
 
-    static _AnimMove(hwnd, tx, ty, tw, th) {
+    static _AnimMove(hwnd, tx, ty, tw, th, noClamp := false) {
         if (WTM_AnimMs <= 0) {
             this._AnimDrop(hwnd)
-            MoveWinTo(hwnd, tx, ty, tw, th)
+            if noClamp
+                this._ForcePlace(hwnd, tx, ty, tw, th)
+            else
+                MoveWinTo(hwnd, tx, ty, tw, th)
             return
         }
         try {
@@ -6853,6 +7495,7 @@ class WTM {
         }
         this.Anim[hwnd] := {x0: cx, y0: cy, w0: cw, h0: ch
                           , x1: tx, y1: ty, w1: tw, h1: th
+                          , noClamp: noClamp
                           , t0: A_TickCount, dur: Max(30, WTM_AnimMs)}
         if !this.AnimStarted {
             this.AnimStarted := true
@@ -6884,7 +7527,10 @@ class WTM {
             p := (now - a.t0) / a.dur
             if (p >= 1) {
                 this._AnimDrop(hwnd)
-                try MoveWinTo(hwnd, a.x1, a.y1, a.w1, a.h1)
+                if a.noClamp
+                    this._ForcePlace(hwnd, a.x1, a.y1, a.w1, a.h1)
+                else
+                    try MoveWinTo(hwnd, a.x1, a.y1, a.w1, a.h1)
                 try this._DrawBorder(hwnd, this.FocusHwnd)
                 continue
             }
@@ -6893,8 +7539,9 @@ class WTM {
             y := Round(a.y0 + (a.y1 - a.y0) * e)
             w := Round(Max(50, a.w0 + (a.w1 - a.w0) * e))
             h := Round(Max(50, a.h0 + (a.h1 - a.h0) * e))
+            flags := 0x4 | 0x10 | (a.noClamp ? 0x400 : 0)
             try DllCall("SetWindowPos", "Ptr", hwnd, "Ptr", 0
-                , "Int", x, "Int", y, "Int", w, "Int", h, "UInt", 0x4 | 0x10)
+                , "Int", x, "Int", y, "Int", w, "Int", h, "UInt", flags)
             try this._DrawBorder(hwnd, this.FocusHwnd)
         }
     }
@@ -6954,6 +7601,15 @@ class WTM {
     }
 
     static _SlowCheck() {
+        if this.Overview {
+            sig := this._MemberSig()
+            if (sig != this._LastWins) {
+                this._LastWins := sig
+                this._OverviewEnter()
+            }
+            this.SweepOrphanBorders()
+            return
+        }
         asig := this._AreaSig()
         if (asig != this._LastArea) {
             this._LastArea := asig
@@ -7056,8 +7712,7 @@ class WTM {
                 continue
             }
             if (Abs(x - t.x) > 2 || Abs(y - t.y) > 2 || Abs(w - t.w) > 2 || Abs(h - t.h) > 2) {
-                m := 1
-                try m := GetMonitorIndex(hwnd)
+                m := this._MonOf(hwnd)
                 dirty[m] := true
                 if (t.HasProp("mon") && t.mon && t.mon != m && t.mon >= 1 && t.mon <= MonitorGetCount())
                     dirty[t.mon] := true
@@ -7083,8 +7738,7 @@ class WTM {
     static FocusDir(dir) {
         if !this.Active
             return
-        m0 := 1
-        try m0 := GetMonitorIndex(this.FocusHwnd)
+        m0 := this._MonOf(this.FocusHwnd)
         if this.SoloMon.Has(m0) {
             this._LeaveSoloRestoreMon(m0)
             this.AutoTile()
@@ -7094,8 +7748,48 @@ class WTM {
         if (this.TileOrder.Length = 0)
             return
         cur := this._OrderIndex(this.FocusHwnd) ? this.FocusHwnd : this.TileOrder[1]
-        curMon := 1
-        try curMon := GetMonitorIndex(cur)
+        if this.Overview {
+            target := this._OverviewPick(cur, dir)
+            if target {
+                FocusWindowSafely(target)
+                this.FocusHwnd := target
+                this._MoveCursorToWindow(target)
+                this.RefreshBorder()
+            }
+            return
+        }
+        if this.ScrollOn {
+            target := this._ScrollPickWithin(cur, dir)
+            if target {
+                FocusWindowSafely(target)
+                this.FocusHwnd := target
+                this._MoveCursorToWindow(target)
+                this.RefreshBorder()
+                return
+            }
+            np := this._ScrollNeighborPage(cur, dir)
+            if np {
+                this.ScrollView[this._MonOf(cur)] := np.page
+                this._RePlace(this._MonOf(cur))
+                FocusWindowSafely(np.hwnd)
+                this.FocusHwnd := np.hwnd
+                this._MoveCursorToWindow(np.hwnd)
+                this.RefreshBorder()
+                return
+            }
+            if (dir = "L" || dir = "R") {
+                cf := this._ScrollCrossFocus(cur, dir)
+                if cf {
+                    this._RePlace(cf.mon)
+                    FocusWindowSafely(cf.hwnd)
+                    this.FocusHwnd := cf.hwnd
+                    this._MoveCursorToWindow(cf.hwnd)
+                    this.RefreshBorder()
+                }
+            }
+            return
+        }
+        curMon := this._MonOf(cur)
         target := this._PickSwapTarget(cur, dir, curMon, "focus")
         if (!target && MonitorGetCount() > 1) {
             target := this._PickNeighbor(cur, dir, curMon)
@@ -7113,8 +7807,7 @@ class WTM {
     static MoveDir(dir) {
         if !this.Active
             return
-        m0 := 1
-        try m0 := GetMonitorIndex(this.FocusHwnd)
+        m0 := this._MonOf(this.FocusHwnd)
         if this.SoloMon.Has(m0) {
             this._LeaveSoloRestoreMon(m0)
             this.AutoTile()
@@ -7125,8 +7818,56 @@ class WTM {
             cur := this.TileOrder[1]
         if !cur
             return
-        curMon := 1
-        try curMon := GetMonitorIndex(cur)
+        if this.Overview {
+            target := this._OverviewPick(cur, dir)
+            if target
+                this._OverviewSwap(cur, target)
+            return
+        }
+        if this.ScrollOn {
+            m := this._MonOf(cur)
+            target := this._ScrollPickWithin(cur, dir)
+            if target {
+                p := this.ScrollPageOf[cur]
+                pgs := this._ScrollPagesOf(m)
+                if (p < 1 || p > pgs.Length)
+                    return
+                group := pgs[p]
+                i1 := 0, i2 := 0
+                for k, h in group {
+                    if (h = cur)
+                        i1 := k
+                    else if (h = target)
+                        i2 := k
+                }
+                if (i1 && i2) {
+                    group[i1] := target
+                    group[i2] := cur
+                }
+                this._ScrollFlatten()
+                this._RePlace(m)
+                this.FocusHwnd := cur
+                this._MoveCursorToWindow(cur)
+                this.RefreshBorder()
+                return
+            }
+            if (dir = "L" || dir = "R") {
+                p := this.ScrollPageOf.Has(cur) ? this.ScrollPageOf[cur] : 0
+                pgs := this._ScrollPagesOf(m)
+                atEdge := (dir = "L" && p = 1) || (dir = "R" && p = pgs.Length)
+                adj := atEdge ? this._ScrollCrossMonitor(cur, dir) : 0
+                if !adj
+                    this._ScrollMoveAcross(cur, dir)
+                this._RePlace(m)
+                if adj
+                    this._RePlace(adj)
+                this.FocusHwnd := cur
+                this._MoveCursorToWindow(cur)
+                this.RefreshBorder()
+            }
+            return
+        }
+        curMon := this._MonOf(cur)
 
         target := this._PickSwapTarget(cur, dir, curMon)
         if target {
@@ -7157,17 +7898,25 @@ class WTM {
 
     static Resize(axis, grow) {
         global WTM_ResizeRules, WTM_LayoutOverride, WTM_Gap, WTM_ResizeStep
-        if !this.Active
+        if (!this.Active || this.Overview)
             return
         this.RebuildOrder()
         cur := this._OrderIndex(this.FocusHwnd) ? this.FocusHwnd : 0
         if !cur
             return
-        mon := 1
-        try mon := GetMonitorIndex(cur)
+        mon := this._MonOf(cur)
         if (this._FsMon.Has(mon) && this._FsMon[mon])
             return
         wins := this._MonitorSlots(mon)
+        if this.ScrollOn {
+            if (!this.ScrollPages.Has(mon) || !this.ScrollPageOf.Has(cur))
+                return
+            pgs := this._ScrollPagesOf(mon)
+            p := this.ScrollPageOf[cur]
+            if (p < 1 || p > pgs.Length)
+                return
+            wins := pgs[p]
+        }
         n := wins.Length
         if (n < 2)
             return
@@ -7234,9 +7983,7 @@ class WTM {
         for h in this.TileOrder {
             if !WinExist(h)
                 continue
-            m := 1
-            try m := GetMonitorIndex(h)
-            if (m = monIdx)
+            if (this._MonOf(h) = monIdx)
                 wins.Push(h)
         }
         return wins
@@ -7286,7 +8033,7 @@ class WTM {
         try {
             WinGetPos(, , &w, &h, hwnd)
             cx := L + (R - L) // 2, cy := T + (B - T) // 2
-            WinMove(cx - w // 2, cy - h // 2, , , hwnd)
+            this._ForcePlace(hwnd, cx - w // 2, cy - h // 2, w, h)
         }
     }
 
@@ -7346,6 +8093,8 @@ class WTM {
     }
 
     static TogglePinExclude() {
+        if this.Overview
+            return
         hwnd := 0
         try hwnd := WinGetID("A")
         if (hwnd && IsBarWindow(hwnd))
@@ -7391,12 +8140,8 @@ class WTM {
                 continue
             if this.SoloHidden.Has(h)
                 continue
-            if skipMon {
-                m := 1
-                try m := GetMonitorIndex(h)
-                if (m = skipMon)
-                    continue
-            }
+            if skipMon && (this._MonOf(h) = skipMon)
+                continue
             try WinGetPos(&x, &y, &w, &h2, h)
             catch
                 continue
@@ -7473,6 +8218,33 @@ class WTM {
         }
     }
 
+    ; Kill leftover AHKWM_BORDER windows of this process, keeping other modes' frames.
+    static _ForceSweepBorders() {
+        keep := Map()
+        try {
+            for _, bf in AllBorders.Frames
+                if (IsObject(bf) && IsObject(bf.Gui) && bf.Gui.Hwnd)
+                    keep[bf.Gui.Hwnd] := true
+        }
+        try {
+            for _, bf in PinBorder.Map
+                if (IsObject(bf) && IsObject(bf.Gui) && bf.Gui.Hwnd)
+                    keep[bf.Gui.Hwnd] := true
+        }
+        me := DllCall("GetCurrentProcessId")
+        for h in WinGetList("AHKWM_BORDER ahk_class AutoHotkeyGUI") {
+            if keep.Has(h)
+                continue
+            try {
+                if (WinGetPID(h) != me)
+                    continue
+            } catch {
+                continue
+            }
+            try DllCall("User32\DestroyWindow", "Ptr", h)
+        }
+    }
+
     static _SetBorderColor(hwnd, state) {
         if !this.BorderMap.Has(hwnd)
             return
@@ -7510,8 +8282,7 @@ class WTM {
             } catch {
                 continue
             }
-            m := 1
-            try m := GetMonitorIndex(hwnd)
+            m := this._MonOf(hwnd)
             if (this.SoloMon.Has(m) && this.SoloMon[m] != hwnd)
                 continue
             if (this._FsMon.Has(m) && this._FsMon[m])
@@ -7634,8 +8405,7 @@ class WTM {
     static _MonitorsOfOrder() {
         out := Map()
         for hwnd in this.TileOrder {
-            m := 1
-            try m := GetMonitorIndex(hwnd)
+            m := this._MonOf(hwnd)
             if (m < 1)
                 m := 1
             out[m] := true
@@ -7658,9 +8428,7 @@ class WTM {
                 continue
             if this.SoloHidden.Has(hwnd)
                 continue
-            m := 1
-            try m := GetMonitorIndex(hwnd)
-            if (m != monIdx)
+            if (this._MonOf(hwnd) != monIdx)
                 continue
             try {
                 DllCall("ShowWindow", "Ptr", hwnd, "Int", 0)
@@ -7677,9 +8445,7 @@ class WTM {
                 continue
             if (this.SoloHidden.Has(hwnd) || this.Excluded.Has(hwnd))
                 continue
-            m := 1
-            try m := GetMonitorIndex(hwnd)
-            if (m != monIdx)
+            if (this._MonOf(hwnd) != monIdx)
                 continue
             try {
                 if (WinGetMinMax(hwnd) = 1) {
@@ -7731,13 +8497,12 @@ class WTM {
     }
 
     static ToggleFull() {
-        if !this.Active
+        if (!this.Active || this.Overview)
             return
         cur := this._OrderIndex(this.FocusHwnd) ? this.FocusHwnd : 0
         if !cur
             return
-        m := 1
-        try m := GetMonitorIndex(cur)
+        m := this._MonOf(cur)
         if (m < 1)
             m := 1
         if (this.SoloMon.Has(m) && this.SoloMon[m] = cur) {
@@ -7760,13 +8525,22 @@ class WTM {
     static HandleDragDrop(hwnd) {
         if (!this.Active || !hwnd || !WinExist(hwnd))
             return
-        m0 := 1
-        try m0 := GetMonitorIndex(hwnd)
+        m0 := this._MonOf(hwnd)
         if this.SoloMon.Has(m0)
             this._ExitSolo(m0)
         this.RebuildOrder()
         if !this._OrderIndex(hwnd)
             return
+        if this.Overview {
+            target := this._PickNearestByPos(hwnd)
+            if target
+                this._OverviewSwap(hwnd, target)
+            return
+        }
+        if this.ScrollOn {
+            this._ScrollDrop(hwnd)
+            return
+        }
         try {
             if !GetWindowVisualRect(hwnd, &cx, &cy, &cw, &ch)
                 WinGetPos(&cx, &cy, &cw, &ch, hwnd)
@@ -7818,7 +8592,255 @@ class WTM {
         this.TileOrder[ib] := tmp
     }
 
+    ; ---- Overview / 全局缩略 ----
+    static ToggleTrueMax() {
+        if (!this.Active || this.Overview)
+            return
+        hwnd := this.FocusHwnd
+        if (!hwnd || !WinExist(hwnd))
+            return
+        try {
+            if WinGetMinMax(hwnd) {
+                WinRestore(hwnd)
+                ShowOSD("WinRestore")
+            } else {
+                WinMaximize(hwnd)
+                ShowOSD("WinMaximized")
+            }
+        }
+    }
+
+    static ToggleOverview() {
+        if !this.Active {
+            ShowOSD("WTM Overview: need WTM")
+            return
+        }
+        if this.Overview
+            this._OverviewExit()
+        else
+            this._OverviewEnter()
+    }
+
+    ; Dry-run the current tiling model without moving any window.
+    static _ComputeModelRects() {
+        global TileSink
+        this.RebuildOrder()
+        if this.ScrollOn
+            this._ScrollSync()
+        groups := Map()
+        for hwnd in this.TileOrder {
+            if (!WinExist(hwnd) || this.SoloHidden.Has(hwnd))
+                continue
+            m := this._MonOf(hwnd)
+            if (m < 1)
+                m := 1
+            if !groups.Has(m)
+                groups[m] := []
+            groups[m].Push(hwnd)
+        }
+        model := Map()
+        saved := TileSink
+        for m, wins in groups {
+            rects := []
+            TileSink := (hwnd, x, y, w, h) => rects.Push({hwnd: hwnd, x: x, y: y, w: w, h: h})
+            try {
+                if this.ScrollOn
+                    this._ScrollLayout(m, wins)
+                else
+                    TileWindowsOnMonitor(wins, m, WTM_Gap, false)
+            } finally {
+                TileSink := saved
+            }
+            for r in rects
+                model[r.hwnd] := {x: r.x, y: r.y, w: r.w, h: r.h, mon: m}
+        }
+        return model
+    }
+
+    static _OverviewEnter() {
+        this._StopAnim()
+        model := this._ComputeModelRects()
+        if (model.Count = 0)
+            return
+        rects := Map(), found := false
+        wx0 := 0, wy0 := 0, wx1 := 0, wy1 := 0
+        for hwnd, r in model {
+            if !WinExist(hwnd)
+                continue
+            try {
+                if (WinGetMinMax(hwnd) != 0)
+                    continue
+            } catch {
+                continue
+            }
+            x := r.x, y := r.y, w := r.w, h := r.h
+            rects[hwnd] := {x: x, y: y, w: w, h: h}
+            if !found {
+                wx0 := x, wy0 := y, wx1 := x + w, wy1 := y + h
+                found := true
+            } else {
+                wx0 := Min(wx0, x), wy0 := Min(wy0, y)
+                wx1 := Max(wx1, x + w), wy1 := Max(wy1, y + h)
+            }
+        }
+        if !found
+            return
+        m := this._MonOf(this.FocusHwnd)
+        if (m < 1)
+            m := 1
+        GetTileArea(m, WTM_Gap, &tx, &ty, &tw, &th)
+        pad := Round(Min(tw, th) * 0.06)
+        tx += pad, ty += pad, tw -= pad * 2, th -= pad * 2
+        ww := Max(1, wx1 - wx0), wh := Max(1, wy1 - wy0)
+        s := Min(tw / ww, th / wh, 1.0)
+        ox := tx + (tw - ww * s) / 2
+        oy := ty + (th - wh * s) / 2
+        this.Overview := true
+        this.OverviewRects := Map()
+        this._Placed := model.Clone()
+        for hwnd, r in rects {
+            nx := Round(ox + (r.x - wx0) * s)
+            ny := Round(oy + (r.y - wy0) * s)
+            nw := Max(120, Round(r.w * s))
+            nh := Max(80,  Round(r.h * s))
+            this.OverviewRects[hwnd] := {x: nx, y: ny, w: nw, h: nh}
+            this._AnimMove(hwnd, nx, ny, nw, nh, true)
+        }
+        this.RefreshBorder()
+        ShowOSD("WTM Overview: ON")
+    }
+
+    static _OverviewExit() {
+        this.Overview := false
+        this.OverviewRects := Map()
+        if (this.ScrollOn && this.FocusHwnd && this.ScrollPageOf.Has(this.FocusHwnd)) {
+            m := this._MonOf(this.FocusHwnd)
+            this.ScrollView[m] := this.ScrollPageOf[this.FocusHwnd]
+        }
+        this.AutoTile()
+        this.RefreshBorder()
+        ShowOSD("WTM Overview: OFF")
+    }
+
+    ; Model rects are authoritative: some apps refuse to shrink below their
+    ; minimum size, so actual positions can differ from the overview layout.
+    static _ForcePlace(hwnd, x, y, w, h) {
+        try {
+            if (WinGetMinMax(hwnd) != 0)
+                WinRestore(hwnd)
+            DllCall("SetWindowPos", "Ptr", hwnd, "Ptr", 0
+                , "Int", Round(x), "Int", Round(y), "Int", Round(w), "Int", Round(h)
+                , "UInt", 0x4 | 0x10 | 0x400)
+        }
+    }
+
+    static _OverviewPick(hwnd, dir) {
+        if !this.OverviewRects.Has(hwnd)
+            return 0
+        cur := this.OverviewRects[hwnd]
+        ccx := cur.x + cur.w / 2, ccy := cur.y + cur.h / 2
+        best := 0, bestD := 1.0e18
+        for h, r in this.OverviewRects {
+            if (h = hwnd)
+                continue
+            dx := r.x + r.w / 2 - ccx
+            dy := r.y + r.h / 2 - ccy
+            skip := false
+            if      (dir = "L" && dx >= 0)
+                skip := true
+            else if (dir = "R" && dx <= 0)
+                skip := true
+            else if (dir = "U" && dy >= 0)
+                skip := true
+            else if (dir = "D" && dy <= 0)
+                skip := true
+            if skip
+                continue
+            d := dx * dx + dy * dy
+            if (d < bestD)
+                bestD := d, best := h
+        }
+        return best
+    }
+
+    static _PickNearestByPos(hwnd) {
+        try WinGetPos(&cx, &cy, &cw, &ch, hwnd)
+        catch
+            return 0
+        ccx := cx + cw / 2, ccy := cy + ch / 2
+        best := 0, bestD := 1.0e18
+        for h, r in this.OverviewRects {
+            if (h = hwnd)
+                continue
+            d := (r.x + r.w / 2 - ccx) ** 2 + (r.y + r.h / 2 - ccy) ** 2
+            if (d < bestD)
+                bestD := d, best := h
+        }
+        return best
+    }
+
+    static _OverviewSwap(a, b) {
+        if (!a || !b || a = b)
+            return
+        if this.ScrollOn {
+            ma := this._MonOf(a), mb := this._MonOf(b)
+            if (ma != mb || !this.ScrollPageOf.Has(a) || !this.ScrollPageOf.Has(b))
+                return
+            pa := this.ScrollPageOf[a], pb := this.ScrollPageOf[b]
+            pgs := this._ScrollPagesOf(ma)
+            if (pa < 1 || pa > pgs.Length || pb < 1 || pb > pgs.Length)
+                return
+            ga := pgs[pa], gb := pgs[pb]
+            ia := 0, ib := 0
+            for k, h in ga
+                if (h = a)
+                    ia := k
+            for k, h in gb
+                if (h = b)
+                    ib := k
+            if (!ia || !ib)
+                return
+            ga[ia] := b, gb[ib] := a
+            this._ScrollReindex()
+            this._ScrollFlatten()
+        } else {
+            ia := this._OrderIndex(a), ib := this._OrderIndex(b)
+            if (!ia || !ib)
+                return
+            tmp := this.TileOrder[ia]
+            this.TileOrder[ia] := this.TileOrder[ib]
+            this.TileOrder[ib] := tmp
+        }
+        if (this._Placed.Has(a) && this._Placed.Has(b)) {
+            t := this._Placed[a]
+            this._Placed[a] := this._Placed[b]
+            this._Placed[b] := t
+        }
+        ra := this.OverviewRects.Has(a) ? this.OverviewRects[a] : 0
+        rb := this.OverviewRects.Has(b) ? this.OverviewRects[b] : 0
+        if (ra && rb) {
+            this.OverviewRects[a] := rb
+            this.OverviewRects[b] := ra
+            this._AnimMove(a, rb.x, rb.y, rb.w, rb.h, true)
+            this._AnimMove(b, ra.x, ra.y, ra.w, ra.h, true)
+        }
+        this.RefreshBorder()
+    }
+
     static LogSlotTables() {
+        if this.ScrollOn {
+            for m, pages in this.ScrollPages {
+                line := "WTM scroll mon" . m . " view" . this.ScrollView[m] . " |"
+                for p, group in pages {
+                    line .= " p" . p . ":"
+                    for h in group
+                        line .= h ","
+                    line .= ";"
+                }
+                WMLog(line)
+            }
+            return
+        }
         for m, _ in this._MonitorsOfOrder() {
             wins := this._MonitorSlots(m)
             n := wins.Length

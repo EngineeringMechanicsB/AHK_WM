@@ -1,12 +1,12 @@
 <div align="center">
 
-# 🔲 AHK WM <sub>v2.12.0</sub>
+# 🔲 AHK WM <sub>v2.13.0</sub>
 
 <p>
   <img src="https://img.shields.io/badge/AutoHotkey-v2.0-cba6f7?style=flat-square" alt="AutoHotkey v2" />
   <img src="https://img.shields.io/badge/platform-Windows_7_~_11-b4befe?style=flat-square" alt="Platform" />
   <img src="https://img.shields.io/badge/license-MIT-f5c2e7?style=flat-square" alt="License" />
-  <img src="https://img.shields.io/badge/version-v2.12.0-cba6f7?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/version-v2.13.0-cba6f7?style=flat-square" alt="Version" />
 </p>
 
 <p>
@@ -76,6 +76,7 @@
 | ![Border Gradient](docs/images/border-gradient.png) | Borders — highlight the window being dragged |
 | ![Border Fullscreen](docs/images/border-fullscreen.png) | Gradient borders — any color frame you want |
 | ![wtm mode](docs/images/wtm.gif) | WTM Mode — keyboard-driven tiling with fully customizable layouts and animation support |
+| ![Scrollable Tiling](docs/images/scrollable-tiling.gif) | Scrollable Tiling — an infinite horizontal strip; windows keep moving off-screen and scroll back on demand |
 | ![Help](docs/images/help-menu.png) | Built-in Help — check every hotkey at a glance |
 
 ---
@@ -116,6 +117,9 @@
 | ⌨️ WTM: move focus | `Alt + H / J / K / L` |
 | ⌨️ WTM: swap windows | `Alt + Shift + H / J / K / L` |
 | ⌨️ WTM: resize window | `Ctrl + Alt + H / J / K / L` |
+| ⌨️ WTM: fullscreen (keep bar) | `Alt + F` |
+| ⌨️ WTM: true maximize | `Alt + Shift + F` |
+| 🗺️ WTM: overview | `Alt + O` |
 | 💾 Save layout | `Alt + Shift + S` |
 | 🧲 Gather all windows | `Alt + Shift + G` |
 | 📌 Always on top | `Alt + T` |
@@ -139,7 +143,7 @@
 | 🥧 **Pie Menu** | Hold `Space` and right-click: a radial menu appears. Move the mouse in a direction and release to trigger that action. |
 | 📊 **Status Bar** | Multi-monitor status bar with gradients, rounded corners and per-element alignment. Shows desktop labels, time, date, progress bars, system stats and custom widgets — external scripts can push to it too. |
 | 🖼️ **Window Borders** | Fully customizable colored window borders with gradient support. |
-| ⌨️ **WTM Mode** | Entering it arranges every monitor by your rules; `Alt + H/J/K/L` moves focus, `Alt + Shift + H/J/K/L` moves the window, `Ctrl + Alt + H/J/K/L` resizes it. A fullscreen or maximized window suspends tiling on that monitor; `[Tiling] AnimationDuration` enables animated moves. |
+| ⌨️ **WTM Mode** | Entering it arranges every monitor by your rules; `Alt + H/J/K/L` moves focus, `Alt + Shift + H/J/K/L` moves the window, `Ctrl + Alt + H/J/K/L` resizes it. A fullscreen or maximized window suspends tiling on that monitor; `[Tiling] AnimationDuration` enables animated moves. Add `[Tiling] ScrollableDesktops=1;3` for infinite horizontal scrollable tiling on selected desktops, and press `Alt+O` for an overview of every window. |
 | 📐 **Window Snapping** | Windows snap when dragged to screen edges or other windows. Configurable snap and release distances. |
 | 🎨 **Themes** | 20+ built-in themes. Export the current theme as a custom palette in one click. |
 | ⏱️ **Work Timer** | Configurable work periods, shown as a progress bar on the status bar. |

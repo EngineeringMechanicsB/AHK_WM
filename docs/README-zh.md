@@ -1,12 +1,12 @@
 <div align="center">
 
-# 🔲 AHK WM <sub>v2.12.0</sub>
+# 🔲 AHK WM <sub>v2.13.0</sub>
 
 <p>
   <img src="https://img.shields.io/badge/AutoHotkey-v2.0-cba6f7?style=flat-square" alt="AutoHotkey v2" />
   <img src="https://img.shields.io/badge/平台-Windows_7_~_11-b4befe?style=flat-square" alt="平台" />
   <img src="https://img.shields.io/badge/许可-MIT-f5c2e7?style=flat-square" alt="许可" />
-  <img src="https://img.shields.io/badge/版本-v2.12.0-cba6f7?style=flat-square" alt="版本" />
+  <img src="https://img.shields.io/badge/版本-v2.13.0-cba6f7?style=flat-square" alt="版本" />
 </p>
 
 <p>
@@ -76,6 +76,7 @@
 | ![Border Gradient](images/border-gradient.png) | 边框 — 高亮标识拖拽窗口 |
 | ![Border Fullscreen](images/border-fullscreen.png) | 渐变边框 — 自定义您想要的彩色边框 |
 | ![wtm mode](images/wtm.gif) | WTM 模式 — 键盘驱动的平铺模式，拥有完全可自定义的布局，简单的配置方式窗口动画支持。 |
+| ![滚动平铺](images/scrollable-tiling.gif) | 无限滚动平铺 — 窗口在屏幕边缘继续外移，按需滚回；屏外页与屏内页使用同一套布局规则。 |
 | ![Help](images/help-menu.png) | 内置帮助 —迅速查看所有快捷键 |
 
 ---
@@ -116,6 +117,9 @@
 | ⌨️ WTM 移动焦点 | `Alt + H / J / K / L` |
 | ⌨️ WTM 交换窗口 | `Alt + Shift + H / J / K / L` |
 | ⌨️ WTM 缩放窗口 | `Ctrl + Alt + H / J / K / L` |
+| ⌨️ WTM 单人全屏（保留状态栏） | `Alt + F` |
+| ⌨️ WTM 真最大化（忽略状态栏） | `Alt + Shift + F` |
+| 🗺️ WTM Overview 缩略图 | `Alt + O` |
 | 💾 保存布局 | `Alt + Shift + S` |
 | 🧲 收集所有窗口 | `Alt + Shift + G` |
 | 📌 窗口置顶 | `Alt + T` |
@@ -139,7 +143,7 @@
 | 🥧 **饼菜单** | 按住 `空格`，点右键出现径向菜单，朝不同方向移动鼠标释放后触发对应操作。 |
 | 📊 **状态栏** | 多显示器状态栏，支持渐变色、圆角、每个元素独立对齐。显示桌面标签、时间、日期、进度条、系统状态等自定义部件，甚至支持外部脚本调用。 |
 | 🖼️ **窗口边框** | 完全可自定义彩色窗口边框，支持渐变。 |
-| ⌨️ **WTM 模式** | 进入即按规则铺满每块屏；`Alt + H/J/K/L` 移动焦点，`Alt + Shift + H/J/K/L` 移动窗口，`Ctrl + Alt + H/J/K/L` 缩放窗口。全屏/最大化窗口暂停该屏平铺；`[Tiling] AnimationDuration` 可开启移动动画。 |
+| ⌨️ **WTM 模式** | 进入即按规则铺满每块屏；`Alt + H/J/K/L` 移动焦点，`Alt + Shift + H/J/K/L` 移动窗口，`Ctrl + Alt + H/J/K/L` 缩放窗口。全屏/最大化窗口暂停该屏平铺；`[Tiling] AnimationDuration` 可开启移动动画。`[Tiling] ScrollableDesktops=1;3` 可在指定桌面开启无限滚动平铺；`Alt+O` 打开全局 Overview 缩略图。 |
 | 📐 **窗口吸附** | 拖拽窗口到屏幕边缘或其他窗口时自动吸附，可配置吸附距离和脱离距离。 |
 | 🎨 **主题** | 20+ 内置主题，一键导出当前主题为自定义配色。 |
 | ⏱️ **工作计时** | 可配置的工作时段，状态栏显示进度条。 |
