@@ -5,9 +5,12 @@ Every item below was hit for real while building v2.13.0. Read this before touch
 
 ## 1. Where things actually run
 
+> Current state, code map and the newest pitfalls live in `AI-HANDOFF.md`.
+> This file keeps the older, still-valid environment notes.
+
 | Role | Path |
 |---|---|
-| Source / git repo | `C:\Users\Administrator\Desktop\AI\AHK_WM` |
+| Source / git repo | `C:\Users\Administrator\Desktop\AI\AHK_WM\repo` |
 | The copy the user runs | `C:\Users\Administrator\Desktop\zxw\StartUp\wm.ahk` |
 | Live config | `C:\Users\Administrator\.config\AHK_WM\wm_config.ini` |
 | Live log | `C:\Users\Administrator\.config\AHK_WM\wm.log` |

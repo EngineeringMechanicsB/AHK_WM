@@ -150,6 +150,10 @@ global GUI_Rounded     := "on"
 global GUI_CornerRadius := 12
 global Help_Rounded, Help_Radius, PM_Rounded, PM_Radius
 global OSD_Rounded, OSD_Radius
+global Overview_MinScale := 0.35
+global Overview_SmallKeep := Map()
+global PickCb := 0
+global PickActive := false
 
 ; ---- Window snapping / 窗口吸附 ----
 global Snap_Enable   := true
@@ -1114,11 +1118,54 @@ ExclAppendUser(sec, rule) {
     try IniWrite(rule, ExcludeFile, "User-" . sec, n + 1)
 }
 
+; ---- Pick a window for menu actions / 拾取窗口 ----
+PickWindowThen(cb) {
+    global PickCb, PickActive
+    if PickActive
+        return
+    PickCb := cb, PickActive := true
+    ShowOSD("Pick target window: click it, Esc cancels", 4000)
+    try Hotkey("~LButton", PickWindowClick, "On")
+    try Hotkey("Esc", PickWindowCancel, "On")
+}
+
+PickWindowCancel(*) {
+    PickFinish(0)
+}
+
+PickWindowClick(*) {
+    global PickActive
+    if !PickActive
+        return
+    MouseGetPos(&mx, &my)
+    h := DllCall("WindowFromPoint", "Int", mx, "Int", my, "Ptr")
+    h := DllCall("GetAncestor", "Ptr", h, "UInt", 2, "Ptr")
+    if (!h || !WinExist(h))
+        return
+    if (WinGetPID(h) = DllCall("GetCurrentProcessId"))
+        return
+    if IsBarWindow(h)
+        return
+    PickFinish(h)
+}
+
+PickFinish(hwnd) {
+    global PickCb, PickActive
+    PickActive := false
+    try Hotkey("~LButton", "Off")
+    try Hotkey("Esc", "Off")
+    cb := PickCb, PickCb := 0
+    if (cb && hwnd)
+        cb.Call(hwnd)
+    else if !hwnd
+        ShowOSD("Pick cancelled")
+}
+
 ; ---- Hotkey: add to exclusions / 加入排除 ----
-ExcludeCurrentWindow(*) {
+ExcludeCurrentWindow(hwnd := 0, *) {
     global ExcludeFile, WM_LogLevel
-    hwnd := 0
-    try hwnd := WinExist("A")
+    if !hwnd
+        hwnd := _GetTargetHwnd()
     if !hwnd {
         ShowOSD("Exclude: No Window")
         return
@@ -1142,9 +1189,9 @@ ExcludeCurrentWindow(*) {
 }
 
 ; ---- Hotkey: diagnose window / 诊断窗口 ----
-DiagnoseWindow(*) {
-    hwnd := 0
-    try hwnd := WinExist("A")
+DiagnoseWindow(hwnd := 0, *) {
+    if !hwnd
+        hwnd := _GetTargetHwnd()
     if !hwnd {
         ShowOSD("Diagnose: no active window", 3000)
         return
@@ -1503,7 +1550,21 @@ FocusWindowSafely(hwnd) {
             return true
         Sleep(10)
     }
-    return false
+    try {
+        if (WinGetMinMax(hwnd) = -1)
+            WinRestore(hwnd)
+        fg := DllCall("GetForegroundWindow", "Ptr")
+        tidFg := DllCall("GetWindowThreadProcessId", "Ptr", fg, "Ptr", 0, "UInt")
+        tidMe := DllCall("GetCurrentThreadId", "UInt")
+        if (tidFg && tidFg != tidMe)
+            DllCall("AttachThreadInput", "UInt", tidMe, "UInt", tidFg, "Int", 1)
+        DllCall("SetForegroundWindow", "Ptr", hwnd)
+        DllCall("BringWindowToTop", "Ptr", hwnd)
+        if (tidFg && tidFg != tidMe)
+            DllCall("AttachThreadInput", "UInt", tidMe, "UInt", tidFg, "Int", 0)
+        return WinActive(hwnd) ? true : false
+    } catch
+        return false
 }
 
 ; ---- Save desktop layout before Reload / 存布局 ----
@@ -1706,8 +1767,36 @@ ShowPathWarning() {
 ; 5. Hotkey Registration / 热键注册
 ; ==============================================================================
 
+; ---- Once-per-press hotkey helpers / 一次按下 ----
+HotkeyMainKey(combo) {
+    combo := Trim(combo)
+    if InStr(combo, " & ")
+        return ""
+    combo := RegExReplace(combo, "^[!^+#~*$<>]+")
+    if RegExMatch(combo, "^\{(.+)\}$", &m)
+        combo := m[1]
+    if (combo = Chr(96) || combo = Chr(96) . Chr(96))
+        return Chr(96)
+    if (combo = "WheelUp" || combo = "WheelDown" || combo = "LButton" || combo = "RButton" || combo = "MButton")
+        return ""
+    return combo
+}
+
+OnceRun(fn, key, *) {
+    fn()
+    if key
+        KeyWait(key, "L")
+}
+
+HotkeyOnce(combo, fn) {
+    k := HotkeyMainKey(combo)
+    if (k = "")
+        return fn
+    return OnceRun.Bind(fn, k)
+}
+
 ; ---- RegHotkey / 热键注册 ----
-RegHotkey(key, fn) {
+RegHotkey(key, fn, once := true) {
     global HK
     if !HK.Has(key)
         return false
@@ -1715,7 +1804,7 @@ RegHotkey(key, fn) {
     if (combo = "")
         return false
     try {
-        Hotkey(combo, fn)
+        Hotkey(combo, once ? HotkeyOnce(combo, fn) : fn)
         return true
     } catch Error as e {
         WMLog("Hotkey register failed [" key "=" combo "]: " e.Message)
@@ -1735,11 +1824,11 @@ RegisterAllHotkeys() {
     Loop DesktopCount {
         i := A_Index
         if (pSwitch != "")
-            try Hotkey(pSwitch . i, SwitchDesktop.Bind(i))
+            try Hotkey(pSwitch . i, HotkeyOnce(pSwitch . i, SwitchDesktop.Bind(i)))
         if (pMove != "")
-            try Hotkey(pMove . i, MoveWindowToDesktop.Bind(i))
+            try Hotkey(pMove . i, HotkeyOnce(pMove . i, MoveWindowToDesktop.Bind(i)))
         if (pBoth != "")
-            try Hotkey(pBoth . i, MoveAndSwitch.Bind(i))
+            try Hotkey(pBoth . i, HotkeyOnce(pBoth . i, MoveAndSwitch.Bind(i)))
     }
 
     RegHotkey("TileSmart", TileCurrentMonitor)
@@ -1754,8 +1843,8 @@ RegisterAllHotkeys() {
     RegHotkey("ToggleTop",      ToggleTopDispatch)
     RegHotkey("HideWindow",     HideUnderMouse)
 
-    RegHotkey("TransparencyUp",   AdjustTransparency.Bind(20))
-    RegHotkey("TransparencyDown", AdjustTransparency.Bind(-20))
+    RegHotkey("TransparencyUp",   AdjustTransparency.Bind(20), false)
+    RegHotkey("TransparencyDown", AdjustTransparency.Bind(-20), false)
 
     RegHotkey("LaunchTerminal", LaunchTerminal)
     RegHotkey("EditFile",       OpenWithVim)
@@ -1780,8 +1869,8 @@ RegisterAllHotkeys() {
         try HotIf()
     }
 
-    RegHotkey("DragMove",   DragMoveHandler)
-    RegHotkey("DragResize", DragResizeHandler)
+    RegHotkey("DragMove",   DragMoveHandler, false)
+    RegHotkey("DragResize", DragResizeHandler, false)
 
     RegHotkey("WinSelect", (*) => WinSelect.Start())
 
@@ -1790,26 +1879,26 @@ RegisterAllHotkeys() {
         RegHotkey("WTMFull",   (*) => WTM.ToggleFull())
     RegHotkey("WTMTrueMax",    (*) => WTM.ToggleTrueMax())
     RegHotkey("WTMOverview",   (*) => WTM.ToggleOverview())
-    RegHotkey("WTMMoveMonLeft",  (*) => WTM.MoveToMonitorDir("L"))
-    RegHotkey("WTMMoveMonRight", (*) => WTM.MoveToMonitorDir("R"))
-    RegHotkey("WTMMoveMonUp",    (*) => WTM.MoveToMonitorDir("U"))
-    RegHotkey("WTMMoveMonDown",  (*) => WTM.MoveToMonitorDir("D"))
-    RegHotkey("WTMFocusMonLeft",  (*) => WTM.FocusToMonitorDir("L"))
-    RegHotkey("WTMFocusMonRight", (*) => WTM.FocusToMonitorDir("R"))
-    RegHotkey("WTMFocusMonUp",    (*) => WTM.FocusToMonitorDir("U"))
-    RegHotkey("WTMFocusMonDown",  (*) => WTM.FocusToMonitorDir("D"))
-    RegHotkey("WTMFocusLeft",  (*) => WTM.FocusDir("L"))
-    RegHotkey("WTMFocusDown",  (*) => WTM.FocusDir("D"))
-    RegHotkey("WTMFocusUp",    (*) => WTM.FocusDir("U"))
-    RegHotkey("WTMFocusRight", (*) => WTM.FocusDir("R"))
-    RegHotkey("WTMMoveLeft",   (*) => WTM.MoveDir("L"))
-    RegHotkey("WTMMoveDown",   (*) => WTM.MoveDir("D"))
-    RegHotkey("WTMMoveUp",     (*) => WTM.MoveDir("U"))
-    RegHotkey("WTMMoveRight",  (*) => WTM.MoveDir("R"))
-    RegHotkey("WTMShrinkWidth",  (*) => WTM.Resize("X", false))
-    RegHotkey("WTMGrowWidth",    (*) => WTM.Resize("X", true))
-    RegHotkey("WTMGrowHeight",   (*) => WTM.Resize("Y", true))
-    RegHotkey("WTMShrinkHeight", (*) => WTM.Resize("Y", false))
+    RegHotkey("WTMMoveMonLeft",  (*) => WTM.MoveToMonitorDir("L"), false)
+    RegHotkey("WTMMoveMonRight", (*) => WTM.MoveToMonitorDir("R"), false)
+    RegHotkey("WTMMoveMonUp",    (*) => WTM.MoveToMonitorDir("U"), false)
+    RegHotkey("WTMMoveMonDown",  (*) => WTM.MoveToMonitorDir("D"), false)
+    RegHotkey("WTMFocusMonLeft",  (*) => WTM.FocusToMonitorDir("L"), false)
+    RegHotkey("WTMFocusMonRight", (*) => WTM.FocusToMonitorDir("R"), false)
+    RegHotkey("WTMFocusMonUp",    (*) => WTM.FocusToMonitorDir("U"), false)
+    RegHotkey("WTMFocusMonDown",  (*) => WTM.FocusToMonitorDir("D"), false)
+    RegHotkey("WTMFocusLeft",  (*) => WTM.FocusDir("L"), false)
+    RegHotkey("WTMFocusDown",  (*) => WTM.FocusDir("D"), false)
+    RegHotkey("WTMFocusUp",    (*) => WTM.FocusDir("U"), false)
+    RegHotkey("WTMFocusRight", (*) => WTM.FocusDir("R"), false)
+    RegHotkey("WTMMoveLeft",   (*) => WTM.MoveDir("L"), false)
+    RegHotkey("WTMMoveDown",   (*) => WTM.MoveDir("D"), false)
+    RegHotkey("WTMMoveUp",     (*) => WTM.MoveDir("U"), false)
+    RegHotkey("WTMMoveRight",  (*) => WTM.MoveDir("R"), false)
+    RegHotkey("WTMShrinkWidth",  (*) => WTM.Resize("X", false), false)
+    RegHotkey("WTMGrowWidth",    (*) => WTM.Resize("X", true), false)
+    RegHotkey("WTMGrowHeight",   (*) => WTM.Resize("Y", true), false)
+    RegHotkey("WTMShrinkHeight", (*) => WTM.Resize("Y", false), false)
 
     ; Enter or Space confirms the focused window and exits Overview / 回车或空格确认
     HotIf((*) => WTM.Overview)
@@ -2287,6 +2376,8 @@ OSDPositionPct=80
 OSDOpacity=78
 ; OSD font size / OSD 字号
 OSDFontSize=20
+; Overview minimum scale; smaller = smaller windows, canvas may exceed screen / 总览最小缩放
+OverviewMinScale=0.35
 
 [WorkTime]
 ; Mode: off | workday | allday / 工作时间模式
@@ -2493,6 +2584,8 @@ WTMShrinkHeight=Ctrl+Shift+K
     OSD_Height       := Pct2PxH(Integer(CfgRead("GUI", "OSDPositionPct", "80", ["OSD","PositionPct"])))
     OSD_Transparent  := Pct2Alpha(Integer(CfgRead("GUI", "OSDOpacity",   "78", ["OSD","Opacity"])))
     OSD_FontSize     := Integer(CfgRead("GUI", "OSDFontSize", "20", ["OSD","FontSize"]))
+    Overview_MinScale := Number(IniRead(ConfigFile, "GUI", "OverviewMinScale", "0.35"))
+    Overview_MinScale := Max(0.05, Min(1.0, Overview_MinScale))
 
     Border_RefreshMs := Max(1, SafeInt(IniRead(ConfigFile, "Border", "RefreshMs", "10"), 10))
 
@@ -3606,9 +3699,25 @@ _GetHwndUnderMouse() {
     return 0
 }
 
+; ---- Single target for all non-WTM actions / 非 WTM 统一目标 ----
+; Every non-WTM window action uses the window under the mouse, never the
+; focused window. WTM mode keeps its own FocusHwnd semantics.
+_GetTargetHwnd() {
+    return _GetHwndUnderMouse()
+}
+
+; ---- Move without touching size / 仅移动不改尺寸 ----
+; WinMove on a minimized window writes its bogus minimized rect (160x28)
+; back as the restore size. SetWindowPos + SWP_NOSIZE never changes size.
+_MoveNoResize(hwnd, x, y) {
+    return DllCall("SetWindowPos", "Ptr", hwnd, "Ptr", 0
+        , "Int", Round(x), "Int", Round(y), "Int", 0, "Int", 0
+        , "UInt", 0x0001 | 0x0004 | 0x0010 | 0x0400, "Ptr")
+}
+
 ; ---- Close window under mouse / 关闭窗口 ----
 CloseWindowUnderMouse(*) {
-    hwnd := _GetHwndUnderMouse()
+    hwnd := _GetTargetHwnd()
     if !hwnd
         return
     try {
@@ -3621,7 +3730,7 @@ CloseWindowUnderMouse(*) {
 
 ; ---- Minimize window under mouse / 最小化 ----
 HideUnderMouse(*) {
-    hwnd := _GetHwndUnderMouse()
+    hwnd := _GetTargetHwnd()
     if !hwnd
         return
     if (WTM.ManualFull && WTM.ManualFull = hwnd)
@@ -3635,7 +3744,7 @@ HideUnderMouse(*) {
 
 ; ---- Toggle maximize under mouse / 最大化 ----
 ToggleMaximizeUnderMouse(*) {
-    hwnd := _GetHwndUnderMouse()
+    hwnd := _GetTargetHwnd()
     if !hwnd
         return
     try {
@@ -3651,7 +3760,7 @@ ToggleMaximizeUnderMouse(*) {
 
 ; ---- Toggle always-on-top under mouse / 置顶切换 ----
 ToggleTopUnderMouse(*) {
-    hwnd := _GetHwndUnderMouse()
+    hwnd := _GetTargetHwnd()
     if !hwnd
         return
     try {
@@ -3670,7 +3779,9 @@ ToggleTopUnderMouse(*) {
 ; ---- Adjust window transparency / 透明度 ----
 AdjustTransparency(amount, *) {
     global TransparencyStep
-    MouseGetPos(,, &hwnd)
+    hwnd := _GetTargetHwnd()
+    if !hwnd
+        return
     try {
         cur := WinGetTransparent(hwnd)
         if !IsNumber(cur)
@@ -3882,6 +3993,8 @@ SwitchDesktop(target, *) {
             ShowWin(hwnd)
 
         CurrentDesktop := target
+        if WTM_ScrollDesktops.Has(target)
+            WTM._GatherDesktop(target)
         UpdateStatusBar()
         A_IconTip := "AHK WM - Desktop " . CurrentDesktop
         ShowOSD("Desktop " . CurrentDesktop)
@@ -3910,9 +4023,8 @@ SwitchDesktop(target, *) {
 MoveWindowToDesktop(target, *) {
     global CurrentDesktop, Desktops, AlwaysVisible, DesktopFocus
 
-    hwnd := 0
-    try hwnd := WinExist("A")
-    if (!hwnd || IsBarWindow(hwnd))
+    hwnd := _GetTargetHwnd()
+    if !hwnd
         return
     if (WTM.ManualFull && WTM.ManualFull = hwnd)
         WTM._ExitFullManual()
@@ -3940,10 +4052,7 @@ MoveWindowToDesktop(target, *) {
 MoveAndSwitch(target, *) {
     global CurrentDesktop, DesktopFocus
 
-    hwnd := 0
-    try hwnd := WinExist("A")
-    if (hwnd && IsBarWindow(hwnd))
-        hwnd := 0
+    hwnd := _GetTargetHwnd()
 
     MoveWindowToDesktop(target)
 
@@ -5225,7 +5334,7 @@ HasFullscreenWindow(targetMon) {
             if (cls = "Progman" || cls = "WorkerW" || cls = "Shell_TrayWnd")
                 continue
             WinGetPos(&wx, &wy, &ww, &wh, hwnd)
-            if (ww < 100 || wh < 100)
+            if (ww < 2 || wh < 2)
                 continue
             mon := GetMonitorIndexAtPoint(wx + ww//2, wy + wh//2)
             if (mon != targetMon)
@@ -5327,9 +5436,8 @@ TogglePin(*) {
     global AlwaysVisible, DesktopIsSwitching
     if DesktopIsSwitching
         return
-    hwnd := 0
-    try hwnd := WinExist("A")
-    if (!hwnd || IsBarWindow(hwnd))
+    hwnd := _GetTargetHwnd()
+    if !hwnd
         return
 
     if AlwaysVisible.Has(hwnd) {
@@ -6130,7 +6238,11 @@ GetVisibleWindowsOnMonitor(monIdx) {
         if !IsTilableWindow(hwnd)
             continue
         try {
+            if (WinGetMinMax(hwnd) = -1)
+                continue
             WinGetPos(&wx, &wy, &ww, &wh, hwnd)
+            if (ww < 2 || wh < 2)
+                continue
             cx := wx + ww/2, cy := wy + wh/2
             if (GetMonitorIndexAtPoint(cx, cy) == monIdx)
                 out.Push(hwnd)
@@ -6141,6 +6253,7 @@ GetVisibleWindowsOnMonitor(monIdx) {
 
 ; ---- Visible windows, exclusion-aware / 当前桌面 ----
 GetVisibleWindow() {
+    global Overview_SmallKeep
     windows := []
     ids := WinGetList(,, "Program Manager")
     for this_id in ids {
@@ -6160,8 +6273,16 @@ GetVisibleWindow() {
                 continue
             if (WinGetTitle(this_id) == "")
                 continue
+            try {
+                if (WinGetMinMax(this_id) = -1)
+                    continue
+            } catch {
+                continue
+            }
             WinGetPos(,, &w, &h, this_id)
-            if (w < 100 || h < 100)
+            ; Overview may have shrunk windows below the 2px floor; the exit
+            ; whitelist keeps them tiled once more before it is cleared.
+            if (w < 2 || h < 2) && !Overview_SmallKeep.Has(this_id)
                 continue
         } catch
             continue
@@ -6471,8 +6592,7 @@ DragResizeHandler(*) {
 
 ; ---- Directional snap (left/right halves, max/min) / 方向吸附 ----
 SnapWindow(direction, *) {
-    hwnd := 0
-    try hwnd := WinExist("A")
+    hwnd := _GetTargetHwnd()
     if !hwnd
         return
 
@@ -6695,6 +6815,8 @@ class WTM {
     static ScrollDesktop := Map()
     static Overview      := false
     static OverviewRects := Map()
+    static OverviewView  := Map()
+    static OverviewPages := []
     static OverviewFrames := []
     static OverviewFadeFn := ObjBindMethod(WTM, "_OverviewFadeTick")
     static ManualFull    := 0
@@ -6751,6 +6873,13 @@ class WTM {
         this._LastArea := this._AreaSig()
         this._LastBSig := "", this._LastBFocus := 0
         this.AutoTile()
+        if (!this.FocusHwnd || !WinExist(this.FocusHwnd))
+            this.FocusHwnd := this.TileOrder.Length ? this.TileOrder[1] : 0
+        if this.FocusHwnd {
+            hTarget := this.FocusHwnd
+            FocusWindowSafely(hTarget)
+            SetTimer(() => FocusWindowSafely(hTarget), -120)
+        }
         this.RefreshBorder()
         this.LogSlotTables()
         SetTimer(this.TickFn, Border_RefreshMs)
@@ -7539,6 +7668,14 @@ class WTM {
             hwnd := Integer(h)
             if !WinExist(hwnd)
                 continue
+            ; Minimized windows report a bogus 160x28 rect; moving them would
+            ; overwrite the restore size. Skip them entirely.
+            try {
+                if (WinGetMinMax(hwnd) = -1)
+                    continue
+            } catch {
+                continue
+            }
             try WinGetPos(&x, &y, &w, &hh, hwnd)
             catch
                 continue
@@ -7549,8 +7686,36 @@ class WTM {
             if (m < 1 || m > MonitorGetCount())
                 m := 1
             GetTileArea(m, WTM_Gap, &ax, &ay, &W, &H)
-            try WinMove(Round(ax + Max(0, (W - w) / 2)), Round(ay + Max(0, (H - hh) / 2))
-                      , Round(w), Round(hh), hwnd)
+            _MoveNoResize(hwnd, ax + Max(0, (W - w) / 2), ay + Max(0, (H - hh) / 2))
+        }
+    }
+
+    static _GatherDesktop(d) {
+        global Desktops
+        if !Desktops.Has(d)
+            return
+        for h in Desktops[d] {
+            hwnd := Integer(h)
+            if !WinExist(hwnd)
+                continue
+            try {
+                if (WinGetMinMax(hwnd) = -1)
+                    continue
+            } catch {
+                continue
+            }
+            try WinGetPos(&x, &y, &w, &hh, hwnd)
+            catch
+                continue
+            cx := x + w / 2, cy := y + hh / 2
+            if this._PointOnAnyMonitor(cx, cy)
+                continue
+            m := this.ScrollOwner.Has(hwnd) ? this.ScrollOwner[hwnd]
+                                           : (WTM_ScrollDesktops.Has(d) ? WTM_ScrollDesktops[d] : 1)
+            if (m < 1 || m > MonitorGetCount())
+                m := 1
+            GetTileArea(m, WTM_Gap, &ax, &ay, &W, &H)
+            _MoveNoResize(hwnd, ax + Max(0, (W - w) / 2), ay + Max(0, (H - hh) / 2))
         }
     }
 
@@ -7868,6 +8033,33 @@ class WTM {
         }
     }
 
+    static _AnimGui(item, tx, ty) {
+        if !(IsObject(item) && IsObject(item.gui) && item.gui.Hwnd)
+            return
+        h := item.gui.Hwnd
+        if !WinExist(h)
+            return
+        try WinGetPos(&cx, &cy, &cw, &ch, h)
+        catch
+            return
+        if (cx = tx && cy = ty)
+            return
+        if (WTM_AnimMs <= 0) {
+            try DllCall("SetWindowPos", "Ptr", h, "Ptr", 0
+                , "Int", tx, "Int", ty, "Int", cw, "Int", ch, "UInt", 0x4 | 0x10)
+            return
+        }
+        this.Anim[h] := {x0: cx, y0: cy, w0: cw, h0: ch
+                       , x1: tx, y1: ty, w1: cw, h1: ch
+                       , rx: tx, ry: ty, rw: cw, rh: ch
+                       , noClamp: 1, gui: 1
+                       , t0: A_TickCount, dur: Max(30, WTM_AnimMs)}
+        if !this.AnimStarted {
+            this.AnimStarted := true
+            SetTimer(this.AnimTickFn, WTM_AnimFrameMs)
+        }
+    }
+
     static AnimTick() {
         if (this.Anim.Count = 0) {
             SetTimer(this.AnimTickFn, 0)
@@ -7880,34 +8072,48 @@ class WTM {
                 this._AnimDrop(hwnd)
                 continue
             }
-            try {
-                if (WinGetMinMax(hwnd) != 0) {
+            isGui := a.HasProp("gui")
+            if !isGui {
+                try {
+                    if (WinGetMinMax(hwnd) != 0) {
+                        this._AnimDrop(hwnd)
+                        continue
+                    }
+                } catch {
                     this._AnimDrop(hwnd)
                     continue
                 }
-            } catch {
-                this._AnimDrop(hwnd)
-                continue
             }
             p := (now - a.t0) / a.dur
             if (p >= 1) {
                 this._AnimDrop(hwnd)
-                if a.noClamp
+                if isGui {
+                    try DllCall("SetWindowPos", "Ptr", hwnd, "Ptr", 0
+                        , "Int", a.rx, "Int", a.ry, "Int", a.rw, "Int", a.rh, "UInt", 0x4 | 0x10)
+                } else if a.noClamp {
                     this._ForcePlace(hwnd, a.rx, a.ry, a.rw, a.rh)
-                else
+                } else {
                     try MoveWinTo(hwnd, a.rx, a.ry, a.rw, a.rh)
-                try this._DrawBorder(hwnd, this.FocusHwnd)
+                }
+                if !isGui
+                    try this._DrawBorder(hwnd, this.FocusHwnd)
                 continue
             }
             e := 1 - (1 - p) ** 3
             x := Round(a.x0 + (a.x1 - a.x0) * e)
             y := Round(a.y0 + (a.y1 - a.y0) * e)
-            w := Round(Max(50, a.w0 + (a.w1 - a.w0) * e))
-            h := Round(Max(50, a.h0 + (a.h1 - a.h0) * e))
+            if isGui {
+                w := Round(a.w0 + (a.w1 - a.w0) * e)
+                h := Round(a.h0 + (a.h1 - a.h0) * e)
+            } else {
+                w := Round(Max(50, a.w0 + (a.w1 - a.w0) * e))
+                h := Round(Max(50, a.h0 + (a.h1 - a.h0) * e))
+            }
             flags := 0x4 | 0x10 | (a.noClamp ? 0x400 : 0)
             try DllCall("SetWindowPos", "Ptr", hwnd, "Ptr", 0
                 , "Int", x, "Int", y, "Int", w, "Int", h, "UInt", flags)
-            try this._DrawBorder(hwnd, this.FocusHwnd)
+            if !isGui
+                try this._DrawBorder(hwnd, this.FocusHwnd)
         }
     }
 
@@ -7924,6 +8130,12 @@ class WTM {
                 continue
             if !IsTilableWindow(hwnd)
                 continue
+            try {
+                if (WinGetMinMax(hwnd) = -1)
+                    continue
+            } catch {
+                continue
+            }
             arr.Push(hwnd + 0)
         }
         for hwnd, _ in this.SoloHidden {
@@ -8133,6 +8345,7 @@ class WTM {
             if target {
                 FocusWindowSafely(target)
                 this.FocusHwnd := target
+                this._OverviewEnsureVisible(target)
                 this.RefreshBorder()
             }
             return
@@ -9395,7 +9608,13 @@ class WTM {
         g := Gui("-Caption +AlwaysOnTop +ToolWindow +Owner +E0x08000000 -DPIScale")
         g.BackColor := C1(Border_Pin_Color, "FF5555")
         try {
-            g.Show(Format("x{} y{} w{} h{} NoActivate", x, y, w, h))
+            ; Create the popup at a visible spot first. A layered GUI first shown
+            ; fully off-screen can stay uncomposited by DWM after it is moved in.
+            sx := Max(0, Min(A_ScreenWidth - w, x))
+            sy := Max(0, Min(A_ScreenHeight - h, y))
+            g.Show(Format("x{} y{} w{} h{} NoActivate", sx, sy, w, h))
+            if (sx != x || sy != y)
+                _MoveNoResize(g.Hwnd, x, y)
             if (Border_Rounded = "on") {
                 rad := Min(w, h) // 2
                 if (rad > 0) {
@@ -9407,7 +9626,13 @@ class WTM {
             }
             WinSetTransparent(0, g.Hwnd)
         }
-        this.OverviewFrames.Push({gui: g, a: 0})
+        v := this.OverviewView
+        cx := 0, cy := 0
+        if v.HasProp("tx") {
+            cx := x - v.tx + v.vx
+            cy := y - v.ty + v.vy
+        }
+        this.OverviewFrames.Push({gui: g, a: 0, cx: cx, cy: cy})
     }
 
     static _OverviewFadeStart() {
@@ -9451,13 +9676,21 @@ class WTM {
     }
 
     ; ---- Dividers / 分割线 ----
-    static _OverviewDrawDividers(pageRects, ox, oy, s, wx0, wy0) {
+    static _OverviewDrawDividers(pageRects) {
         this._OverviewClearFrames()
         if (pageRects.Length < 2)
             return
+        v := this.OverviewView
+        if !v.HasProp("s")
+            return
+        s := v.s
         arr := []
-        for r in pageRects
-            arr.Push(r)
+        for r in pageRects {
+            cr := {x: (r.x - v.wx0) * s, y: (r.y - v.wy0) * s, w: r.w * s, h: r.h * s}
+            if r.HasProp("wins")
+                cr.wins := r.wins
+            arr.Push(cr)
+        }
         Loop (arr.Length - 1) {
             i := A_Index + 1
             me := arr[i]
@@ -9480,31 +9713,83 @@ class WTM {
                     wins.Push(h)
             if (b.x >= a.x + a.w - 1) {
                 bx := (a.x + a.w + b.x) / 2
-                x  := Round(ox + (bx - wx0) * s)
+                x  := Round(v.tx + bx - v.vx)
                 span := wins.Length ? this._OverviewSpan(wins, "y") : 0
                 if span {
-                    y0 := span.lo, y1 := span.hi
+                    y0 := Round(v.ty + span.lo - v.vy)
+                    y1 := Round(v.ty + span.hi - v.vy)
                 } else {
-                    y0 := Round(oy + (Min(a.y, b.y) + WTM_Gap / 2 - wy0) * s)
-                    y1 := Round(oy + (Max(a.y + a.h, b.y + b.h) - WTM_Gap / 2 - wy0) * s)
+                    g := WTM_Gap / 2 * s
+                    y0 := Round(v.ty + Min(a.y, b.y) + g - v.vy)
+                    y1 := Round(v.ty + Max(a.y + a.h, b.y + b.h) - g - v.vy)
                 }
                 this._OverviewAddLine(x - lineW // 2, y0, lineW, Max(1, y1 - y0))
                 continue
             }
             if (b.y >= a.y + a.h - 1) {
                 by := (a.y + a.h + b.y) / 2
-                y  := Round(oy + (by - wy0) * s)
+                y  := Round(v.ty + by - v.vy)
                 span := wins.Length ? this._OverviewSpan(wins, "x") : 0
                 if span {
-                    x0 := span.lo, x1 := span.hi
+                    x0 := Round(v.tx + span.lo - v.vx)
+                    x1 := Round(v.tx + span.hi - v.vx)
                 } else {
-                    x0 := Round(ox + (Min(a.x, b.x) + WTM_Gap / 2 - wx0) * s)
-                    x1 := Round(ox + (Max(a.x + a.w, b.x + b.w) - WTM_Gap / 2 - wx0) * s)
+                    g := WTM_Gap / 2 * s
+                    x0 := Round(v.tx + Min(a.x, b.x) + g - v.vx)
+                    x1 := Round(v.tx + Max(a.x + a.w, b.x + b.w) - g - v.vx)
                 }
                 this._OverviewAddLine(x0, y - lineW // 2, Max(1, x1 - x0), lineW)
             }
         }
         this._OverviewFadeStart()
+    }
+
+    ; ---- Overview viewport / 总览视口 ----
+    static _OverviewScreenRect(r) {
+        v := this.OverviewView
+        return {x: v.tx + r.x - v.vx, y: v.ty + r.y - v.vy, w: r.w, h: r.h}
+    }
+
+    static _OverviewApplyViewport() {
+        v := this.OverviewView
+        for hwnd, r in this.OverviewRects {
+            if !WinExist(hwnd)
+                continue
+            sr := this._OverviewScreenRect(r)
+            this._AnimMove(hwnd, sr.x, sr.y, sr.w, sr.h, true)
+        }
+        for item in this.OverviewFrames {
+            if !(IsObject(item) && IsObject(item.gui))
+                continue
+            this._AnimGui(item, v.tx + item.cx - v.vx, v.ty + item.cy - v.vy)
+        }
+        this.RefreshBorder()
+    }
+
+    static _OverviewEnsureVisible(hwnd) {
+        if (!this.Overview || !this.OverviewRects.Has(hwnd))
+            return
+        v := this.OverviewView
+        if !v.HasProp("cw")
+            return
+        r := this.OverviewRects[hwnd]
+        margin := 20
+        nvx := v.vx, nvy := v.vy
+        if (r.x < nvx + margin)
+            nvx := r.x - margin
+        else if (r.x + r.w > nvx + v.tw - margin)
+            nvx := r.x + r.w - v.tw + margin
+        if (r.y < nvy + margin)
+            nvy := r.y - margin
+        else if (r.y + r.h > nvy + v.th - margin)
+            nvy := r.y + r.h - v.th + margin
+        nvx := Max(0, Min(Max(0, v.cw - v.tw), nvx))
+        nvy := Max(0, Min(Max(0, v.ch - v.th), nvy))
+        if (nvx = v.vx && nvy = v.vy)
+            return
+        v.vx := nvx, v.vy := nvy
+        this.OverviewView := v
+        this._OverviewApplyViewport()
     }
 
     static _OverviewEnter() {
@@ -9551,40 +9836,77 @@ class WTM {
         pad := Round(Min(tw, th) * 0.06)
         tx += pad, ty += pad, tw -= pad * 2, th -= pad * 2
         ww := Max(1, wx1 - wx0), wh := Max(1, wy1 - wy0)
-        s := Min(tw / ww, th / wh, 1.0)
-        ox := tx + (tw - ww * s) / 2
-        oy := ty + (th - wh * s) / 2
+        sFit := Min(tw / ww, th / wh, 1.0)
+        s := Max(sFit, Overview_MinScale)
+        if (s > 1.0)
+            s := 1.0
+        cw := ww * s, ch := wh * s
+        vx := 0, vy := 0
+        bx := tx + (tw - cw) / 2
+        by := ty + (th - ch) / 2
+        if (cw > tw) {
+            bx := tx
+            if (this.FocusHwnd && rects.Has(this.FocusHwnd)) {
+                fr := rects[this.FocusHwnd]
+                vx := Round(((fr.x + fr.w / 2) - wx0) * s - tw / 2)
+            }
+            vx := Max(0, Min(cw - tw, vx))
+        }
+        if (ch > th) {
+            by := ty
+            if (this.FocusHwnd && rects.Has(this.FocusHwnd)) {
+                fr := rects[this.FocusHwnd]
+                vy := Round(((fr.y + fr.h / 2) - wy0) * s - th / 2)
+            }
+            vy := Max(0, Min(ch - th, vy))
+        }
+        this.OverviewView := {tx: bx, ty: by, vx: vx, vy: vy
+                            , cw: cw, ch: ch, tw: tw, th: th
+                            , wx0: wx0, wy0: wy0, s: s}
+        this.OverviewPages := pageRects
         this.Overview := true
         this.OverviewRects := Map()
         this._Placed := model.Clone()
         for hwnd, r in rects {
-            nx := Round(ox + (r.x - wx0) * s)
-            ny := Round(oy + (r.y - wy0) * s)
-            nw := Max(120, Round(r.w * s))
-            nh := Max(80,  Round(r.h * s))
+            nx := Round((r.x - wx0) * s)
+            ny := Round((r.y - wy0) * s)
+            nw := Max(1, Round(r.w * s))
+            nh := Max(1, Round(r.h * s))
             this.OverviewRects[hwnd] := {x: nx, y: ny, w: nw, h: nh}
+            sr := this._OverviewScreenRect(this.OverviewRects[hwnd])
             offNow := false
             try {
-                WinGetPos(&cx, &cy, &cw, &ch, hwnd)
-                offNow := !this._PointOnAnyMonitor(cx + cw / 2, cy + ch / 2)
+                WinGetPos(&cx, &cy, &cw2, &ch2, hwnd)
+                offNow := !this._PointOnAnyMonitor(cx + cw2 / 2, cy + ch2 / 2)
             }
             if offNow
-                this._ForcePlace(hwnd, nx, ny, nw, nh)
+                this._ForcePlace(hwnd, sr.x, sr.y, sr.w, sr.h)
             else
-                this._AnimMove(hwnd, nx, ny, nw, nh, true)
+                this._AnimMove(hwnd, sr.x, sr.y, sr.w, sr.h, true)
         }
-        this._OverviewDrawDividers(pageRects, ox, oy, s, wx0, wy0)
+        this._OverviewDrawDividers(pageRects)
         this.RefreshBorder()
         ShowOSD("WTM Overview: ON")
     }
 
     static _OverviewExit() {
+        global Overview_SmallKeep
+        keep := Map()
+        for hwnd, _ in this.OverviewRects
+            if WinExist(hwnd)
+                keep[hwnd] := true
+        Overview_SmallKeep := keep
         this.Overview := false
         this.OverviewRects := Map()
+        this.OverviewView  := Map()
+        this.OverviewPages := []
         this._OverviewClearFrames()
         if (this.ScrollOn && this.FocusHwnd && this.ScrollPageOf.Has(this.FocusHwnd))
             this.ScrollView := this.ScrollPageOf[this.FocusHwnd]
-        this.AutoTile()
+        try
+            this.AutoTile()
+        finally
+            Overview_SmallKeep := Map()
         this.RefreshBorder()
         ShowOSD("WTM Overview: OFF")
     }
@@ -9635,11 +9957,14 @@ class WTM {
         catch
             return 0
         ccx := cx + cw / 2, ccy := cy + ch / 2
+        v := this.OverviewView
         best := 0, bestD := 1.0e18
         for h, r in this.OverviewRects {
             if (h = hwnd)
                 continue
-            d := (r.x + r.w / 2 - ccx) ** 2 + (r.y + r.h / 2 - ccy) ** 2
+            sx := v.HasProp("tx") ? v.tx + r.x + r.w / 2 - v.vx : r.x + r.w / 2
+            sy := v.HasProp("ty") ? v.ty + r.y + r.h / 2 - v.vy : r.y + r.h / 2
+            d := (sx - ccx) ** 2 + (sy - ccy) ** 2
             if (d < bestD)
                 bestD := d, best := h
         }
@@ -9685,8 +10010,11 @@ class WTM {
         if (ra && rb) {
             this.OverviewRects[a] := rb
             this.OverviewRects[b] := ra
-            this._AnimMove(a, rb.x, rb.y, rb.w, rb.h, true)
-            this._AnimMove(b, ra.x, ra.y, ra.w, ra.h, true)
+            sa := this._OverviewScreenRect(rb)
+            sb := this._OverviewScreenRect(ra)
+            this._AnimMove(a, sa.x, sa.y, sa.w, sa.h, true)
+            this._AnimMove(b, sb.x, sb.y, sb.w, sb.h, true)
+            this._OverviewEnsureVisible(a)
         }
         this.RefreshBorder()
     }
@@ -10393,7 +10721,7 @@ ShowPowerMenu(*) {
 
 ; ---- Selected item in Explorer / 资源管理 ----
 Explorer_GetSelection() {
-    hwnd := WinExist("A")
+    hwnd := _GetTargetHwnd()
     if !hwnd
         return ""
     winClass := WinGetClass(hwnd)
@@ -10420,7 +10748,7 @@ Explorer_GetSelection() {
 
 ; ---- Current folder of Explorer / 资源管理 ----
 Explorer_GetPath() {
-    hwnd := WinExist("A")
+    hwnd := _GetTargetHwnd()
     if !hwnd
         return ""
     winClass := WinGetClass(hwnd)
@@ -11037,12 +11365,15 @@ ExportThemeToCustom(*) {
 SetupTrayIcon() {
     global Themes, ActiveTheme
     A_TrayMenu.Delete()
+    A_TrayMenu.Add("AHK WM v" . WM_Version, (*) => 0)
+    A_TrayMenu.Disable("AHK WM v" . WM_Version)
+    A_TrayMenu.Add()
     A_TrayMenu.Add("Gather All Windows", GatherAllToCurrent)
     A_TrayMenu.Add("Toggle Status Bar",  ToggleBar)
     A_TrayMenu.Add("Toggle WTM Mode",    (*) => WTM.Toggle())
     A_TrayMenu.Add("Copy Layout Rules",  CopyLayoutRules)
-    A_TrayMenu.Add("Exclude Current Window", ExcludeCurrentWindow)
-    A_TrayMenu.Add("Diagnose Window",    DiagnoseWindow)
+    A_TrayMenu.Add("Exclude Current Window", (*) => PickWindowThen(ExcludeCurrentWindow))
+    A_TrayMenu.Add("Diagnose Window",    (*) => PickWindowThen(DiagnoseWindow))
     A_TrayMenu.Add()
 
     themeMenu := Menu()

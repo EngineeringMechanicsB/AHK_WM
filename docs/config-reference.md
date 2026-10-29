@@ -200,6 +200,7 @@ Border **colors** live in `[Theme]`: `BorderDrag` (focused), `BorderUnfocus`
 | `OSDPositionPct` | % | `80` | 0–100 | OSD vertical position (percent of screen height). |
 | `OSDOpacity` | % | `78` | 0–100 | OSD opacity. |
 | `OSDFontSize` | int | `20` | ≥6 | OSD font size. |
+| `OverviewMinScale` | float | `0.35` | 0.05–1.0 | Minimum Overview scale. Dense layouts draw at this scale; the canvas may exceed the screen and is explored by panning the viewport. |
 | `HelpRounded`, `HelpRadius`, `PowerRounded`, `PowerRadius`, `OSDRounded`, `OSDRadius` | — | *(global)* | — | Optional per-GUI overrides of the two global rounding keys. |
 
 ### OSD per-call customization (WM_COPYDATA)

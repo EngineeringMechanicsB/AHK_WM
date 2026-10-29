@@ -16,7 +16,11 @@
 | `ahk-error-watcher.ahk` | 监控 AHK 报错弹窗：截图 → OCR → 记录原文 → 自动关闭 | `ocr.ps1`、PowerShell 5.1 |
 | `ocr.ps1` | Windows.Media.Ocr 封装（截图或读 PNG → 文本） | PowerShell 5.1、系统 OCR 语言包 |
 | `gif.bat` | FFmpeg 两遍调色板 GIF 转换示例 | ffmpeg |
-| `AI-NOTES.md` | 给 AI 的开发注意事项（编码、ByRef、`//`、`/validate`、强制缩放、错误弹窗等） | — |
+| `AI-HANDOFF.md` | **接手先读**：脚本现状、代码地图、本轮改动、踩坑、工具、待办、多屏带改造指引 | — |
+| `AI-NOTES.md` | 更早一轮的开发注意事项（编码、ByRef、`//`、`/validate`、强制缩放、错误弹窗等） | — |
+| `01-算法说明.md` | 平铺 / 滚动 / Overview 的当前算法与多屏带目标算法 | — |
+| `02-当前问题.md` | 本轮问题清单：现象、根因、修法 | — |
+| `03-待拍板.md` | 未定决策，带推荐项 | — |
 | `user-scripts/` | 个人启动脚本与依赖（StartUP / Launcher / GuiPing / PrintScreen / OSD 通知） | 见子目录 README |
 
 常用命令：

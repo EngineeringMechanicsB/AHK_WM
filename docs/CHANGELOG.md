@@ -1,5 +1,18 @@
 # Changelog
 
+### Unreleased (2026-10-29)
+
+- **All non-WTM actions target the window under the mouse** — new `_GetTargetHwnd()`. Close, minimize, maximize, always-on-top, transparency, snapping, pin, move-to-desktop, move-and-follow, exclude, diagnose, terminal and editor now act on the cursor's window instead of the focused one. WTM keeps its own focus semantics.
+- **Overview overhaul** — new `[GUI] OverviewMinScale` (default `0.35`): dense layouts are drawn at the minimum scale, the canvas may exceed the screen, and `Alt+HJKL` pans the viewport minimally to keep the newly selected window visible. Window minimum size dropped to 1px (the old 120×80 floor made small windows vanish after leaving Overview), and the global 100px window filter is now a 2px guard. An exit whitelist keeps windows that were scaled tiny from being skipped when tiling is restored.
+- **Overview dividers fixed** — dividers now store canvas coordinates and animate with the viewport instead of being rebuilt on every pan. Also fixes layered GUIs whose first `Show` happens fully off-screen: DWM never composites them, so moving them into view later left them invisible. Fixed by showing on-screen first, then moving. Verified with 5 pages / 4 dividers, all page seams visible after panning.
+- **Normal hotkeys fire once per press** — `RegHotkey` wraps handlers in `KeyWait(main key, "L")` by default; WTM direction/move/resize, cross-monitor move/focus, `Alt+wheel` and drag handlers stay repeatable. Fixes `KeyWait` rejecting modifier-prefixed names (`!w`, `!{Enter}`) with `Parameter #1 invalid`.
+- **Tray menu picks a window** — `Exclude Current Window` / `Diagnose Window` now ask you to click the target window (Esc cancels) instead of using whatever the menu stole focus from. A disabled `AHK WM vX.Y.Z` item was added to the top of the tray menu.
+- **Entering WTM really focuses** — `Activate()` focuses the focused window right after tiling and again 120ms later; `FocusWindowSafely` gained a `SetForegroundWindow` + `AttachThreadInput` fallback so borders match the real foreground window.
+- **Alt+D no longer pulls in other desktops' windows** — `GetVisibleWindow` and `GetVisibleWindowsOnMonitor` skip minimized windows.
+- **Restoring a minimized window re-tiles** — `_MemberSig` skips minimized windows, so the signature changes on restore and one `AutoTile` runs.
+- **Switching back to a scrollable desktop gathers off-screen windows** — `SwitchDesktop` calls `_GatherDesktop` for scrollable desktops, moving windows parked outside every monitor back onto that desktop's scroll monitor. Gathering skips minimized windows and uses `SetWindowPos + SWP_NOSIZE`, so it never rewrites a window's size (a minimized window's bogus `160×28` rect would otherwise become the restore size).
+- **Docs** — added `docs/tools/AI-HANDOFF.md`, `01-算法说明.md`, `02-当前问题.md`, `03-待拍板.md`; config references document `OverviewMinScale`.
+
 ### v2.14.0 (2026-10-20)
 
 - **Scrollable tiling is limited to one monitor** — `[Tiling] ScrollableDesktops` now accepts `desktop` or `desktop:monitor` (for example `1:2;3` = desktop 1 on monitor 2, desktop 3 on monitor 1). Only the configured monitor becomes an infinite horizontal strip; every other monitor keeps normal tiling. A missing configured monitor falls back to monitor 1. Off-screen pages are parked outside the union of all monitor rectangles, so they can never appear on a neighbouring display.

@@ -147,6 +147,7 @@
 | 🖼️ **Window Borders** | Fully customizable colored window borders with gradient support. |
 | ⌨️ **WTM Mode** | Entering it arranges every monitor by your rules; `Alt + H/J/K/L` moves focus, `Alt + Shift + H/J/K/L` moves the window, `Ctrl + Shift + H/J/K/L` resizes it, `Ctrl + Alt + Shift + H/L/K/J` sends the window to the adjacent monitor, and `Ctrl + Alt + H/L/K/J` focuses that monitor. A fullscreen or maximized window suspends tiling on that monitor; `[Tiling] AnimationDuration` and `AnimationFrameMs` control animated moves. Add `[Tiling] ScrollableDesktops=1:2` to make desktop 1's monitor 2 an infinite horizontal strip; other monitors keep normal tiling. `Alt+O` opens the overview (scroll monitor only; `Enter`/`Space` confirms). |
 | 📐 **Window Snapping** | Windows snap when dragged to screen edges or other windows. Configurable snap and release distances. |
+| 🖱️ **Mouse-targeted actions** | Outside WTM, every window action (close, minimize, maximize, always-on-top, transparency, snap, pin, move to desktop, exclude, diagnose, terminal/editor lookup) uses the window under the cursor — the focused window is irrelevant. |
 | 🎨 **Themes** | 20+ built-in themes. Export the current theme as a custom palette in one click. |
 | ⏱️ **Work Timer** | Configurable work periods, shown as a progress bar on the status bar. |
 | 📋 **Clipboard History** | Records every copied text to a file, with timestamps. |

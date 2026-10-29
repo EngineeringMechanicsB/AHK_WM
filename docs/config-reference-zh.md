@@ -191,6 +191,7 @@ Layout=[N,]元素,跨度[,颜色1,颜色2,…][,bg|tx][,on|off][,fs=N][,wrap=N];
 | `OSDPositionPct` | % | `80` | 0–100 | OSD 垂直位置（屏高百分比）。 |
 | `OSDOpacity` | % | `78` | 0–100 | OSD 不透明度。 |
 | `OSDFontSize` | 整数 | `20` | ≥6 | OSD 字号。 |
+| `OverviewMinScale` | 小数 | `0.35` | 0.05–1.0 | Overview 最小缩放。窗口多时按此缩放绘制，画布可大于屏幕，靠视口平移查看。 |
 | `HelpRounded`、`HelpRadius`、`PowerRounded`、`PowerRadius`、`OSDRounded`、`OSDRadius` | — | *(全局值)* | — | 可选的按 GUI 覆盖全局圆角设置。 |
 
 ### OSD 逐次调用自定义（WM_COPYDATA）
