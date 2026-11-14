@@ -1,12 +1,12 @@
 ﻿<div align="center">
 
-# 🔲 AHK WM <sub>v2.15.2</sub>
+# 🔲 AHK WM <sub>v2.15.3</sub>
 
 <p>
   <img src="https://img.shields.io/badge/AutoHotkey-v2.0-cba6f7?style=flat-square" alt="AutoHotkey v2" />
   <img src="https://img.shields.io/badge/platform-Windows_7_~_11-b4befe?style=flat-square" alt="Platform" />
   <img src="https://img.shields.io/badge/license-MIT-f5c2e7?style=flat-square" alt="License" />
-  <img src="https://img.shields.io/badge/version-v2.15.2-cba6f7?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/version-v2.15.3-cba6f7?style=flat-square" alt="Version" />
 </p>
 
 <p>
@@ -147,7 +147,7 @@
 | 🖼️ **Window Borders** | Fully customizable colored window borders with gradient support. |
 | ⌨️ **WTM Mode** | Entering it arranges every monitor by your rules; `Alt + H/J/K/L` moves focus, `Alt + Shift + H/J/K/L` moves the window, `Ctrl + Shift + H/J/K/L` resizes it, `Ctrl + Alt + Shift + H/L/K/J` sends the window to the adjacent monitor, and `Ctrl + Alt + H/L/K/J` focuses that monitor. A fullscreen or maximized window suspends tiling on that monitor; `[Tiling] AnimationDuration` and `AnimationFrameMs` control animated moves. Add `[Tiling] ScrollableDesktops=1` to turn every monitor on desktop 1 into one continuous scroll chain; `ScrollMonitors=1,2` fixes the order, `ScrollAxis=vertical` handles stacked screens. Each card of windows is re-tiled by the rules of the monitor it currently occupies. `Alt+O` opens the overview (all cards; `Enter`/`Space` confirms). |
 | 📐 **Window Snapping** | Windows snap when dragged to screen edges or other windows. Configurable snap and release distances. |
-| 🖱️ **Mouse-targeted actions** | Outside WTM, every window action (close, minimize, maximize, always-on-top, transparency, snap, pin, move to desktop, exclude, diagnose, terminal/editor lookup) uses the window under the cursor — the focused window is irrelevant. |
+| 🖱️ **Mouse-targeted actions** | Outside WTM, every window action (close, minimize, maximize, always-on-top, transparency, snap, pin, move to desktop, exclude, diagnose, terminal/editor lookup) uses the window under the cursor — the focused window is irrelevant. Inside WTM every one of them uses the focused tiled window instead. |
 | 🎨 **Themes** | 20+ built-in themes. Export the current theme as a custom palette in one click. |
 | ⏱️ **Work Timer** | Configurable work periods, shown as a progress bar on the status bar. |
 | 📋 **Clipboard History** | Records every copied text to a file, with timestamps. |

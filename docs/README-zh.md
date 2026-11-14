@@ -1,12 +1,12 @@
 ﻿<div align="center">
 
-# 🔲 AHK WM <sub>v2.15.2</sub>
+# 🔲 AHK WM <sub>v2.15.3</sub>
 
 <p>
   <img src="https://img.shields.io/badge/AutoHotkey-v2.0-cba6f7?style=flat-square" alt="AutoHotkey v2" />
   <img src="https://img.shields.io/badge/平台-Windows_7_~_11-b4befe?style=flat-square" alt="平台" />
   <img src="https://img.shields.io/badge/许可-MIT-f5c2e7?style=flat-square" alt="许可" />
-  <img src="https://img.shields.io/badge/版本-v2.15.2-cba6f7?style=flat-square" alt="版本" />
+  <img src="https://img.shields.io/badge/版本-v2.15.3-cba6f7?style=flat-square" alt="版本" />
 </p>
 
 <p>
@@ -147,7 +147,7 @@
 | 🖼️ **窗口边框** | 完全可自定义彩色窗口边框，支持渐变。 |
 | ⌨️ **WTM 模式** | 进入即按规则铺满每块屏；`Alt + H/J/K/L` 移动焦点，`Alt + Shift + H/J/K/L` 移动窗口，`Ctrl + Shift + H/J/K/L` 缩放窗口，`Ctrl + Alt + Shift + H/L/K/J` 把窗口发到相邻屏，`Ctrl + Alt + H/L/K/J` 聚焦相邻屏。全屏/最大化窗口暂停该屏平铺；`[Tiling] AnimationDuration` 与 `AnimationFrameMs` 控制移动动画。`[Tiling] ScrollableDesktops=1` 把桌面 1 的所有显示器接成一条连续纸带；`ScrollMonitors=1,2` 指定顺序，`ScrollAxis=vertical` 用于竖排屏幕。每张卡片按它当前所在显示器的规则重新平铺。`Alt+O` 打开 Overview（全部卡片；`Enter`/`Space` 确认）。 |
 | 📐 **窗口吸附** | 拖拽窗口到屏幕边缘或其他窗口时自动吸附，可配置吸附距离和脱离距离。 |
-| 🖱️ **光标下窗口操作** | 非 WTM 状态下，关闭、最小化、最大化、置顶、透明度、吸附、固定、移桌面、排除、诊断、终端/编辑器全部作用于**鼠标下**的窗口，与焦点窗口无关。 |
+| 🖱️ **光标下窗口操作** | 非 WTM 状态下，关闭、最小化、最大化、置顶、透明度、吸附、固定、移桌面、排除、诊断、终端/编辑器全部作用于**鼠标下**的窗口，与焦点窗口无关；WTM 状态下这些操作全部改为作用于**焦点窗口**。 |
 | 🎨 **主题** | 20+ 内置主题，一键导出当前主题为自定义配色。 |
 | ⏱️ **工作计时** | 可配置的工作时段，状态栏显示进度条。 |
 | 📋 **剪贴板历史** | 自动记录所有复制文本到文件，带时间戳。 |

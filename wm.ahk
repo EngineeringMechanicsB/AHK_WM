@@ -49,7 +49,7 @@ Persistent
 ; 1. Environment & Global Directives / 环境与全局指令
 ; ==============================================================================
 
-global WM_Version := "2.15.2"
+global WM_Version := "2.15.3"
 global FontName
 
 SetWorkingDir(A_ScriptDir)
@@ -3748,10 +3748,15 @@ _GetHwndUnderMouse() {
     return 0
 }
 
-; ---- Single target for all non-WTM actions / 非 WTM 统一目标 ----
-; Every non-WTM window action uses the window under the mouse, never the
-; focused window. WTM mode keeps its own FocusHwnd semantics.
+; ---- Single target for window actions / 窗口操作统一目标 ----
+; WTM owns focus while it is active, so every window action there must use
+; WTM.FocusHwnd. Outside WTM the window under the mouse is the target.
 _GetTargetHwnd() {
+    if WTM.Active {
+        h := WTM.FocusHwnd
+        if (h && WinExist(h) && DllCall("User32\IsWindowVisible", "Ptr", h))
+            return h
+    }
     return _GetHwndUnderMouse()
 }
 
@@ -7573,10 +7578,8 @@ class WTM {
             for h in group {
                 if !WinExist(h)
                     continue
-                minim := false
-                try minim := (WinGetMinMax(h) = -1)
                 if (!this._OrderIndex(h) && !this.FullHidden.Has(h)
-                        && !this.SoloHidden.Has(h) && !minim)
+                        && !this.SoloHidden.Has(h))
                     continue
                 if seen.Has(h)
                     continue
@@ -9130,8 +9133,12 @@ class WTM {
     static TogglePinExclude() {
         if this.Overview
             return
-        hwnd := 0
-        try hwnd := WinGetID("A")
+        hwnd := this.FocusHwnd
+        if (!hwnd || !WinExist(hwnd))
+            hwnd := 0
+        if !hwnd {
+            try hwnd := WinGetID("A")
+        }
         if (hwnd && IsBarWindow(hwnd))
             hwnd := 0
         if !hwnd

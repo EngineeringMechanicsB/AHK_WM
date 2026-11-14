@@ -1,5 +1,10 @@
 # Changelog
 
+### v2.15.3 (2026-11-14)
+
+- **All window actions use the focused window in WTM** — `_GetTargetHwnd()` used to return the window under the mouse unconditionally, so `Alt+Shift+N` inside WTM moved the cursor's window. While WTM is active it now returns `WTM.FocusHwnd` (falling back when invisible): close, minimize, always-on-top, transparency, snap, move-to-desktop, move-and-follow, exclude, diagnose, terminal/editor all follow focus. Outside WTM the cursor target is unchanged.
+- **`WTM.TogglePinExclude` prefers focus** — it used to read the active window first and fall back to the mouse; it now starts from `FocusHwnd`.
+
 ### v2.15.2 (2026-11-14)
 
 - **Align windows by their visible frame** — new `[Tiling] FrameFit` (default `on`). `SetWindowPos` takes the outer rect; Explorer-style thick invisible resize borders and Steam-style custom frames therefore produced different visual sizes and gaps even at the same outer rect. Placement now converts the target through DWM `DWMWA_EXTENDED_FRAME_BOUNDS` so **visible edges** match the slot. Turn it off to place by the outer rect again.
