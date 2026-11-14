@@ -1,5 +1,12 @@
 # Changelog
 
+### v2.15.7 (2026-11-14)
+
+- **Reverted visible empty-card collapse** — a card that loses its last window stays as an empty slot (an empty monitor) instead of pulling the following cards forward. Fixes “closing a window on the main monitor moves the secondary window onto it” and “moving the main window to the secondary monitor ends with both on the main monitor”. Only off-screen empty cards are pruned.
+- **Filter ghost windows** — when an app hides its own window without destroying it (Steam closing to tray), `RebuildOrder` / `_ScrollSync` / `_MemberSig` ignore windows that are invisible and were not hidden by scrolling, so no blank tile is reserved. If the window is shown again it joins as a new window.
+- **Focus fallback after close** — closing the WTM focus window waits 120 ms, then adopts the active window or the first visible `TileOrder` entry; focus no longer stays at 0.
+- Removed the `ScrollCollapse` marker and `_ScrollPinCardToSlot`; destination slots no longer need collapse compensation.
+
 ### v2.15.6 (2026-11-14)
 
 - **Destination slot after card collapse** — when moving, dropping or sending a window, the source card can collapse after losing its last window, shifting the destination card's index and landing the window on the wrong monitor. The destination card is now pinned back to its original slot after the collapse.

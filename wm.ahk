@@ -49,7 +49,7 @@ Persistent
 ; 1. Environment & Global Directives / 环境与全局指令
 ; ==============================================================================
 
-global WM_Version := "2.15.6"
+global WM_Version := "2.15.7"
 global FontName
 
 SetWorkingDir(A_ScriptDir)
@@ -6827,7 +6827,6 @@ class WTM {
     static ScrollOwner   := Map()
     static ScrollPageOf  := Map()
     static ScrollHidden  := Map()
-    static ScrollCollapse := Map()
     static ScrollDesktop := Map()
     static _ChainSig     := ""
     static Overview      := false
@@ -7072,6 +7071,11 @@ class WTM {
                 if this.Excluded.Has(hwnd)
                     continue
                 if (this.FullHidden.Has(hwnd) || this.SoloHidden.Has(hwnd))
+                    continue
+                ; An app that hides its own window without destroying it
+                ; (Steam closing to tray) must not leave a blank tile.
+                vis := DllCall("User32\IsWindowVisible", "Ptr", hwnd)
+                if (!vis && !this.ScrollHidden.Has(hwnd))
                     continue
                 alive[hwnd] := true
             }
@@ -7379,7 +7383,6 @@ class WTM {
 
     static _ScrollClear() {
         this.ScrollPages  := []
-        this.ScrollCollapse := Map()
         this.ScrollView   := 1
         this.ScrollOwner  := Map()
         this.ScrollPageOf := Map()
@@ -7452,25 +7455,17 @@ class WTM {
     }
 
     ; Only off-screen empty cards are pruned. A visible empty card is the
-    ; empty monitor itself and must stay in the chain.
+    ; empty monitor itself and must stay in the chain, otherwise the next
+    ; card's windows jump onto that monitor.
     static _ScrollPruneEmptyPages() {
         p := 1
         while (p <= this.ScrollPages.Length) {
-            group := this._CardGroup(p)
-            ptr := ObjPtr(group)
-            collapsed := this.ScrollCollapse.Has(ptr)
-            if (this.ScrollPages.Length > 1 && group.Length = 0) {
+            if (this.ScrollPages.Length > 1 && this._CardGroup(p).Length = 0) {
                 s := this._ScrollSlotOfCard(p)
-                ; Off-screen empty cards are padding; a visible card that lost
-                ; its last window must collapse so following cards close ranks.
-                if (collapsed || s < 1 || s > this.ScrollChain.Length) {
-                    if this.ScrollCollapse.Has(ptr)
-                        this.ScrollCollapse.Delete(ptr)
+                if (s < 1 || s > this.ScrollChain.Length) {
                     this._ScrollRemoveCard(p)
                     continue
                 }
-            } else if (group.Length > 0 && this.ScrollCollapse.Has(ptr)) {
-                this.ScrollCollapse.Delete(ptr)
             }
             p += 1
         }
@@ -7600,10 +7595,15 @@ class WTM {
                 this.ScrollPages[k] := []
                 continue
             }
-            had := group.Length
             seen := Map(), keep := []
             for h in group {
                 if !WinExist(h)
+                    continue
+                ; Invisible windows that we did not hide ourselves are app
+                ; ghosts (Steam to tray); drop them from the card.
+                vis := DllCall("User32\IsWindowVisible", "Ptr", h)
+                if (!vis && !this.ScrollHidden.Has(h)
+                        && !this.FullHidden.Has(h) && !this.SoloHidden.Has(h))
                     continue
                 if (!this._OrderIndex(h) && !this.FullHidden.Has(h)
                         && !this.SoloHidden.Has(h))
@@ -7614,8 +7614,6 @@ class WTM {
                 keep.Push(h)
             }
             this.ScrollPages[k] := keep
-            if (had > 0 && keep.Length = 0 && this.ScrollPages.Length > 1)
-                this.ScrollCollapse[ObjPtr(keep)] := true
         }
         seen := Map()
         for k, group in this.ScrollPages
@@ -8159,21 +8157,7 @@ class WTM {
             this.ScrollPageOf.Delete(hwnd)
         if !found
             return 0
-        ; A card that lost its last window is collapsed later, so the cards
-        ; after it close ranks. Cards that were empty from the start stay.
-        if (group.Length = 0 && this.ScrollPages.Length > 1)
-            this.ScrollCollapse[ObjPtr(group)] := true
         return {card: k, slot: slot}
-    }
-
-    ; Collapsing the source card can shift the destination card's index.
-    ; Pin the moved window back to the slot it was dropped into.
-    static _ScrollPinCardToSlot(hwnd, slot) {
-        if (!this.ScrollPageOf.Has(hwnd) || slot < 1)
-            return
-        k := this.ScrollPageOf[hwnd]
-        this.ScrollView := Max(1, k - slot + 1)
-        this._ScrollReindex()
     }
 
     static _ScrollAttach(hwnd, k) {
@@ -8215,7 +8199,6 @@ class WTM {
             this._ScrollInsertByX(this.ScrollChain[n], g, hwnd, dir)
             this._ScrollPruneEmptyPages()
             this._ScrollReindex()
-            this._ScrollPinCardToSlot(hwnd, (slot < n) ? slot + 1 : n)
             this._ScrollFlatten()
             this._ScrollApplyLayout(true, "R")
             this.FocusHwnd := hwnd
@@ -8236,7 +8219,6 @@ class WTM {
             this._ScrollInsertByX(this.ScrollChain[1], g, hwnd, dir)
             this._ScrollPruneEmptyPages()
             this._ScrollReindex()
-            this._ScrollPinCardToSlot(hwnd, (slot > 1) ? slot - 1 : 1)
             this._ScrollFlatten()
             this._ScrollApplyLayout(true, "L")
             this.FocusHwnd := hwnd
@@ -8285,7 +8267,6 @@ class WTM {
         g.InsertAt(Min(idx, g.Length + 1), hwnd)
         this._ScrollPruneEmptyPages()
         this._ScrollReindex()
-        this._ScrollPinCardToSlot(hwnd, slot)
         this._ScrollFlatten()
         this._ScrollApplyLayout(true)
         this.RefreshBorder()
@@ -8537,9 +8518,14 @@ class WTM {
         for k, group in this.ScrollPages {
             if !(group is Array)
                 continue
-            for hwnd in group
-                if WinExist(hwnd)
-                    seen[hwnd] := true
+            for hwnd in group {
+                if !WinExist(hwnd)
+                    continue
+                vis := DllCall("User32\IsWindowVisible", "Ptr", hwnd)
+                if (!vis && !this.ScrollHidden.Has(hwnd))
+                    continue
+                seen[hwnd] := true
+            }
         }
         arr := []
         for hwnd, _ in seen
@@ -8987,7 +8973,6 @@ class WTM {
             this._ScrollInsertByX(target, g, hwnd, sdir)
             this._ScrollPruneEmptyPages()
             this._ScrollReindex()
-            this._ScrollPinCardToSlot(hwnd, slot)
             this._ScrollFlatten()
             this._ScrollApplyLayout(true, sdir)
             this.FocusHwnd := hwnd
@@ -9266,9 +9251,27 @@ class WTM {
             this.RemoveBorder(hwnd)
             PinBorder.Remove(hwnd)
         }
-        if (this.FocusHwnd = hwnd)
+        wasFocus := (this.FocusHwnd = hwnd)
+        if wasFocus
             this.FocusHwnd := 0
         this.OnWindowChanged()
+        if wasFocus
+            SetTimer(() => this._FocusAfterClose(), -120)
+    }
+
+    ; Pick another visible window after the focused one was closed.
+    static _FocusAfterClose() {
+        if (!this.Active || this.Overview)
+            return
+        h := 0
+        try h := WinGetID("A")
+        if (!h || !WinExist(h) || !this._OrderIndex(h) || !DllCall("User32\IsWindowVisible", "Ptr", h))
+            h := this.TileOrder.Length ? this.TileOrder[1] : 0
+        if (!h || !WinExist(h))
+            return
+        FocusWindowSafely(h)
+        this.FocusHwnd := h
+        this.RefreshBorder()
     }
 
     static TogglePinExclude() {
