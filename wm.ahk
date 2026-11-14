@@ -49,7 +49,7 @@ Persistent
 ; 1. Environment & Global Directives / 环境与全局指令
 ; ==============================================================================
 
-global WM_Version := "2.15.0"
+global WM_Version := "2.15.1"
 global FontName
 
 SetWorkingDir(A_ScriptDir)
@@ -7131,7 +7131,7 @@ class WTM {
             return
         }
         if this.ScrollOn
-            this._ScrollLayoutAll()
+            this._ScrollLayoutAll(true)
         groups := Map()
         for hwnd in this.TileOrder {
             if (this.ScrollOn && this.ScrollPageOf.Has(hwnd))
@@ -8203,7 +8203,7 @@ class WTM {
         g.InsertAt(Min(idx, g.Length + 1), hwnd)
         this._ScrollReindex()
         this._ScrollFlatten()
-        this._ScrollApplyLayout(false)
+        this._ScrollApplyLayout(true)
         this.RefreshBorder()
     }
 
@@ -8748,7 +8748,7 @@ class WTM {
                 }
                 this._ScrollReindex()
                 this._ScrollFlatten()
-                this._ScrollApplyLayout(false)
+                this._ScrollApplyLayout(true)
                 this.FocusHwnd := cur
                 this.RefreshBorder()
                 return
@@ -8835,9 +8835,9 @@ class WTM {
             this._ScrollInsertByX(target, g, hwnd, sdir)
             this._ScrollReindex()
             this._ScrollFlatten()
-            this._ScrollApplyLayout(false)
+            this._ScrollApplyLayout(true)
         } else if inSrc {
-            this._ScrollApplyLayout(false)
+            this._ScrollApplyLayout(true)
             this.AutoTile()
         } else {
             this.AutoTile()

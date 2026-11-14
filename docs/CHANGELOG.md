@@ -1,5 +1,9 @@
 # Changelog
 
+### v2.15.1 (2026-11-14)
+
+- **Animations inside a card are back** — v2.15.0 routed `AutoTile`, in-card swaps and drag-drop placement through the non-animated layout path, so only explicit cross-monitor moves were tweened. Automatic tiling, in-card swaps, pushes into the neighbouring card and drag-drop now honour `AnimationDuration`; drift correction stays instant to avoid re-triggering itself.
+
 ### v2.15.0 (2026-11-14)
 
 - **Chained multi-monitor scrollable tiling** — `[Tiling] ScrollableDesktops` now accepts `desktop` or `desktop:monitor-list` (`1`, `1:2`, `1:2,3`). Each desktop owns one monitor chain; every monitor is a slot, windows are queued as cards, and a single integer says which card is in slot 1. Slot i shows `view card + i − 1`. A card is re-tiled with the `Rules` of whichever monitor it currently occupies, so moving between differently sized screens reflows it.
