@@ -49,7 +49,7 @@ Persistent
 ; 1. Environment & Global Directives / 环境与全局指令
 ; ==============================================================================
 
-global WM_Version := "2.15.4"
+global WM_Version := "2.15.5"
 global FontName
 
 SetWorkingDir(A_ScriptDir)
@@ -7464,11 +7464,12 @@ class WTM {
                 ; Off-screen empty cards are padding; a visible card that lost
                 ; its last window must collapse so following cards close ranks.
                 if (collapsed || s < 1 || s > this.ScrollChain.Length) {
-                    this.ScrollCollapse.Delete(ptr)
+                    if this.ScrollCollapse.Has(ptr)
+                        this.ScrollCollapse.Delete(ptr)
                     this._ScrollRemoveCard(p)
                     continue
                 }
-            } else if (group.Length > 0) {
+            } else if (group.Length > 0 && this.ScrollCollapse.Has(ptr)) {
                 this.ScrollCollapse.Delete(ptr)
             }
             p += 1

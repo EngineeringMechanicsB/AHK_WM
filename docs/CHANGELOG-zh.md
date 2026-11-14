@@ -1,5 +1,9 @@
 # 更新日志
 
+### v2.15.5 (2026-11-14)
+
+- **修复无法进入 WTM** — v2.15.4 的 `_ScrollPruneEmptyPages` 无条件调用 `ScrollCollapse.Delete(ptr)`；AHK v2 的 `Map.Delete` 在键不存在时抛 `Item has no value`，导致 `Activate → AutoTile → _ScrollSync → _ScrollPruneEmptyPages` 中断，`Alt+Shift+D` 没有反应。现在两处删除都先 `Has()` 判断。
+
 ### v2.15.4 (2026-11-14)
 
 - **Overview 坐标稳定** — Overview 打开期间保持画布原点、缩放和视口锚点；关闭/新开窗口只重算窗口预览，不再整张画布重新拟合，混合横竖屏时不会整片下移。

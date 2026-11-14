@@ -1,5 +1,9 @@
 # Changelog
 
+### v2.15.5 (2026-11-14)
+
+- **Fixed WTM failing to activate** — v2.15.4's `_ScrollPruneEmptyPages` called `ScrollCollapse.Delete(ptr)` unconditionally; AHK v2's `Map.Delete` throws `Item has no value` for a missing key, aborting `Activate → AutoTile → _ScrollSync → _ScrollPruneEmptyPages` so `Alt+Shift+D` did nothing. Both deletes now check `Has()` first.
+
 ### v2.15.4 (2026-11-14)
 
 - **Stable Overview coordinates** — while Overview is open the canvas origin, scale and viewport anchor are kept. Closing or opening a window only recomputes previews instead of re-fitting the whole canvas, so mixed landscape/portrait setups no longer shift everything downward.
