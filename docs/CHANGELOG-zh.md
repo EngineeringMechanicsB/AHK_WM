@@ -1,5 +1,11 @@
 # 更新日志
 
+### v2.15.6 (2026-11-14)
+
+- **卡片折叠后目标槽位修正** — 移动窗口、拖拽落位、跨屏送窗时，源卡片可能因失去最后一个窗口而折叠，目标卡片索引随之前移，窗口会落到错误屏幕。现在折叠后会把目标卡片重新钉回原槽位。
+- **防御性 `Map.Delete`** — `_ScrollDetach` 删除 `ScrollOwner` / `ScrollPageOf` 前先 `Has()` 判断；`ScrollCollapse` 的两处删除已在此前版本加上判断。
+- **审计** — 复读滚动卡片、Overview 锚点、悬浮窗口、动画、全屏/单人、热插拔、配置与热键路径；除以上两项外未发现新的确定问题。
+
 ### v2.15.5 (2026-11-14)
 
 - **修复无法进入 WTM** — v2.15.4 的 `_ScrollPruneEmptyPages` 无条件调用 `ScrollCollapse.Delete(ptr)`；AHK v2 的 `Map.Delete` 在键不存在时抛 `Item has no value`，导致 `Activate → AutoTile → _ScrollSync → _ScrollPruneEmptyPages` 中断，`Alt+Shift+D` 没有反应。现在两处删除都先 `Has()` 判断。

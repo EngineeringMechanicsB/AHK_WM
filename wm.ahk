@@ -49,7 +49,7 @@ Persistent
 ; 1. Environment & Global Directives / 环境与全局指令
 ; ==============================================================================
 
-global WM_Version := "2.15.5"
+global WM_Version := "2.15.6"
 global FontName
 
 SetWorkingDir(A_ScriptDir)
@@ -8153,8 +8153,10 @@ class WTM {
                 found := true
                 break
             }
-        this.ScrollOwner.Delete(hwnd)
-        this.ScrollPageOf.Delete(hwnd)
+        if this.ScrollOwner.Has(hwnd)
+            this.ScrollOwner.Delete(hwnd)
+        if this.ScrollPageOf.Has(hwnd)
+            this.ScrollPageOf.Delete(hwnd)
         if !found
             return 0
         ; A card that lost its last window is collapsed later, so the cards
@@ -8162,6 +8164,16 @@ class WTM {
         if (group.Length = 0 && this.ScrollPages.Length > 1)
             this.ScrollCollapse[ObjPtr(group)] := true
         return {card: k, slot: slot}
+    }
+
+    ; Collapsing the source card can shift the destination card's index.
+    ; Pin the moved window back to the slot it was dropped into.
+    static _ScrollPinCardToSlot(hwnd, slot) {
+        if (!this.ScrollPageOf.Has(hwnd) || slot < 1)
+            return
+        k := this.ScrollPageOf[hwnd]
+        this.ScrollView := Max(1, k - slot + 1)
+        this._ScrollReindex()
     }
 
     static _ScrollAttach(hwnd, k) {
@@ -8203,6 +8215,7 @@ class WTM {
             this._ScrollInsertByX(this.ScrollChain[n], g, hwnd, dir)
             this._ScrollPruneEmptyPages()
             this._ScrollReindex()
+            this._ScrollPinCardToSlot(hwnd, (slot < n) ? slot + 1 : n)
             this._ScrollFlatten()
             this._ScrollApplyLayout(true, "R")
             this.FocusHwnd := hwnd
@@ -8223,6 +8236,7 @@ class WTM {
             this._ScrollInsertByX(this.ScrollChain[1], g, hwnd, dir)
             this._ScrollPruneEmptyPages()
             this._ScrollReindex()
+            this._ScrollPinCardToSlot(hwnd, (slot > 1) ? slot - 1 : 1)
             this._ScrollFlatten()
             this._ScrollApplyLayout(true, "L")
             this.FocusHwnd := hwnd
@@ -8271,6 +8285,7 @@ class WTM {
         g.InsertAt(Min(idx, g.Length + 1), hwnd)
         this._ScrollPruneEmptyPages()
         this._ScrollReindex()
+        this._ScrollPinCardToSlot(hwnd, slot)
         this._ScrollFlatten()
         this._ScrollApplyLayout(true)
         this.RefreshBorder()
@@ -8972,6 +8987,7 @@ class WTM {
             this._ScrollInsertByX(target, g, hwnd, sdir)
             this._ScrollPruneEmptyPages()
             this._ScrollReindex()
+            this._ScrollPinCardToSlot(hwnd, slot)
             this._ScrollFlatten()
             this._ScrollApplyLayout(true, sdir)
             this.FocusHwnd := hwnd

@@ -1,5 +1,11 @@
 # Changelog
 
+### v2.15.6 (2026-11-14)
+
+- **Destination slot after card collapse** — when moving, dropping or sending a window, the source card can collapse after losing its last window, shifting the destination card's index and landing the window on the wrong monitor. The destination card is now pinned back to its original slot after the collapse.
+- **Defensive `Map.Delete`** — `_ScrollDetach` checks `Has()` before deleting `ScrollOwner` / `ScrollPageOf`; both `ScrollCollapse` deletes were guarded in the previous release.
+- **Audit** — re-read the scroll-card, Overview-anchor, floating-window, animation, fullscreen/solo, hot-plug, config and hotkey paths; no other confirmed issues found beyond the two above.
+
 ### v2.15.5 (2026-11-14)
 
 - **Fixed WTM failing to activate** — v2.15.4's `_ScrollPruneEmptyPages` called `ScrollCollapse.Delete(ptr)` unconditionally; AHK v2's `Map.Delete` throws `Item has no value` for a missing key, aborting `Activate → AutoTile → _ScrollSync → _ScrollPruneEmptyPages` so `Alt+Shift+D` did nothing. Both deletes now check `Has()` first.
