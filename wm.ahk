@@ -49,7 +49,7 @@ Persistent
 ; 1. Environment & Global Directives / 环境与全局指令
 ; ==============================================================================
 
-global WM_Version := "2.15.1"
+global WM_Version := "2.15.2"
 global FontName
 
 SetWorkingDir(A_ScriptDir)
@@ -145,6 +145,7 @@ global WTM_ResizeRules    := Map()
 global WTM_LayoutOverride := false
 global WTM_ScrollDesktops := Map()
 global WTM_ScrollAxis := "horizontal"
+global WTM_FrameFit := true
 
 ; ---- GUI rounding / GUI圆角 ----
 global GUI_Rounded     := "on"
@@ -1529,6 +1530,25 @@ GetFrameDelta(hwnd, &dx, &dy, &dw, &dh) {
     return true
 }
 
+; ---- Fit a target rect to the DWM visual frame / 按 DWM 视觉边框修正目标矩形 ----
+; SetWindowPos works on the outer rect. Windows with different frame styles
+; (Explorer's thick resize border vs Steam's custom frame) then show different
+; visual gaps and sizes even when the outer rects are identical.
+FitWindowRect(hwnd, &x, &y, &w, &h) {
+    global WTM_FrameFit
+    if !WTM_FrameFit
+        return false
+    if !GetFrameDelta(hwnd, &dx, &dy, &dw, &dh)
+        return false
+    ; Ignore nonsensical values from cloaked / special windows.
+    if (Abs(dx) > 40 || Abs(dy) > 40 || Abs(dw) > 96 || Abs(dh) > 96)
+        return false
+    if (w + dw < 40 || h + dh < 40)
+        return false
+    x -= dx, y -= dy, w += dw, h += dh
+    return true
+}
+
 ; ---- MonitorAtPoint / 显示器坐标 ----
 GetMonitorIndexAtPoint(x, y) {
     loop MonitorGetCount() {
@@ -2333,6 +2353,8 @@ AnimationFrameMs=12
 ResizeStep=20
 ; Tile always-on-top windows / 置顶窗口是否参与平铺
 TileAlwaysOnTop=off
+; Fit visible DWM frame instead of the invisible resize border / 按可见边框对齐窗口
+FrameFit=on
 ; Scrollable tiling: desktop or desktop:monitor list (1:2,3); empty = off / 滚动桌面[:屏链]
 ScrollableDesktops=
 ; Monitor chain for scrollable desktops, left-to-right (e.g. 1,2); empty = all monitors in screen order / 滚动显示器链
@@ -2650,6 +2672,7 @@ WTMShrinkHeight=Ctrl+Shift+K
     WTM_AnimMs := Max(0, SafeInt(IniRead(ConfigFile, "Tiling", "AnimationDuration", "0"), 0))
     WTM_AnimFrameMs := Max(4, Min(50, SafeInt(IniRead(ConfigFile, "Tiling", "AnimationFrameMs", "12"), 12)))
     WTM_Debug  := BarShown(IniRead(ConfigFile, "Tiling", "WTMDebug", "off"))
+    WTM_FrameFit := BarShown(IniRead(ConfigFile, "Tiling", "FrameFit", "on"))
     WTM_ResizeStep := Max(1, SafeInt(IniRead(ConfigFile, "Tiling", "ResizeStep", "20"), 20))
     InvalidateSlotTables()
 
@@ -7828,6 +7851,7 @@ class WTM {
                     x := ax + t.xlo * aw, y := ay + t.ylo * ah
                     w := (t.xhi - t.xlo) * aw, hh := (t.yhi - t.ylo) * ah
                     ComputeTileRect(x, y, w, hh, &fx, &fy, &fw, &fh)
+                    FitWindowRect(h, &fx, &fy, &fw, &fh)
                     rects.Push({hwnd: h, x: fx, y: fy, w: fw, h: fh, mon: rm, hidden: hide, card: k})
                 }
             }
@@ -8211,6 +8235,10 @@ class WTM {
         for r in rects {
             if !WinExist(r.hwnd)
                 continue
+            ; Align the visible frame, not the invisible resize border.
+            rx := r.x, ry := r.y, rw := r.w, rh := r.h
+            FitWindowRect(r.hwnd, &rx, &ry, &rw, &rh)
+            r.x := rx, r.y := ry, r.w := rw, r.h := rh
             this._Placed[r.hwnd] := {x: r.x, y: r.y, w: r.w, h: r.h, mon: monIdx}
             try {
                 if (WinGetMinMax(r.hwnd) != 0)

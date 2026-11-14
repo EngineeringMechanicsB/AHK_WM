@@ -1,5 +1,10 @@
 # Changelog
 
+### v2.15.2 (2026-11-14)
+
+- **Align windows by their visible frame** — new `[Tiling] FrameFit` (default `on`). `SetWindowPos` takes the outer rect; Explorer-style thick invisible resize borders and Steam-style custom frames therefore produced different visual sizes and gaps even at the same outer rect. Placement now converts the target through DWM `DWMWA_EXTENDED_FRAME_BOUNDS` so **visible edges** match the slot. Turn it off to place by the outer rect again.
+- **Clarified `WTMGap` vs `Gap`** — `[Tiling] Gap` only affects Smart Tile / WinSelect; WTM uses `[Tiling] WTMGap`. Setting `Gap=0` alone does not remove the WTM gap; set `WTMGap=0` too.
+
 ### v2.15.1 (2026-11-14)
 
 - **Animations inside a card are back** — v2.15.0 routed `AutoTile`, in-card swaps and drag-drop placement through the non-animated layout path, so only explicit cross-monitor moves were tweened. Automatic tiling, in-card swaps, pushes into the neighbouring card and drag-drop now honour `AnimationDuration`; drift correction stays instant to avoid re-triggering itself.

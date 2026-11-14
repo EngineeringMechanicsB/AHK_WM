@@ -1,4 +1,4 @@
-﻿# AHK_WM 配置参考（v2.15.1）
+﻿# AHK_WM 配置参考（v2.15.2）
 
 配置文件位置：`%USERPROFILE%\.config\AHK_WM\wm_config.ini`（UTF-16 LE 编码）。
 首次运行时自动生成默认配置。修改后重载脚本生效（默认热键 `Alt+R`，或托盘菜单 → *Reload Script*）。
@@ -149,7 +149,8 @@ Layout=[N,]元素,跨度[,颜色1,颜色2,…][,bg|tx][,on|off][,fs=N][,wrap=N];
 |---|---|---|---|---|
 | `Gap` | 整数 px | `15` | 任意（可为负） | 智能平铺与 WinSelect 平铺的窗口间隙（**WTM 用 `WTMGap`**）。 |
 | `TileAlwaysOnTop` | 开关 | `off` | `on`、`off` | 置顶窗口是否参与平铺。 |
-| `WTMGap` | 整数 px | 同 `[Border] Gap`（默认 `10`） | 任意 | **WTM 专用**平铺间隙，独立于 `Gap`。为窗口间边框预留空间；留空时沿用 `[Border] Gap`。 |
+| `WTMGap` | 整数 px | 同 `[Border] Gap`（默认 `10`） | 任意 | **WTM 专用**平铺间隙，独立于 `[Tiling] Gap`；改 `Gap` 不会影响 WTM。为窗口间边框预留空间；留空时沿用 `[Border] Gap`。设为 `0` 时配合 `FrameFit` 窗口视觉边缘相接。 |
+| `FrameFit` | 开关 | `on` | `on`、`off` | 按 DWM **可见边框**对齐窗口，而不是 SetWindowPos 的外框。不同边框样式的窗口（资源管理器、Steam、终端）外框相同时视觉尺寸和间隙会不同，开启后两者按可见边缘对齐。关闭则完全按外框放置。 |
 | `AnimationDuration` | 整数 ms | `0` | ≥0 | **WTM** 移动/交换窗口、翻卡片、跨屏移动的动画时长。`0` = 瞬时到位（无动画），同时会取消该窗口仍在进行的补间，避免旧动画把窗口拖过屏幕。建议 `120`–`500`。 |
 | `AnimationFrameMs` | 整数 ms | `12` | 4–50 | WTM 动画帧间隔。越小越顺滑，CPU 占用越高：`6` ≈ 166 fps（170 Hz 屏）、`8` ≈ 125 fps、`16` ≈ 60 fps。超出范围会被钳制。 |
 | `WTMDebug` | on/off | `off` | `on`, `off` | 输出边框诊断日志（只在边框集合 / 焦点 / 颜色发生变化时写一行）。排查"边框不跟随 / 不消除 / 颜色不切换"时临时打开。 |
