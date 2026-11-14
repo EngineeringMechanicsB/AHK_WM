@@ -1,12 +1,12 @@
 ﻿<div align="center">
 
-# 🔲 AHK WM <sub>v2.14.0</sub>
+# 🔲 AHK WM <sub>v2.15.0</sub>
 
 <p>
   <img src="https://img.shields.io/badge/AutoHotkey-v2.0-cba6f7?style=flat-square" alt="AutoHotkey v2" />
   <img src="https://img.shields.io/badge/platform-Windows_7_~_11-b4befe?style=flat-square" alt="Platform" />
   <img src="https://img.shields.io/badge/license-MIT-f5c2e7?style=flat-square" alt="License" />
-  <img src="https://img.shields.io/badge/version-v2.14.0-cba6f7?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/version-v2.15.0-cba6f7?style=flat-square" alt="Version" />
 </p>
 
 <p>
@@ -145,7 +145,7 @@
 | 🥧 **Pie Menu** | Hold `Space` and right-click: a radial menu appears. Move the mouse in a direction and release to trigger that action. |
 | 📊 **Status Bar** | Multi-monitor status bar with gradients, rounded corners and per-element alignment. Shows desktop labels, time, date, progress bars, system stats and custom widgets — external scripts can push to it too. |
 | 🖼️ **Window Borders** | Fully customizable colored window borders with gradient support. |
-| ⌨️ **WTM Mode** | Entering it arranges every monitor by your rules; `Alt + H/J/K/L` moves focus, `Alt + Shift + H/J/K/L` moves the window, `Ctrl + Shift + H/J/K/L` resizes it, `Ctrl + Alt + Shift + H/L/K/J` sends the window to the adjacent monitor, and `Ctrl + Alt + H/L/K/J` focuses that monitor. A fullscreen or maximized window suspends tiling on that monitor; `[Tiling] AnimationDuration` and `AnimationFrameMs` control animated moves. Add `[Tiling] ScrollableDesktops=1:2` to make desktop 1's monitor 2 an infinite horizontal strip; other monitors keep normal tiling. `Alt+O` opens the overview (scroll monitor only; `Enter`/`Space` confirms). |
+| ⌨️ **WTM Mode** | Entering it arranges every monitor by your rules; `Alt + H/J/K/L` moves focus, `Alt + Shift + H/J/K/L` moves the window, `Ctrl + Shift + H/J/K/L` resizes it, `Ctrl + Alt + Shift + H/L/K/J` sends the window to the adjacent monitor, and `Ctrl + Alt + H/L/K/J` focuses that monitor. A fullscreen or maximized window suspends tiling on that monitor; `[Tiling] AnimationDuration` and `AnimationFrameMs` control animated moves. Add `[Tiling] ScrollableDesktops=1` to turn every monitor on desktop 1 into one continuous scroll chain; `ScrollMonitors=1,2` fixes the order, `ScrollAxis=vertical` handles stacked screens. Each card of windows is re-tiled by the rules of the monitor it currently occupies. `Alt+O` opens the overview (all cards; `Enter`/`Space` confirms). |
 | 📐 **Window Snapping** | Windows snap when dragged to screen edges or other windows. Configurable snap and release distances. |
 | 🖱️ **Mouse-targeted actions** | Outside WTM, every window action (close, minimize, maximize, always-on-top, transparency, snap, pin, move to desktop, exclude, diagnose, terminal/editor lookup) uses the window under the cursor — the focused window is irrelevant. |
 | 🎨 **Themes** | 20+ built-in themes. Export the current theme as a custom palette in one click. |
@@ -236,6 +236,10 @@ All configuration lives in `%USERPROFILE%\.config\AHK_WM\wm_config.ini`. Edit it
 ## 🔮 Roadmap
 
 - **Per-monitor desktops** — independent desktop switching per monitor
+- **Stable scroll-chain identity** — key cards by monitor hardware identity instead of the Windows monitor index, so a replug cannot shuffle the chain
+- **Scroll state across reload** — persist cards and the current card in `wm_layout.dat`, not only the desktop window lists
+- **Overview pagination** — collapse distant cards when a chain holds many of them, instead of scaling the whole strip down
+- **Hidden-card side effects** — cards hidden because they overlap a monitor outside the chain disappear from Alt-Tab / the taskbar; offer a park-only fallback
 - **Package managers** — Scoop, Chocolatey, winget distribution
 - **Exclusion rule editor** — edit `[User-*]` rules in a GUI instead of hand-writing `exclude.ini`
 - **Bar auto-hide & reveal** — currently only full hide; add occlusion-based auto-hide or transparency mode

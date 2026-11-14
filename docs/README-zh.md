@@ -1,12 +1,12 @@
 ﻿<div align="center">
 
-# 🔲 AHK WM <sub>v2.14.0</sub>
+# 🔲 AHK WM <sub>v2.15.0</sub>
 
 <p>
   <img src="https://img.shields.io/badge/AutoHotkey-v2.0-cba6f7?style=flat-square" alt="AutoHotkey v2" />
   <img src="https://img.shields.io/badge/平台-Windows_7_~_11-b4befe?style=flat-square" alt="平台" />
   <img src="https://img.shields.io/badge/许可-MIT-f5c2e7?style=flat-square" alt="许可" />
-  <img src="https://img.shields.io/badge/版本-v2.14.0-cba6f7?style=flat-square" alt="版本" />
+  <img src="https://img.shields.io/badge/版本-v2.15.0-cba6f7?style=flat-square" alt="版本" />
 </p>
 
 <p>
@@ -145,7 +145,7 @@
 | 🥧 **饼菜单** | 按住 `空格`，点右键出现径向菜单，朝不同方向移动鼠标释放后触发对应操作。 |
 | 📊 **状态栏** | 多显示器状态栏，支持渐变色、圆角、每个元素独立对齐。显示桌面标签、时间、日期、进度条、系统状态等自定义部件，甚至支持外部脚本调用。 |
 | 🖼️ **窗口边框** | 完全可自定义彩色窗口边框，支持渐变。 |
-| ⌨️ **WTM 模式** | 进入即按规则铺满每块屏；`Alt + H/J/K/L` 移动焦点，`Alt + Shift + H/J/K/L` 移动窗口，`Ctrl + Shift + H/J/K/L` 缩放窗口，`Ctrl + Alt + Shift + H/L/K/J` 把窗口发到相邻屏，`Ctrl + Alt + H/L/K/J` 聚焦相邻屏。全屏/最大化窗口暂停该屏平铺；`[Tiling] AnimationDuration` 与 `AnimationFrameMs` 控制移动动画。`[Tiling] ScrollableDesktops=1:2` 让桌面 1 的 2 号屏变成无限横向纸带，其它屏保持普通平铺。`Alt+O` 打开 Overview（只收卷轴屏；`Enter`/`Space` 确认）。 |
+| ⌨️ **WTM 模式** | 进入即按规则铺满每块屏；`Alt + H/J/K/L` 移动焦点，`Alt + Shift + H/J/K/L` 移动窗口，`Ctrl + Shift + H/J/K/L` 缩放窗口，`Ctrl + Alt + Shift + H/L/K/J` 把窗口发到相邻屏，`Ctrl + Alt + H/L/K/J` 聚焦相邻屏。全屏/最大化窗口暂停该屏平铺；`[Tiling] AnimationDuration` 与 `AnimationFrameMs` 控制移动动画。`[Tiling] ScrollableDesktops=1` 把桌面 1 的所有显示器接成一条连续纸带；`ScrollMonitors=1,2` 指定顺序，`ScrollAxis=vertical` 用于竖排屏幕。每张卡片按它当前所在显示器的规则重新平铺。`Alt+O` 打开 Overview（全部卡片；`Enter`/`Space` 确认）。 |
 | 📐 **窗口吸附** | 拖拽窗口到屏幕边缘或其他窗口时自动吸附，可配置吸附距离和脱离距离。 |
 | 🖱️ **光标下窗口操作** | 非 WTM 状态下，关闭、最小化、最大化、置顶、透明度、吸附、固定、移桌面、排除、诊断、终端/编辑器全部作用于**鼠标下**的窗口，与焦点窗口无关。 |
 | 🎨 **主题** | 20+ 内置主题，一键导出当前主题为自定义配色。 |
@@ -235,6 +235,10 @@ WMBarPush(2, (200-550)/1920， "Take a sad song`nand make it better")  ; `n = �
 ## 🔮 路线图
 
 - **多显示器独立桌面** — 每显示器独立切换桌面
+- **滚动链稳定身份** — 卡片按显示器硬件身份记忆，而不是 Windows 显示器编号，避免插拔后链条错位
+- **重载后保留滚动状态** — 把卡片序列和当前卡片写进 `wm_layout.dat`，而不只是桌面窗口列表
+- **Overview 分页** — 卡片很多时折叠远处卡片，而不是把整条带缩得很小
+- **隐藏卡片副作用** — 压到链外显示器时卡片会隐藏，窗口从 Alt-Tab / 任务栏消失；提供只停靠不隐藏的降级模式
 - **包管理器** — Scoop、Chocolatey、winget 分发
 - **排除规则编辑器** — 用图形界面编辑 `[User-*]` 规则，不用手写 `exclude.ini`
 - **BAR自动隐藏和显示** — 现在仅仅是全盘隐藏，添加一个遮挡自动隐藏或者降低透明度模式
