@@ -1,5 +1,11 @@
 # Changelog
 
+### v2.15.4 (2026-11-14)
+
+- **Stable Overview coordinates** — while Overview is open the canvas origin, scale and viewport anchor are kept. Closing or opening a window only recomputes previews instead of re-fitting the whole canvas, so mixed landscape/portrait setups no longer shift everything downward.
+- **Empty cards collapse** — when a card loses its last window (closed, moved out, or floated), the card is removed and the following cards close ranks. Normal mode and Overview share this path. Cards that were empty from the start stay, so activation does not make windows jump between monitors.
+- **WTM float rework** — `Alt+T` targets the WTM focus again. A floating window does not tile, take a slot, or participate in swaps, but it **does participate in directional focus**: `Alt+H/J/K/L` can focus it. With focus on a float, `Alt+Shift+H/J/K/L` nudges it by `ResizeStep` instead of swapping. Floating a window from a scroll card detaches it first; unfloating returns it to the current card of its monitor. Leaving WTM clears every float and its always-on-top state.
+
 ### v2.15.3 (2026-11-14)
 
 - **All window actions use the focused window in WTM** — `_GetTargetHwnd()` used to return the window under the mouse unconditionally, so `Alt+Shift+N` inside WTM moved the cursor's window. While WTM is active it now returns `WTM.FocusHwnd` (falling back when invisible): close, minimize, always-on-top, transparency, snap, move-to-desktop, move-and-follow, exclude, diagnose, terminal/editor all follow focus. Outside WTM the cursor target is unchanged.

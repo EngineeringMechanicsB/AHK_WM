@@ -49,7 +49,7 @@ Persistent
 ; 1. Environment & Global Directives / 环境与全局指令
 ; ==============================================================================
 
-global WM_Version := "2.15.3"
+global WM_Version := "2.15.4"
 global FontName
 
 SetWorkingDir(A_ScriptDir)
@@ -6827,6 +6827,7 @@ class WTM {
     static ScrollOwner   := Map()
     static ScrollPageOf  := Map()
     static ScrollHidden  := Map()
+    static ScrollCollapse := Map()
     static ScrollDesktop := Map()
     static _ChainSig     := ""
     static Overview      := false
@@ -6913,6 +6914,7 @@ class WTM {
             this._StopAnim()
             this._ExitSolo()
             this._ExitAllFull()
+            this._ClearFloats()
             this._ScrollUnhideAll()
             this._GatherAllOffscreen()
         } finally {
@@ -6929,6 +6931,7 @@ class WTM {
             this._StopAnim()
             this._ExitSolo()
             this._ExitAllFull()
+            this._ClearFloats()
             this._ScrollUnhideAll()
             this._GatherAllOffscreen()
         } catch Error as e {
@@ -7031,6 +7034,9 @@ class WTM {
     }
 
     static RebuildOrder() {
+        for hwnd, _ in this.Excluded.Clone()
+            if !WinExist(hwnd)
+                this.Excluded.Delete(hwnd)
         alive := Map()
         for hwnd in GetVisibleWindow() {
             if this.Excluded.Has(hwnd)
@@ -7046,6 +7052,12 @@ class WTM {
             alive[hwnd] := true
         }
         for hwnd, _ in this.SoloHidden {
+            if WinExist(hwnd)
+                alive[hwnd] := true
+        }
+        ; Floating windows are topmost (usually filtered by IsTilableWindow)
+        ; but must stay in the order so directional focus can reach them.
+        for hwnd, _ in this.Excluded {
             if WinExist(hwnd)
                 alive[hwnd] := true
         }
@@ -7162,6 +7174,8 @@ class WTM {
             this._ScrollLayoutAll(true)
         groups := Map()
         for hwnd in this.TileOrder {
+            if this.Excluded.Has(hwnd)
+                continue
             if (this.ScrollOn && this.ScrollPageOf.Has(hwnd))
                 continue
             m := this._MonOf(hwnd)
@@ -7198,6 +7212,8 @@ class WTM {
             wins := []
             for hwnd in this.TileOrder {
                 if !WinExist(hwnd)
+                    continue
+                if this.Excluded.Has(hwnd)
                     continue
                 if (this._MonOf(hwnd) = monIdx)
                     wins.Push(hwnd)
@@ -7363,6 +7379,7 @@ class WTM {
 
     static _ScrollClear() {
         this.ScrollPages  := []
+        this.ScrollCollapse := Map()
         this.ScrollView   := 1
         this.ScrollOwner  := Map()
         this.ScrollPageOf := Map()
@@ -7439,12 +7456,20 @@ class WTM {
     static _ScrollPruneEmptyPages() {
         p := 1
         while (p <= this.ScrollPages.Length) {
-            if (this.ScrollPages.Length > 1 && this._CardGroup(p).Length = 0) {
+            group := this._CardGroup(p)
+            ptr := ObjPtr(group)
+            collapsed := this.ScrollCollapse.Has(ptr)
+            if (this.ScrollPages.Length > 1 && group.Length = 0) {
                 s := this._ScrollSlotOfCard(p)
-                if (s < 1 || s > this.ScrollChain.Length) {
+                ; Off-screen empty cards are padding; a visible card that lost
+                ; its last window must collapse so following cards close ranks.
+                if (collapsed || s < 1 || s > this.ScrollChain.Length) {
+                    this.ScrollCollapse.Delete(ptr)
                     this._ScrollRemoveCard(p)
                     continue
                 }
+            } else if (group.Length > 0) {
+                this.ScrollCollapse.Delete(ptr)
             }
             p += 1
         }
@@ -7574,6 +7599,7 @@ class WTM {
                 this.ScrollPages[k] := []
                 continue
             }
+            had := group.Length
             seen := Map(), keep := []
             for h in group {
                 if !WinExist(h)
@@ -7587,6 +7613,8 @@ class WTM {
                 keep.Push(h)
             }
             this.ScrollPages[k] := keep
+            if (had > 0 && keep.Length = 0 && this.ScrollPages.Length > 1)
+                this.ScrollCollapse[ObjPtr(keep)] := true
         }
         seen := Map()
         for k, group in this.ScrollPages
@@ -7597,6 +7625,8 @@ class WTM {
             if seen.Has(hwnd)
                 continue
             if (this.FullHidden.Has(hwnd) || this.SoloHidden.Has(hwnd))
+                continue
+            if this.Excluded.Has(hwnd)
                 continue
             m := 1
             try m := GetMonitorIndex(hwnd)
@@ -8126,6 +8156,10 @@ class WTM {
         this.ScrollPageOf.Delete(hwnd)
         if !found
             return 0
+        ; A card that lost its last window is collapsed later, so the cards
+        ; after it close ranks. Cards that were empty from the start stay.
+        if (group.Length = 0 && this.ScrollPages.Length > 1)
+            this.ScrollCollapse[ObjPtr(group)] := true
         return {card: k, slot: slot}
     }
 
@@ -8136,6 +8170,7 @@ class WTM {
             this._ScrollDetach(hwnd)
         }
         this._EnsureCard(k).Push(hwnd)
+        this._ScrollPruneEmptyPages()
         this._ScrollReindex()
         this._ScrollFlatten()
     }
@@ -8165,6 +8200,7 @@ class WTM {
             this._ScrollDetach(hwnd)
             g := this._EnsureCard(q)
             this._ScrollInsertByX(this.ScrollChain[n], g, hwnd, dir)
+            this._ScrollPruneEmptyPages()
             this._ScrollReindex()
             this._ScrollFlatten()
             this._ScrollApplyLayout(true, "R")
@@ -8184,6 +8220,7 @@ class WTM {
             this._ScrollDetach(hwnd)
             g := this._EnsureCard(q)
             this._ScrollInsertByX(this.ScrollChain[1], g, hwnd, dir)
+            this._ScrollPruneEmptyPages()
             this._ScrollReindex()
             this._ScrollFlatten()
             this._ScrollApplyLayout(true, "L")
@@ -8197,6 +8234,8 @@ class WTM {
         this.RebuildOrder()
         if !this._OrderIndex(hwnd)
             return
+        if this.Excluded.Has(hwnd)
+            return
         MouseGetPos(&mx, &my)
         dm := GetMonitorIndexAtPoint(mx, my)
         if (dm < 1)
@@ -8205,6 +8244,7 @@ class WTM {
         if (!this.ScrollOn || !this._ScrollIsChainMon(dm)) {
             this._ScrollDetach(hwnd)
             this._ScrollShowWin(hwnd)
+            this._ScrollPruneEmptyPages()
             this._ScrollReindex()
             this._ScrollFlatten()
             this._MoveWindowToMonitor(hwnd, dm)
@@ -8228,6 +8268,7 @@ class WTM {
         }
         g.RemoveAt(g.Length)
         g.InsertAt(Min(idx, g.Length + 1), hwnd)
+        this._ScrollPruneEmptyPages()
         this._ScrollReindex()
         this._ScrollFlatten()
         this._ScrollApplyLayout(true)
@@ -8470,6 +8511,10 @@ class WTM {
             if WinExist(hwnd)
                 seen[hwnd] := true
         }
+        for hwnd, _ in this.Excluded {
+            if WinExist(hwnd)
+                seen[hwnd] := true
+        }
         ; Hidden cards are invisible to GetVisibleWindow; keep them in the
         ; signature so closing one still triggers a re-layout, and hiding or
         ; showing a card does not look like a membership change.
@@ -8634,6 +8679,8 @@ class WTM {
                 continue
             if this.ScrollHidden.Has(hwnd)
                 continue
+            if this.Excluded.Has(hwnd)
+                continue
             try {
                 if (WinGetMinMax(hwnd) != 0)
                     continue
@@ -8708,9 +8755,22 @@ class WTM {
             }
             return
         }
+        ; A floating window has no slot; use plain geometry for focus.
+        if this.Excluded.Has(cur) {
+            target := this._PickNeighbor(cur, dir, 0)
+            if target {
+                FocusWindowSafely(target)
+                this.FocusHwnd := target
+                this.RefreshBorder()
+            }
+            return
+        }
         if (this.ScrollOn && this.ScrollPageOf.Has(cur)) {
             this._ScrollSync()
             target := this._ScrollPickWithin(cur, dir)
+            f := this._PickFloatingNeighbor(cur, dir)
+            if (f && (!target || this._CenterDist(cur, f) < this._CenterDist(cur, target)))
+                target := f
             if (target) {
                 this._FocusScrollTarget(target)
                 return
@@ -8722,6 +8782,9 @@ class WTM {
         }
         curMon := this._MonOf(cur)
         target := this._PickSwapTarget(cur, dir, curMon, "focus")
+        f := this._PickFloatingNeighbor(cur, dir)
+        if (f && (!target || this._CenterDist(cur, f) < this._CenterDist(cur, target)))
+            target := f
         if (!target && MonitorGetCount() > 1) {
             target := this._PickNeighbor(cur, dir, curMon)
             if target
@@ -8732,6 +8795,42 @@ class WTM {
             this.FocusHwnd := target
             this.RefreshBorder()
         }
+    }
+
+    static _CenterDist(a, b) {
+        try {
+            WinGetPos(&ax, &ay, &aw, &ah, a)
+            WinGetPos(&bx, &by, &bw, &bh, b)
+            dx := (ax + aw / 2) - (bx + bw / 2)
+            dy := (ay + ah / 2) - (by + bh / 2)
+            return dx * dx + dy * dy
+        }
+        return 1.0e18
+    }
+
+    static _PickFloatingNeighbor(hwnd, dir) {
+        if (this.Excluded.Count = 0 || !WinExist(hwnd))
+            return 0
+        try WinGetPos(&cx, &cy, &cw, &ch, hwnd)
+        catch
+            return 0
+        ccx := cx + cw / 2, ccy := cy + ch / 2
+        best := 0, bestD := 1.0e18
+        for h, _ in this.Excluded {
+            if (h = hwnd || !WinExist(h))
+                continue
+            try WinGetPos(&x, &y, &w, &hh, h)
+            catch
+                continue
+            dx := (x + w / 2) - ccx, dy := (y + hh / 2) - ccy
+            if ((dir = "L" && dx >= 0) || (dir = "R" && dx <= 0)
+             || (dir = "U" && dy >= 0) || (dir = "D" && dy <= 0))
+                continue
+            d := dx * dx + dy * dy
+            if (d < bestD)
+                bestD := d, best := h
+        }
+        return best
     }
 
     static _FocusScrollTarget(target) {
@@ -8758,6 +8857,19 @@ class WTM {
             target := this._OverviewPick(cur, dir)
             if target
                 this._OverviewSwap(cur, target)
+            return
+        }
+        ; Floating windows do not swap; Alt+Shift just nudges them.
+        if this.Excluded.Has(cur) {
+            step := Max(10, WTM_ResizeStep)
+            try WinGetPos(&x, &y, &w, &h, cur)
+            catch
+                return
+            dx := (dir = "L") ? -step : (dir = "R") ? step : 0
+            dy := (dir = "U") ? -step : (dir = "D") ? step : 0
+            _MoveNoResize(cur, x + dx, y + dy)
+            this.FocusHwnd := cur
+            this.RefreshBorder()
             return
         }
         if (this.ScrollOn && this.ScrollPageOf.Has(cur)) {
@@ -8834,6 +8946,12 @@ class WTM {
         target := this._AdjacentMonitor(srcMon, dir)
         if !target || target = srcMon
             return
+        if this.Excluded.Has(hwnd) {
+            this._MoveWindowToMonitor(hwnd, target)
+            this.FocusHwnd := hwnd
+            this.RefreshBorder()
+            return
+        }
         inSrc := (this.ScrollOn && this.ScrollPageOf.Has(hwnd))
         inDst := (this.ScrollOn && this._ScrollIsChainMon(target))
         sdir := this._ScrollMapDir(dir)
@@ -8851,6 +8969,7 @@ class WTM {
             k := this._ScrollCardAt(slot)
             g := this._EnsureCard(k)
             this._ScrollInsertByX(target, g, hwnd, sdir)
+            this._ScrollPruneEmptyPages()
             this._ScrollReindex()
             this._ScrollFlatten()
             this._ScrollApplyLayout(true, sdir)
@@ -8868,6 +8987,9 @@ class WTM {
             this._ScrollFlatten()
             this._ScrollApplyLayout(true)
         } else if inSrc {
+            this._ScrollPruneEmptyPages()
+            this._ScrollReindex()
+            this._ScrollFlatten()
             this._ScrollApplyLayout(true)
             this.AutoTile()
         } else {
@@ -9019,6 +9141,8 @@ class WTM {
         for h in this.TileOrder {
             if !WinExist(h)
                 continue
+            if this.Excluded.Has(h)
+                continue
             if (this._MonOf(h) = monIdx)
                 wins.Push(h)
         }
@@ -9133,17 +9257,14 @@ class WTM {
     static TogglePinExclude() {
         if this.Overview
             return
+        ; Floating windows stay in TileOrder so directional focus can reach
+        ; them; Alt+T itself always acts on the WTM focus.
         hwnd := this.FocusHwnd
         if (!hwnd || !WinExist(hwnd))
-            hwnd := 0
-        if !hwnd {
-            try hwnd := WinGetID("A")
-        }
+            hwnd := _GetHwndUnderMouse()
         if (hwnd && IsBarWindow(hwnd))
             hwnd := 0
-        if !hwnd
-            MouseGetPos(,, &hwnd)
-        if !hwnd
+        if (!hwnd || !WinExist(hwnd))
             return
         if this.Excluded.Has(hwnd) {
             this.Excluded.Delete(hwnd)
@@ -9151,6 +9272,13 @@ class WTM {
             PinBorder.Remove(hwnd)
             ShowOSD("WTM Include")
         } else {
+            ; Leave the scroll card first; an empty card collapses.
+            if (this.ScrollOn && this.ScrollPageOf.Has(hwnd)) {
+                this._ScrollDetach(hwnd)
+                this._ScrollPruneEmptyPages()
+                this._ScrollReindex()
+                this._ScrollFlatten()
+            }
             this.Excluded[hwnd] := true
             try WinSetAlwaysOnTop(1, hwnd)
             PinBorder.Add(hwnd)
@@ -9596,12 +9724,24 @@ class WTM {
     }
 
     ; ---- Enforce solo / 单人模式收拢 ----
+    ; Drop the float state and un-topmost every floating window.
+    static _ClearFloats() {
+        for hwnd, _ in this.Excluded.Clone() {
+            if WinExist(hwnd)
+                try WinSetAlwaysOnTop(0, hwnd)
+            PinBorder.Remove(hwnd)
+        }
+        this.Excluded := Map()
+    }
+
     static _EnforceSolo() {
         for m, solo in this.SoloMon.Clone() {
             if !WinExist(solo)
                 continue
             for hwnd in this.TileOrder {
                 if (hwnd = solo)
+                    continue
+                if this.Excluded.Has(hwnd)
                     continue
                 if this.SoloHidden.Has(hwnd) {
                     try {
@@ -9782,6 +9922,12 @@ class WTM {
         this.RebuildOrder()
         if !this._OrderIndex(hwnd)
             return
+        ; Dragging a floating window only repositions it.
+        if this.Excluded.Has(hwnd) {
+            this.FocusHwnd := hwnd
+            this.RefreshBorder()
+            return
+        }
         if this.Overview {
             target := this._PickNearestByPos(hwnd)
             if target
@@ -10190,8 +10336,11 @@ class WTM {
             this._ScrollUnhideAll()
         this._OverviewClearFrames()
         model := this._ComputeModelRects()
-        if (model.Count = 0)
+        if (model.Count = 0) {
+            if this.Overview
+                this._OverviewExit()
             return
+        }
         pageRects := this._OverviewPageRects(model)
         rects := Map(), found := false
         wx0 := 0, wy0 := 0, wx1 := 0, wy1 := 0
@@ -10215,11 +10364,38 @@ class WTM {
                 wx1 := Max(wx1, x + w), wy1 := Max(wy1, y + h)
             }
         }
-        if !found
+        if !found {
+            if this.Overview
+                this._OverviewExit()
             return
+        }
         for r in pageRects {
             wx0 := Min(wx0, r.x), wy0 := Min(wy0, r.y)
             wx1 := Max(wx1, r.x + r.w), wy1 := Max(wy1, r.y + r.h)
+        }
+        ; Re-entering after a window closes/opens must not re-fit the whole
+        ; canvas. Keep the existing anchor (origin + scale), or every other
+        ; preview jumps when the bounding box changes.
+        if (this.Overview && this.OverviewView.HasProp("s")) {
+            v := this.OverviewView
+            v.cw := Max(v.cw, Round((wx1 - v.wx0) * v.s))
+            v.ch := Max(v.ch, Round((wy1 - v.wy0) * v.s))
+            this.OverviewView := v
+            this.OverviewPages := pageRects
+            this.OverviewRects := Map()
+            this._Placed := model.Clone()
+            for hwnd, r in rects {
+                nx := Round((r.x - v.wx0) * v.s)
+                ny := Round((r.y - v.wy0) * v.s)
+                nw := Max(1, Round(r.w * v.s))
+                nh := Max(1, Round(r.h * v.s))
+                this.OverviewRects[hwnd] := {x: nx, y: ny, w: nw, h: nh}
+                sr := this._OverviewScreenRect(this.OverviewRects[hwnd])
+                this._AnimMove(hwnd, sr.x, sr.y, sr.w, sr.h, true)
+            }
+            this._OverviewDrawDividers(pageRects)
+            this.RefreshBorder()
+            return
         }
         m := this._MonOf(this.FocusHwnd)
         if (m < 1)
