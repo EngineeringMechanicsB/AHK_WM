@@ -1,5 +1,14 @@
 # 更新日志
 
+### v2.15.8 (2026-11-17)
+
+- **WTM 悬浮窗口边框** — 悬浮窗口（`Alt+T`）改用 WTM 普通边框：聚焦 `Border_FocusColor`、未聚焦 `Border_UnfocusColor`，不再使用普通模式的 pin 边框。普通模式 `Alt+T` 保持自定义 pin 边框。
+- **边框跟随回退** — 回退 v2.15.7 之后的 z-order/缓存改动，恢复原有 `GetWindowVisualRect` + `HWND_TOP` 路径；边框重新紧跟窗口移动。
+- **exclude.ini 注释重写** — 讲清黑名单语义、section 默认字段、子串/精确/通配/正则、进程名 `.exe`、Preset/User 段、编号与 `;` 分隔、白名单负向正则和完整示例。`ExclPresetRev` 提到 4，旧文件自动刷新并保留 `[User-*]`。
+- **进程名匹配统一** — 子串、精确、通配、正则都忽略 `.exe`；`chrome`、`chrome.exe`、`=chrome`、`chrom*`、`re:^chrome$` 行为一致。
+- **配置模板注释** — `[Tiling]` 补全 `ScrollableDesktops` 三种写法、`ScrollMonitors` 留空规则、`ScrollAxis`、`Gap` 与 `WTMGap`、`FrameFit` 说明；`[Border] Gap` 标明为旧回落键。
+- **注释整理** — 新增滚动/Overview/悬浮代码的叙事性注释压缩为区域标题；生成配置文件和 exclude.ini 保留详细说明。
+
 ### v2.15.7 (2026-11-14)
 
 - **撤销“可见空卡片折叠”** — 卡片失去最后一个窗口后保留为空槽位（空显示器），不再让后面的卡片前移。修复“关掉主屏窗口后副屏窗口跳到主屏”和“把主屏窗口移到副屏时两个窗口最后都回到主屏”。只有屏外空卡片会被清理。

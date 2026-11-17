@@ -1,5 +1,14 @@
 # Changelog
 
+### v2.15.8 (2026-11-17)
+
+- **WTM float border** — floating windows (`Alt+T`) now use the normal WTM border: `Border_FocusColor` when focused, `Border_UnfocusColor` otherwise, instead of the normal-mode pin border. Normal-mode `Alt+T` keeps the custom pin border.
+- **Border-follow revert** — reverted the post-v2.15.7 z-order/cache changes and restored the original `GetWindowVisualRect` + `HWND_TOP` path, so borders follow window movement again.
+- **exclude.ini comments rewritten** — explains blacklist semantics, section default fields, substring/exact/wildcard/regex, process `.exe` handling, Preset/User sections, key numbering and `;` separation, whitelist via negative regex, and complete examples. `ExclPresetRev` bumped to 4; old files refresh while `[User-*]` is preserved.
+- **Process matching unified** — substring, exact, wildcard and regex all ignore `.exe`; `chrome`, `chrome.exe`, `=chrome`, `chrom*`, `re:^chrome$` behave the same.
+- **Config template comments** — `[Tiling]` documents the three `ScrollableDesktops` forms, empty `ScrollMonitors`, `ScrollAxis`, `Gap` vs `WTMGap`, and `FrameFit`; `[Border] Gap` is marked as the legacy fallback.
+- **Comment cleanup** — narrative comments in the new scroll/Overview/float code collapsed to section headers; generated config and `exclude.ini` keep their detailed user-facing documentation.
+
 ### v2.15.7 (2026-11-14)
 
 - **Reverted visible empty-card collapse** — a card that loses its last window stays as an empty slot (an empty monitor) instead of pulling the following cards forward. Fixes “closing a window on the main monitor moves the secondary window onto it” and “moving the main window to the secondary monitor ends with both on the main monitor”. Only off-screen empty cards are pruned.
