@@ -1,5 +1,12 @@
 # 更新日志
 
+### v2.15.9 (2026-11-18)
+
+- **进入 WTM 前已置顶的窗口自动转为悬浮** — `Activate` 扫描已置顶的可见窗口（跳过任务栏、桌面、脚本自身 GUI 和已有排除规则），加入 `Excluded` 并去掉普通模式 pin 边框；退出 WTM 时恢复它们原来的置顶状态和 pin 边框。
+- **悬浮时按配置移动/调整大小** — 新增 `[Tiling] FloatMove`、`FloatCenter`、`FloatWidth`、`FloatHeight`。`FloatMove=on` 时 `Alt+T` 会把窗口居中到所属显示器工作区；`FloatWidth/Height` 大于 0 时使用固定尺寸，`0` 保持当前尺寸。
+- **悬浮窗口支持 WTM 缩放热键** — 焦点在悬浮窗口时，`Ctrl+Shift+H/J/K/L`（`WTMShrinkWidth` 等）直接调整悬浮窗口宽高，最小 80px。
+- **悬浮窗口边框置顶** — 悬浮窗口的 WTM 边框自身设为 topmost，顶栏不再被悬浮窗口裁切；取消悬浮后恢复普通层级。
+
 ### v2.15.8 (2026-11-17)
 
 - **WTM 悬浮窗口边框** — 悬浮窗口（`Alt+T`）改用 WTM 普通边框：聚焦 `Border_FocusColor`、未聚焦 `Border_UnfocusColor`，不再使用普通模式的 pin 边框。普通模式 `Alt+T` 保持自定义 pin 边框。

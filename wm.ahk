@@ -49,7 +49,7 @@ Persistent
 ; 1. Environment & Global Directives / 环境与全局指令
 ; ==============================================================================
 
-global WM_Version := "2.15.8"
+global WM_Version := "2.15.9"
 global FontName
 
 SetWorkingDir(A_ScriptDir)
@@ -146,6 +146,10 @@ global WTM_LayoutOverride := false
 global WTM_ScrollDesktops := Map()
 global WTM_ScrollAxis := "horizontal"
 global WTM_FrameFit := true
+global WTM_FloatMove := true
+global WTM_FloatCenter := true
+global WTM_FloatW := 0
+global WTM_FloatH := 0
 
 ; ---- GUI rounding / GUI圆角 ----
 global GUI_Rounded     := "on"
@@ -2391,6 +2395,13 @@ TileAlwaysOnTop=off
 ; Align the visible DWM frame instead of the invisible resize border.
 ; Fixes Explorer/Steam size and gap differences. / 按可见边框对齐，修正不同边框样式的尺寸/间隙差
 FrameFit=on
+; Move/resize a window when it is floated with Alt+T / 悬浮时移动并调整大小
+FloatMove=on
+; Center the floated window on its monitor / 悬浮窗口居中
+FloatCenter=on
+; Floated size in px; 0 = keep current / 悬浮尺寸，0 = 保持当前
+FloatWidth=0
+FloatHeight=0
 ; Scrollable tiling. Formats / 滚动平铺写法：
 ;   1          desktop 1, all monitors chained / 桌面 1，所有显示器接成链
 ;   1:2        only monitor 2 scrolls / 只有 2 号屏滚动
@@ -2714,6 +2725,10 @@ WTMShrinkHeight=Ctrl+Shift+K
     WTM_AnimFrameMs := Max(4, Min(50, SafeInt(IniRead(ConfigFile, "Tiling", "AnimationFrameMs", "12"), 12)))
     WTM_Debug  := BarShown(IniRead(ConfigFile, "Tiling", "WTMDebug", "off"))
     WTM_FrameFit := BarShown(IniRead(ConfigFile, "Tiling", "FrameFit", "on"))
+    WTM_FloatMove := BarShown(IniRead(ConfigFile, "Tiling", "FloatMove", "on"))
+    WTM_FloatCenter := BarShown(IniRead(ConfigFile, "Tiling", "FloatCenter", "on"))
+    WTM_FloatW := Max(0, SafeInt(IniRead(ConfigFile, "Tiling", "FloatWidth", "0"), 0))
+    WTM_FloatH := Max(0, SafeInt(IniRead(ConfigFile, "Tiling", "FloatHeight", "0"), 0))
     WTM_ResizeStep := Max(1, SafeInt(IniRead(ConfigFile, "Tiling", "ResizeStep", "20"), 20))
     InvalidateSlotTables()
 
@@ -6867,6 +6882,7 @@ class WTM {
     static ScrollPageOf  := Map()
     static ScrollHidden  := Map()
     static ScrollDesktop := Map()
+    static AdoptTop      := Map()
     static _ChainSig     := ""
     static Overview      := false
     static OverviewRects := Map()
@@ -6892,6 +6908,8 @@ class WTM {
         InvalidateSlotTables()
         this.Active      := true
         this.Excluded    := Map()
+        this.AdoptTop    := Map()
+        this._AdoptTopmost()
         this.TileOrder   := []
         this.DestroyAllBorders()
         this.BorderMap   := Map()
@@ -9052,6 +9070,18 @@ class WTM {
         cur := this._OrderIndex(this.FocusHwnd) ? this.FocusHwnd : 0
         if !cur
             return
+        if this.Excluded.Has(cur) {
+            try WinGetPos(&fx, &fy, &fw, &fh, cur)
+            catch
+                return
+            if (axis = "X")
+                fw := Max(80, fw + (grow ? WTM_ResizeStep : -WTM_ResizeStep))
+            else
+                fh := Max(80, fh + (grow ? WTM_ResizeStep : -WTM_ResizeStep))
+            this._ForcePlace(cur, fx, fy, fw, fh)
+            this.RefreshBorder()
+            return
+        }
         mon := this._MonOf(cur)
         if (this._FsMon.Has(mon) && this._FsMon[mon])
             return
@@ -9273,6 +9303,8 @@ class WTM {
             return
         if this.Excluded.Has(hwnd) {
             this.Excluded.Delete(hwnd)
+            if this.AdoptTop.Has(hwnd)
+                this.AdoptTop.Delete(hwnd)
             try WinSetAlwaysOnTop(0, hwnd)
             ShowOSD("WTM Include")
         } else {
@@ -9284,6 +9316,7 @@ class WTM {
             }
             this.Excluded[hwnd] := true
             try WinSetAlwaysOnTop(1, hwnd)
+            this._MoveFloated(hwnd)
             ShowOSD("WTM Float (top)")
         }
         this.RebuildOrder()
@@ -9340,6 +9373,56 @@ class WTM {
             }
         }
         return best
+    }
+
+    static _MoveFloated(hwnd) {
+        global WTM_FloatMove, WTM_FloatCenter, WTM_FloatW, WTM_FloatH
+        if (!WTM_FloatMove || !hwnd || !WinExist(hwnd))
+            return
+        m := this._MonOf(hwnd)
+        if (m < 1)
+            m := 1
+        GetTileArea(m, 0, &ax, &ay, &aw, &ah)
+        if (aw <= 0 || ah <= 0)
+            return
+        try WinGetPos(&x, &y, &w, &h, hwnd)
+        catch
+            return
+        nw := (WTM_FloatW > 0) ? Min(WTM_FloatW, aw) : w
+        nh := (WTM_FloatH > 0) ? Min(WTM_FloatH, ah) : h
+        nx := WTM_FloatCenter ? ax + (aw - nw) // 2 : x
+        ny := WTM_FloatCenter ? ay + (ah - nh) // 2 : y
+        nx := Max(ax, Min(nx, ax + aw - nw))
+        ny := Max(ay, Min(ny, ay + ah - nh))
+        this._ForcePlace(hwnd, nx, ny, nw, nh)
+    }
+
+    ; Adopt windows that were already topmost before WTM started.
+    static _AdoptTopmost() {
+        for hwnd in WinGetList() {
+            try {
+                if !WinExist(hwnd)
+                    continue
+                if IsBarWindow(hwnd)
+                    continue
+                cls := WinGetClass(hwnd)
+                if (cls = "Progman" || cls = "WorkerW" || cls = "Shell_TrayWnd"
+                        || cls = "Shell_SecondaryTrayWnd" || cls = "AutoHotkeyGUI")
+                    continue
+                if !(WinGetStyle(hwnd) & 0x10000000)
+                    continue
+                if !(WinGetExStyle(hwnd) & 0x8)
+                    continue
+                if (WinGetTitle(hwnd) = "")
+                    continue
+                if IsExcludedWindow(hwnd)
+                    continue
+                hadPin := PinBorder.Map.Has(hwnd)
+                this.Excluded[hwnd] := true
+                this.AdoptTop[hwnd] := hadPin
+                PinBorder.Remove(hwnd)
+            }
+        }
     }
 
     ; ---- Manual-full border state / 全屏边框状态 ----
@@ -9478,6 +9561,18 @@ class WTM {
             this.EnsureBorder(hwnd, st)
             this._SetBorderColor(hwnd, st)
             _BorderPlaceFrame(this.BorderMap, hwnd)
+            if this.BorderMap.Has(hwnd) {
+                bf := this.BorderMap[hwnd]
+                if (IsObject(bf.Gui) && bf.Gui.Hwnd) {
+                    ex := 0
+                    try ex := WinGetExStyle(bf.Gui.Hwnd)
+                    if (this.Excluded.Has(hwnd) && !(ex & 0x8)) {
+                        try WinSetAlwaysOnTop(true, bf.Gui.Hwnd)
+                    } else if (!this.Excluded.Has(hwnd) && (ex & 0x8)) {
+                        try WinSetAlwaysOnTop(false, bf.Gui.Hwnd)
+                    }
+                }
+            }
         }
         if WTM_Debug {
             sig := ""
@@ -9727,10 +9822,17 @@ class WTM {
     ; ---- Enforce solo / 单人模式收拢 ----
     static _ClearFloats() {
         for hwnd, _ in this.Excluded.Clone() {
-            if WinExist(hwnd)
-                try WinSetAlwaysOnTop(0, hwnd)
-            PinBorder.Remove(hwnd)
+            if this.AdoptTop.Has(hwnd) {
+                ; Restore the pre-WTM topmost state instead of clearing it.
+                if this.AdoptTop[hwnd]
+                    PinBorder.Add(hwnd)
+            } else {
+                if WinExist(hwnd)
+                    try WinSetAlwaysOnTop(0, hwnd)
+                PinBorder.Remove(hwnd)
+            }
         }
+        this.AdoptTop := Map()
         this.Excluded := Map()
     }
 

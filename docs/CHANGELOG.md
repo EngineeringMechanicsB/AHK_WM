@@ -1,5 +1,12 @@
 # Changelog
 
+### v2.15.9 (2026-11-18)
+
+- **Pre-existing topmost windows become floats** — `Activate` scans visible topmost windows (skipping the taskbar, desktop, the script's own GUIs and existing exclusion rules), adds them to `Excluded` and removes the normal-mode pin border. Leaving WTM restores their original topmost state and pin border.
+- **Floated windows move/resize by config** — new `[Tiling] FloatMove`, `FloatCenter`, `FloatWidth`, `FloatHeight`. With `FloatMove=on`, `Alt+T` centers the window in its monitor's work area; `FloatWidth/Height > 0` set a fixed size, `0` keeps the current size.
+- **Floats respond to WTM resize hotkeys** — with focus on a float, `Ctrl+Shift+H/J/K/L` (`WTMShrinkWidth` etc.) resize it directly, minimum 80 px.
+- **Float border stays on top** — the WTM border of a floating window is itself topmost, so its top bar is no longer clipped by the window; unpinning restores the normal z-order.
+
 ### v2.15.8 (2026-11-17)
 
 - **WTM float border** — floating windows (`Alt+T`) now use the normal WTM border: `Border_FocusColor` when focused, `Border_UnfocusColor` otherwise, instead of the normal-mode pin border. Normal-mode `Alt+T` keeps the custom pin border.

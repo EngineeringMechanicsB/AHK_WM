@@ -1,4 +1,4 @@
-﻿# AHK_WM Configuration Reference (v2.15.8)
+﻿# AHK_WM Configuration Reference (v2.15.9)
 
 Config file location: `%USERPROFILE%\.config\AHK_WM\wm_config.ini` (UTF-16 LE).
 The file is created with defaults on first run. After editing, reload the script
@@ -160,6 +160,10 @@ Border **colors** live in `[Theme]`: `BorderDrag` (focused), `BorderUnfocus`
 | `TileAlwaysOnTop` | on/off | `off` | `on`, `off` | Include always-on-top windows when tiling. |
 | `WTMGap` | int px | same as `[Border] Gap` (default `10`) | any | **WTM-only** tiling gap, independent of `[Tiling] Gap`; changing `Gap` does not affect WTM. Leaves room for the inter-window borders; empty = fall back to `[Border] Gap`. With `FrameFit` on, `0` makes the visible edges touch. |
 | `FrameFit` | on/off | `on` | `on`, `off` | Align the DWM **visible frame** instead of the SetWindowPos outer rect. Windows with different frame styles (Explorer, Steam, terminals) otherwise show different visual sizes and gaps at the same outer rect. When off, placement uses the outer rect exactly. |
+| `FloatMove` | on/off | `on` | `on`, `off` | Whether `Alt+T` moves and resizes a window when floating it in WTM. `off` = float in place. |
+| `FloatCenter` | on/off | `on` | `on`, `off` | Center the floated window in its monitor's work area. |
+| `FloatWidth` | int px | `0` | ≥0 | Floated width; `0` = keep current width. Clamped to the work area. |
+| `FloatHeight` | int px | `0` | ≥0 | Floated height; `0` = keep current height. Clamped to the work area. |
 | `AnimationDuration` | int ms | `0` | ≥0 | **WTM** move/swap, card-flip and cross-monitor animation duration. `0` = instant (no animation); it also cancels any tween still running for that window, so an old animation cannot drag it across screens. `120`–`500` recommended. |
 | `AnimationFrameMs` | int ms | `12` | 4–50 | Timer interval between WTM animation frames. Lower is smoother but costs more CPU: `6` ≈ 166 fps (170 Hz displays), `8` ≈ 125 fps, `16` ≈ 60 fps. Values outside the range are clamped. |
 | `WTMDebug` | on/off | `off` | `on`, `off` | Write border-diagnostic lines to the log (only when the border set, focus or colour changes). Turn it on temporarily to trace "border not following / not removed / colour stuck". |
