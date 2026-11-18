@@ -49,7 +49,7 @@ Persistent
 ; 1. Environment & Global Directives / 环境与全局指令
 ; ==============================================================================
 
-global WM_Version := "2.15.9"
+global WM_Version := "2.15.10"
 global FontName
 
 SetWorkingDir(A_ScriptDir)
@@ -3612,7 +3612,7 @@ class BorderFrame {
         this.LastPX := x, this.LastPY := y, this.LastPW := w, this.LastPH := h
         this.LastThk := t, this.LastRadC := rad, this.LastPMode := mode
         ins := this._ZOrder(insertAfter)
-        if (insertAfter != -1) {
+        if (insertAfter != -1 && insertAfter != 0) {
             exb := 0
             try exb := WinGetExStyle(this.Gui.Hwnd)
             if (exb & 0x8)
@@ -9557,6 +9557,12 @@ class WTM {
                 this.RemoveBorder(hwnd)
         }
         for hwnd, _ in want {
+            if this.Excluded.Has(hwnd) {
+                exw := 0
+                try exw := WinGetExStyle(hwnd)
+                if !(exw & 0x8)
+                    try WinSetAlwaysOnTop(true, hwnd)
+            }
             st := this._BorderState(hwnd)
             this.EnsureBorder(hwnd, st)
             this._SetBorderColor(hwnd, st)

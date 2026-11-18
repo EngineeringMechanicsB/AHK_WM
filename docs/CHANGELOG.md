@@ -1,5 +1,9 @@
 # Changelog
 
+### v2.15.10 (2026-11-18)
+
+- **Fixed floats getting covered** — `BorderFrame.Place` no longer demotes a topmost border when `insertAfter=0`; `RefreshBorder` checks every floating window's `WS_EX_TOPMOST` and restores it when missing. Floats stay above after focus changes, their top bar is no longer clipped, and the border does not fight for z-order every tick.
+
 ### v2.15.9 (2026-11-18)
 
 - **Pre-existing topmost windows become floats** — `Activate` scans visible topmost windows (skipping the taskbar, desktop, the script's own GUIs and existing exclusion rules), adds them to `Excluded` and removes the normal-mode pin border. Leaving WTM restores their original topmost state and pin border.
